@@ -8,6 +8,12 @@ const UserSchema = new mongoose.Schema({
     avatar: { type: String }, // optional avatar URL
     joinedRooms: [{ type: String }], // array of roomIds user has joined
     lastLogin: { type: Date, default: Date.now },
+
+    // email Verification
+    isVerified: { type: Boolean, default: false },
+    verificationToken: { type: String },
+    verificationTokenExpires: { type: Date },
+
     // OAuth providers info
     oauthProviders: {
         google: {
@@ -45,7 +51,11 @@ const UserSchema = new mongoose.Schema({
         }
     ],
     isActive: { type: Boolean, default: true },
-    isVerified: { type: Boolean, default: false }
 }, { timestamps: true });
+
+// Index for faster queries
+UserSchema.index({ email: 1 });
+UserSchema.index({ username: 1 });
+UserSchema.index({ verificationToken: 1 });
 
 module.exports = mongoose.model("User", UserSchema);
