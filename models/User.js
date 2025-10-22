@@ -14,6 +14,10 @@ const UserSchema = new mongoose.Schema({
     verificationToken: { type: String },
     verificationTokenExpires: { type: Date },
 
+    // password reset
+    passwordResetToken: { type: String },
+    passwordResetTokenExpires: { type: Date },
+
     // OAuth providers info
     oauthProviders: {
         google: {
@@ -57,5 +61,6 @@ const UserSchema = new mongoose.Schema({
 UserSchema.index({ email: 1 });
 UserSchema.index({ username: 1 });
 UserSchema.index({ verificationToken: 1 });
+UserSchema.index({ resetPasswordToken: 1 });
 
 module.exports = mongoose.model("User", UserSchema);

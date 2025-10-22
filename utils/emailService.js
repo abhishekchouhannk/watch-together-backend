@@ -70,7 +70,36 @@ const sendVerificationEmail = async (email, username, token) => {
     }
 };
 
+const sendPasswordResetEmail = async (email, username, resetToken) => {
+    try {
+        const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+        
+        const mailOptions = {
+            from: process.env.EMAIL_FROM,
+            to: email,
+            subject: 'Password Reset Request',
+            html: `
+                <h1>Password Reset Request</h1>
+                <p>Hi ${username},</p>
+                <p>You requested to reset your password. Click the link below to reset it:</p>
+                <a href="${resetUrl}">Reset Password</a>
+                <p>This link will expire in 1 hour.</p>
+                <p>If you didn't request this, please ignore this email.</p>
+            `
+        };
+
+        // Send email using your configured transporter
+        await transporter.sendMail(mailOptions);
+        
+        return { success: true };
+    } catch (error) {
+        console.error('Email send error:', error);
+        return { success: false, error };
+    }
+};
+
 module.exports = {
     generateVerificationToken,
-    sendVerificationEmail
+    sendVerificationEmail,
+    sendPasswordResetEmail
 };

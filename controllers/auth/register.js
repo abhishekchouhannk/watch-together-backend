@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
-const User = require('../models/User');
-const { generateVerificationToken, sendVerificationEmail } = require('../utils/emailService');
+const User = require('../../models/User');
+const { generateVerificationToken, sendVerificationEmail } = require('../../utils/emailService');
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
