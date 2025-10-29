@@ -1,4 +1,4 @@
-const token = "a6f9a24e723a111a35773f6d03477602d51bc03435a452515bb00519689817b0"; // replace with actual token
+const token = "c0c412defe3af18443755818cd437ae04dbcb1e0f38ebdd4960c0d5ae4a94b34"; // replace with actual token
 
 fetch(`http://localhost:5000/api/auth/verify-email/${token}`, {
   method: "GET",

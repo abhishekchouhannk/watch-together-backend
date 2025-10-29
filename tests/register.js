@@ -4,8 +4,8 @@ const response = await fetch('http://localhost:5000/api/auth/register', {
         'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-        email: 'abhishekchouhannk@gmail.com',
-        username: 'testuser3',
+        email: 'otakuabhi2003@gmail.com',
+        username: 'testuser4',
         password: 'SecurePass123!',
         confirmPassword: 'SecurePass123!'
     })

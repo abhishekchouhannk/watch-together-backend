@@ -30,13 +30,13 @@ const registerValidationRules = () => {
             .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
             .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
         
-        body('confirmPassword')
-            .custom((value, { req }) => {
-                if (value !== req.body.password) {
-                    throw new Error('Passwords do not match');
-                }
-                return true;
-            })
+        // body('confirmPassword')
+        //     .custom((value, { req }) => {
+        //         if (value !== req.body.password) {
+        //             throw new Error('Passwords do not match');
+        //         }
+        //         return true;
+        //     })
     ];
 };
 
@@ -49,7 +49,8 @@ const validate = (req, res, next) => {
             errors: errors.array().map(err => ({
                 field: err.path,
                 message: err.msg
-            }))
+            }
+        ))
         });
     }
     next();

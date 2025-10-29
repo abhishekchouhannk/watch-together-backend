@@ -14,21 +14,21 @@ const {
 
 const { registerValidationRules, validate } = require('../utils/validators');
 
-// Rate limiting middleware (optional but recommended)
-const rateLimit = require('express-rate-limit');
+// // Rate limiting middleware (optional but recommended)
+// const rateLimit = require('express-rate-limit');
 
-const registerLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // Limit each IP to 5 registration requests per windowMs
-    message: {
-        success: false,
-        message: 'Too many registration attempts, please try again later.'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
+// const registerLimiter = rateLimit({
+//     windowMs: 15 * 60 * 1000, // 15 minutes
+//     max: 5, // Limit each IP to 5 registration requests per windowMs
+//     message: {
+//         success: false,
+//         message: 'Too many registration attempts, please try again later.'
+//     },
+//     standardHeaders: true,
+//     legacyHeaders: false,
+// });
 
-router.post('/register', registerLimiter, registerValidationRules(), validate, register);
+router.post('/register', registerValidationRules(), validate, register);
 
 
 // @route   POST /api/auth/forgot-password
