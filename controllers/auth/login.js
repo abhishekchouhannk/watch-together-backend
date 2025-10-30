@@ -4,6 +4,9 @@ const { generateAccessToken, generateRefreshToken } = require('../../utils/jwtUt
 const { generateSessionId } = require('../../utils/tokenUtils');
 const { accessTokenCookieOptions, refreshTokenCookieOptions } = require('../../utils/cookieSettings');
 
+const useragent = require("useragent");
+const geoip = require("geoip-lite");
+
 const login = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -55,6 +58,25 @@ const login = async (req, res) => {
         // Generate tokens
         const accessToken = generateAccessToken(user._id);
         const refreshToken = generateRefreshToken(user._id);
+
+        // extract user device data for session management
+        const rawIp =
+            req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+            req.ip ||
+            req.connection.remoteAddress
+
+        const agent = useragent.parse(req.headers["user-agent"]);
+        const deviceType = req.headers["device-type"] || agent.device.toString() || "Unknown";
+        const locationFromHeader = req.headers["location"];
+        let location = "Unknown";
+
+        // fallback - try geoip if location header is missing
+        if (locationFromHeader && locationFromHeader !== "Unknown") {
+            location = locationFromHeader;
+        } else {
+            const geo = geoip.lookup(rawIp);
+            if (geo) location = `${geo.city || "Unknown"}, ${geo.country || "Unknown"}`;
+        }
         
         // Create session
         const sessionId = generateSessionId();
@@ -64,9 +86,9 @@ const login = async (req, res) => {
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
             deviceInfo: {
                 userAgent: req.headers['user-agent'] || 'Unknown',
-                ipAddress: req.ip || req.connection.remoteAddress,
-                deviceType: req.headers['device-type'] || 'Unknown',
-                location: req.headers['location'] || 'Unknown'
+                ipAddress: rawIp,
+                deviceType,
+                location
             }
         };
 
