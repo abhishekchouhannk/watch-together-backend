@@ -10,7 +10,8 @@ const {
     register,
     refresh,
     resetPassword,
-    verifyEmail
+    verifyEmail,
+    resendVerification
 } = require('../controllers/auth/controller');
 
 const { registerValidationRules, validate } = require('../utils/validators');
@@ -47,7 +48,9 @@ router.post('/logout', logout);
 
 router.post('/refresh', refresh);
 router.post('/reset-password/:token', resetPassword);
-router.get('/verify-email/:token', verifyEmail);
 
+// email verification routes
+router.get('/verify-email/:token', verifyEmail);
+router.post('resend-verification', resendVerification);
 
 module.exports = router;

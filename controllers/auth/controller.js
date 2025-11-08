@@ -5,6 +5,9 @@ const { logout } = require('./logout');
 const { refresh } = require('./refresh');
 const { register } = require('./register');
 const { resetPassword } = require('./resetPassword');
+
+// verification Endpoints
+const { resendVerification } = require('./resendVerification');
 const { verifyEmail } = require('./verifyEmail');
 
 module.exports = {
@@ -15,5 +18,6 @@ module.exports = {
     register,
     refresh,
     resetPassword,
-    verifyEmail
+    verifyEmail,
+    resendVerification
 };
