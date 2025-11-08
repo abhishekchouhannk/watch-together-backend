@@ -5,6 +5,7 @@ const router = express.Router();
 const {
     forgotPassword,
     login,
+    loggedIn,
     logout,
     register,
     refresh,
@@ -36,6 +37,9 @@ router.post('/forgot-password', forgotPassword);
 
 // @route   POST /api/auth/login
 router.post('/login', login);
+
+// @route GET /api/auth/loggedIn
+router.get('/loggedIn', loggedIn)
 
 // @route   POST /api/auth/logout
 router.post('/logout', logout);

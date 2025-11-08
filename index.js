@@ -6,13 +6,21 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
+
+
 
 // app modules
 const connectDB = require("./db-init");
 connectDB();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: process.env.FRONTEND_URL, // frontend origin
+    credentials: true, // allow cookies / credentials
+}));
+
+app.use(cookieParser());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -21,6 +29,7 @@ app.set('trust proxy', true);
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+
 
 const server = http.createServer(app);
 
