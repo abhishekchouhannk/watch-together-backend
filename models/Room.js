@@ -4,21 +4,45 @@ const mongoose = require("mongoose");
 const RoomSchema = new mongoose.Schema({
     roomId: { type: String, required: true, unique: true },
     roomName: { type: String, required: true },
-    mode: { type: String, enum: [
-        "study", "gaming", "movie", "casual"
-    ], default: "casual" },
+    description: { type: String, maxlength: 200 },
+    thumbnail: { type: String }, // URL for room preview image
+    roomType: { 
+        type: String, 
+        enum: ["study", "gaming", "entertainment", "casual"], 
+        default: "casual" 
+    },
+    isPublic: { type: Boolean, default: true }, // For searchability
+    maxParticipants: { type: Number, default: 10 },
+    admin: {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        username: { type: String, required: true }
+    },
     video: {
         url: { type: String },
+        title: { type: String },
         currentTime: { type: Number, default: 0 },
-        isPlaying: { type: String, enum: ["playing", "paused"], default: "paused" }
+        duration: { type: Number },
+        isPlaying: { type: Boolean, default: false }
     },
     participants: [
         {
             userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
             username: { type: String },
-            joinedAt: { type: Date, default: Date.now }
+            // avatar: { type: String }, // User avatar URL
+            joinedAt: { type: Date, default: Date.now },
+            // isActive: { type: Boolean, default: true }
         }
-    ]
+    ],
+    tags: [{ type: String }], // Additional tags for better search
+    status: { 
+        type: String, 
+        enum: ["active", "idle", "ended"], 
+        default: "active" 
+    }
 }, { timestamps: true });
+
+// Index for better search performance
+RoomSchema.index({ roomName: 'text', description: 'text', tags: 'text' });
+RoomSchema.index({ mode: 1, isPublic: 1, status: 1 });
 
 module.exports = mongoose.model("Room", RoomSchema);

@@ -29,6 +29,7 @@ app.set('trust proxy', true);
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/rooms', require('./routes/rooms'));
 
 
 const server = http.createServer(app);
