@@ -26,7 +26,7 @@ function generateRoom(i) {
     description: random(desc),
     mode: type,
     maxParticipants: Math.floor(Math.random() * 10) + 5,
-    isPublic: Math.random() > 0.2,
+    isPublic: true,
     tags: Array.from(
       { length: 3 },
       () => random(tagsList)
