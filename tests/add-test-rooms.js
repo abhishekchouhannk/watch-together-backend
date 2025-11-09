@@ -3,7 +3,7 @@ const NUM_ROOMS = 15;
 
 const random = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-const roomTypes = ["study", "gaming", "entertainment", "casual"];
+const modes = ["study", "gaming", "entertainment", "casual"];
 const tagsList = [
   "chill", "focus", "music", "coding", "anime", "movie", "friends",
   "fun", "strategy", "hangout", "solo", "group", "productive"
@@ -11,7 +11,7 @@ const tagsList = [
 
 // Helper to generate a random room
 function generateRoom(i) {
-  const type = random(roomTypes);
+  const type = random(modes);
   const name = `${type.charAt(0).toUpperCase() + type.slice(1)} Room #${i + 1}`;
   const desc = [
     "Join and vibe together!",
@@ -24,7 +24,7 @@ function generateRoom(i) {
   return {
     roomName: name,
     description: random(desc),
-    roomType: type,
+    mode: type,
     maxParticipants: Math.floor(Math.random() * 10) + 5,
     isPublic: Math.random() > 0.2,
     tags: Array.from(

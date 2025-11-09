@@ -81,13 +81,13 @@ router.get('/search', authenticateToken, async (req, res) => {
 // Create new room
 router.post('/create', authenticateToken, async (req, res) => {
   try {
-    const { roomName, description, roomType, maxParticipants, isPublic, tags } = req.body;
+    const { roomName, description, mode, maxParticipants, isPublic, tags } = req.body;
     
     const newRoom = new Room({
       roomId: uuidv4(),
       roomName,
       description,
-      roomType,
+      mode,
       maxParticipants,
       isPublic,
       tags,

@@ -6,7 +6,7 @@ const RoomSchema = new mongoose.Schema({
     roomName: { type: String, required: true },
     description: { type: String, maxlength: 200 },
     thumbnail: { type: String }, // URL for room preview image
-    roomType: { 
+    mode: { 
         type: String, 
         enum: ["study", "gaming", "entertainment", "casual"], 
         default: "casual" 
