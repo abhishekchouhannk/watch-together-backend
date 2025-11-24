@@ -58,7 +58,6 @@ const UserSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Index for faster queries
-UserSchema.index({ email: 1 });
 UserSchema.index({ username: 1 });
 UserSchema.index({ verificationToken: 1 });
 UserSchema.index({ resetPasswordToken: 1 });

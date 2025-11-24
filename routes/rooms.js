@@ -31,8 +31,7 @@ router.get('/my-rooms', authenticateToken, async (req, res) => {
         { 'admin.userId': userId },
         { 'participants.userId': userId }
       ]
-    })
-      .sort({ updatedAt: -1 });
+    }).sort({ updatedAt: -1 });
 
     res.json({ rooms });
   } catch (error) {
