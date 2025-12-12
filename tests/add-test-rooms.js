@@ -1,5 +1,5 @@
 // Make sure you're logged in first — cookies must exist (credentials: 'include')
-const NUM_ROOMS = 15;
+const NUM_ROOMS = 30;
 
 const random = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -30,7 +30,15 @@ function generateRoom(i) {
     tags: Array.from(
       { length: 3 },
       () => random(tagsList)
-    )
+    ),
+    thumbnail: "https://images.pexels.com/photos/1563356/pexels-photo-1563356.jpeg",
+    video: {
+      "url": "https://cdn.pixabay.com/video/2025/09/15/304330_large.mp4",
+      "title": "Ambient Study Background",
+      "currentTime": 0,
+      "duration": null,
+      "isPlaying": false
+    }
   };
 }
 

@@ -81,7 +81,7 @@ router.get('/search', authenticateToken, async (req, res) => {
 // Create new room
 router.post('/create', authenticateToken, async (req, res) => {
   try {
-    const { roomName, description, mode, maxParticipants, isPublic, tags } = req.body;
+    const { roomName, description, mode, maxParticipants, isPublic, tags, thumbnail, video } = req.body;
     
     const newRoom = new Room({
       roomId: uuidv4(),
@@ -91,6 +91,8 @@ router.post('/create', authenticateToken, async (req, res) => {
       maxParticipants,
       isPublic,
       tags,
+      video,
+      thumbnail,
       admin: {
         userId: req.user.id,
         username: req.user.username
