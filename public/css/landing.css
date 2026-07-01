@@ -1,0 +1,349 @@
+/* ============================================
+   Watch Together — Landing Page Styles
+   ============================================ */
+/* ---- 1. Reset & Base ---- */
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+html,
+body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+body {
+    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+img {
+    display: block;
+    max-width: none; /* cloud images intentionally overflow */
+}
+/* ---- 2. Theme Variables ---- */
+/* Morning — warm pinks, soft sunrise */
+.landing[data-theme="morning"] {
+    --bg: linear-gradient(180deg, #fbcfe8 0%, #ffe4e6 50%, #bfdbfe 100%);
+    --text-color: #881337;
+    --text-shadow: 0 2px 20px rgba(136, 19, 55, 0.12);
+    --btn-pri-bg: #f43f5e;
+    --btn-pri-bg-hover: #e11d48;
+    --btn-pri-text: #ffffff;
+    --btn-pri-shadow: rgba(244, 63, 94, 0.35);
+    --btn-sec-bg: rgba(255, 228, 230, 0.8);
+    --btn-sec-bg-hover: rgba(254, 205, 211, 0.9);
+    --btn-sec-text: #881337;
+    --btn-sec-border: transparent;
+    --btn-sec-border-w: 0px;
+}
+/* Afternoon — bright sky, sunny */
+.landing[data-theme="afternoon"] {
+    --bg: #7dd3fc;
+    --text-color: #0c4a6e;
+    --text-shadow: 0 2px 20px rgba(12, 74, 110, 0.1);
+    --btn-pri-bg: #facc15;
+    --btn-pri-bg-hover: #eab308;
+    --btn-pri-text: #0c4a6e;
+    --btn-pri-shadow: rgba(250, 204, 21, 0.35);
+    --btn-sec-bg: rgba(255, 255, 255, 0.7);
+    --btn-sec-bg-hover: rgba(255, 255, 255, 0.9);
+    --btn-sec-text: #0369a1;
+    --btn-sec-border: #93c5fd;
+    --btn-sec-border-w: 1px;
+}
+/* Evening — purple-pink sunset */
+.landing[data-theme="evening"] {
+    --bg: linear-gradient(180deg, #c084fc 0%, #f9a8d4 50%, #fdba74 100%);
+    --text-color: #ec4899;
+    --text-shadow: 0 2px 20px rgba(236, 72, 153, 0.15);
+    --btn-pri-bg: #9333ea;
+    --btn-pri-bg-hover: #7e22ce;
+    --btn-pri-text: #ffffff;
+    --btn-pri-shadow: rgba(147, 51, 234, 0.35);
+    --btn-sec-bg: rgba(243, 232, 255, 0.8);
+    --btn-sec-bg-hover: rgba(233, 213, 255, 0.9);
+    --btn-sec-text: #581c87;
+    --btn-sec-border: transparent;
+    --btn-sec-border-w: 0px;
+}
+/* Night — deep indigo, starry */
+.landing[data-theme="night"] {
+    --bg: linear-gradient(180deg, #312e81 0%, #1e3a8a 100%);
+    --text-color: #ffffff;
+    --text-shadow: 0 2px 24px rgba(99, 102, 241, 0.3);
+    --btn-pri-bg: #6366f1;
+    --btn-pri-bg-hover: #4f46e5;
+    --btn-pri-text: #ffffff;
+    --btn-pri-shadow: rgba(99, 102, 241, 0.4);
+    --btn-sec-bg: rgba(255, 255, 255, 0.1);
+    --btn-sec-bg-hover: rgba(255, 255, 255, 0.2);
+    --btn-sec-text: #ffffff;
+    --btn-sec-border: rgba(255, 255, 255, 0.3);
+    --btn-sec-border-w: 2px;
+}
+/* ---- 3. Landing Container ---- */
+.landing {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+}
+/* ---- 4. Cloud Layers ---- */
+/*
+ * Each cloud layer holds two sub-containers:
+ *   .cloud-intro  — the left/right halves that slide in once
+ *   .cloud-scroll  — two copies of full.png for the infinite drift
+ *
+ * z-order (back → front):
+ *   far clouds (1) → element layer (2) → near clouds (3) → content (10)
+ */
+.cloud-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+.cloud-layer[data-layer="far"] {
+    z-index: 1;
+    opacity: 0.65;
+}
+.cloud-layer[data-layer="near"] {
+    z-index: 3;
+}
+/* -- Intro: the two halves that slide in -- */
+.cloud-intro {
+    position: absolute;
+    inset: 0;
+    display: flex;
+}
+.cloud-half {
+    width: 50%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center bottom;
+}
+/*
+ * Starting positions — pushed completely offscreen.
+ * The extra 10% guarantees no sub-pixel edge peeking.
+ */
+.cloud-half.left {
+    transform: translateX(-110%);
+    transition: transform 2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cloud-half.right {
+    transform: translateX(110%);
+    transition: transform 2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* Near-layer halves slide a little faster for depth contrast */
+.cloud-layer[data-layer="near"] .cloud-half.left,
+.cloud-layer[data-layer="near"] .cloud-half.right {
+    transition-duration: 1.6s;
+}
+/* Final positions — the two halves meet to form the full panorama */
+.cloud-half.left.slide-in {
+    transform: translateX(0);
+}
+.cloud-half.right.slide-in {
+    transform: translateX(0);
+}
+/* -- Scroll: seamless infinite loop -- */
+/*
+ * Contains TWO copies of full.png side-by-side (width 200%).
+ * At translateX(-50%) the viewport shows the 2nd copy,
+ * which is identical to the 1st — this is the "resting" state
+ * that matches the intro halves perfectly.
+ *
+ * The drift animation moves from -50% → 0%, sliding the
+ * visible window to the right.  Because both copies are
+ * identical the reset is invisible.
+ */
+.cloud-scroll {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 200%;
+    height: 100%;
+    display: flex;
+    transform: translateX(-50%);
+    visibility: hidden;
+    will-change: transform;
+}
+.cloud-scroll.active {
+    visibility: visible;
+}
+.cloud-full {
+    flex: 0 0 50%;       /* 50% of 200% container = 100vw */
+    width: 50%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center bottom;
+}
+/* Far layer drifts slowly — feels distant */
+.cloud-layer[data-layer="far"] .cloud-scroll.scrolling {
+    animation: cloudDrift 120s linear infinite;
+}
+/* Near layer drifts faster — feels closer */
+.cloud-layer[data-layer="near"] .cloud-scroll.scrolling {
+    animation: cloudDrift 80s linear infinite;
+}
+/* ---- 5. Element Layer ---- */
+.element-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    overflow: hidden;
+}
+/* ---- 6. Content Overlay ---- */
+.content {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-color);
+    /* starts hidden, JS adds .visible */
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+        opacity 1s ease,
+        transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.content.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+.title {
+    font-size: clamp(2.5rem, 8vw, 4.5rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    text-shadow: var(--text-shadow);
+}
+.motto {
+    font-size: clamp(0.95rem, 2.5vw, 1.2rem);
+    font-weight: 500;
+    opacity: 0.85;
+    margin-top: 0.75rem;
+    margin-bottom: 2.5rem;
+    max-width: 480px;
+    line-height: 1.5;
+}
+/* ---- 7. Buttons ---- */
+.button-group {
+    display: flex;
+    gap: 0.875rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.8rem 2rem;
+    border-radius: 14px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    outline: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition:
+        background 0.2s ease,
+        box-shadow 0.2s ease,
+        transform 0.15s ease;
+}
+.btn:focus-visible {
+    outline: 2px solid var(--text-color);
+    outline-offset: 3px;
+}
+.btn:active {
+    transform: scale(0.96) translateY(0) !important;
+}
+/* Primary */
+.btn-primary {
+    background: var(--btn-pri-bg);
+    color: var(--btn-pri-text);
+    box-shadow: 0 4px 16px var(--btn-pri-shadow);
+}
+.btn-primary:hover {
+    background: var(--btn-pri-bg-hover);
+    box-shadow: 0 6px 24px var(--btn-pri-shadow);
+    transform: translateY(-1px);
+}
+/* Secondary */
+.btn-secondary {
+    background: var(--btn-sec-bg);
+    color: var(--btn-sec-text);
+    border: var(--btn-sec-border-w) solid var(--btn-sec-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+.btn-secondary:hover {
+    background: var(--btn-sec-bg-hover);
+    transform: translateY(-1px);
+}
+/* ---- 8. Keyframes ---- */
+/*
+ * Drift direction: LEFT → RIGHT (clouds move rightward).
+ *
+ * At -50%  the container is shifted left by 100 vw → viewport sees copy 2.
+ * At  0%   the container is at origin             → viewport sees copy 1.
+ * Both copies are the same image, so the loop is seamless.
+ */
+@keyframes cloudDrift {
+    from {
+        transform: translateX(-50%);
+    }
+    to {
+        transform: translateX(0%);
+    }
+}
+/* ---- 9. Responsive ---- */
+@media (max-width: 640px) {
+    .button-group {
+        flex-direction: column;
+        width: 100%;
+        max-width: 320px;
+    }
+    .btn {
+        width: 100%;
+    }
+    .motto {
+        margin-bottom: 2rem;
+    }
+}
+/* ---- 10. Accessibility — Reduced Motion ---- */
+@media (prefers-reduced-motion: reduce) {
+    /* Kill all motion but keep content visible */
+    .cloud-half.left,
+    .cloud-half.right {
+        transition: none !important;
+        transform: translateX(0) !important;
+    }
+    .cloud-scroll {
+        visibility: visible !important;
+    }
+    .cloud-scroll.scrolling {
+        animation: none !important;
+        transform: translateX(-50%) !important;
+    }
+    .content {
+        transition: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+}

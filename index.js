@@ -59,4 +59,6 @@ io.on("connection", (socket) => {
     });
 });
 
+app.use(express.static("public"));
+
 server.listen(SERVER_PORT, () => console.log(`Server running on port ${SERVER_PORT}`));

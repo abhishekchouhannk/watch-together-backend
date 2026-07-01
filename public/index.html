@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watch Together</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/landing.css" />
+</head>
+<body>
+    <main id="landing" class="landing">
+        <!-- ═══ Far Cloud Layer ═══ -->
+        <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
+            <div class="cloud-intro">
+                <img class="cloud-half left" draggable="false" alt="" />
+                <img class="cloud-half right" draggable="false" alt="" />
+            </div>
+            <div class="cloud-scroll">
+                <img class="cloud-full" draggable="false" alt="" />
+                <img class="cloud-full" draggable="false" alt="" />
+            </div>
+        </div>
+        <!-- ═══ Element Layer (theme-specific, e.g. birds, blimp, stars) ═══ -->
+        <div class="element-layer" id="element-layer"></div>
+        <!-- ═══ Near Cloud Layer ═══ -->
+        <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
+            <div class="cloud-intro">
+                <img class="cloud-half left" draggable="false" alt="" />
+                <img class="cloud-half right" draggable="false" alt="" />
+            </div>
+            <div class="cloud-scroll">
+                <img class="cloud-full" draggable="false" alt="" />
+                <img class="cloud-full" draggable="false" alt="" />
+            </div>
+        </div>
+        <!-- ═══ Content Overlay ═══ -->
+        <div class="content" id="content">
+            <h1 class="title">Watch Together</h1>
+            <p class="motto" id="motto"></p>
+            <div class="button-group">
+                <button class="btn btn-primary" id="btn-start">
+                    Start Watching
+                </button>
+                <button class="btn btn-secondary" id="btn-learn">
+                    Learn More
+                </button>
+            </div>
+        </div>
+    </main>
+    <script src="/js/landing.js"></script>
+</body>
+</html>
