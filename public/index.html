@@ -14,6 +14,8 @@
 </head>
 <body>
     <main id="landing" class="landing">
+        <!-- ═══ Sky (bottom-most visual layer, sits on top of the bg-color) ═══ -->
+        <img class="sky-layer" id="sky-image" draggable="false" alt="" />
         <!-- ═══ Far Cloud Layer ═══ -->
         <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
             <div class="cloud-intro">
@@ -25,8 +27,6 @@
                 <img class="cloud-full" draggable="false" alt="" />
             </div>
         </div>
-        <!-- ═══ Element Layer (theme-specific, e.g. birds, blimp, stars) ═══ -->
-        <div class="element-layer" id="element-layer"></div>
         <!-- ═══ Near Cloud Layer ═══ -->
         <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
             <div class="cloud-intro">
@@ -51,6 +51,8 @@
                 </button>
             </div>
         </div>
+        <!-- ═══ Element Layer (moon/etc — always topmost) ═══ -->
+        <img class="element-layer" id="element-image" draggable="false" alt="" />
     </main>
     <script src="/js/landing.js"></script>
 </body>

@@ -87,10 +87,33 @@ img {
     position: relative;
     width: 100%;
     height: 100%;
-    background: var(--bg);
+    background: var(--bg); /* stays as the very base */
     overflow: hidden;
 }
-/* ---- 4. Cloud Layers ---- */
+/* ---- 4. Layer Stack (z-index reference) ----
+   0  sky            — background image, sits above bg-color
+   1  far clouds     — distant parallax layer
+   2  near clouds    — closer parallax layer
+   3  content        — title / motto / buttons
+   10 element        — moon/etc, always topmost
+------------------------------------------------ */
+/* ---- 5. Sky Layer ---- */
+.sky-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center bottom;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 1.4s ease;
+    pointer-events: none;
+}
+.sky-layer.visible {
+    opacity: 1;
+}
+/* ---- 6. Cloud Layers ---- */
 .cloud-layer {
     position: absolute;
     inset: 0;
@@ -102,26 +125,16 @@ img {
     opacity: 0.65;
 }
 .cloud-layer[data-layer="near"] {
-    z-index: 3;
+    z-index: 2;
 }
 /*
  * ── Intro: two FULL-SIZE sprites that slide in and OVERLAP ──
- *
- * left.png and right.png are the SAME resolution as full.png.
- * left.png  = full image with the right portion erased (transparent)
- * right.png = full image with the left portion erased (transparent)
- *
- * Both are absolutely positioned at the same spot.
- * left.png  slides in from off-screen LEFT   → translateX(0)
- * right.png slides in from off-screen RIGHT  → translateX(0)
- *
- * At translateX(0) they stack perfectly and together
- * reproduce full.png — the swap is invisible.
+ * (left.png / right.png are full-resolution, partially erased,
+ *  designed to stack perfectly at translateX(0) == full.png)
  */
 .cloud-intro {
     position: absolute;
     inset: 0;
-    /* NOT flex — children are stacked, not side-by-side */
 }
 .cloud-half {
     position: absolute;
@@ -140,30 +153,18 @@ img {
     transform: translateX(100%);
     transition: transform 2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-/* Near layer slides a touch faster for depth contrast */
+/* Near layer slides a touch faster (shorter distance to "feel closer") */
 .cloud-layer[data-layer="near"] .cloud-half.left,
 .cloud-layer[data-layer="near"] .cloud-half.right {
     transition-duration: 1.6s;
 }
-/* Final resting position — both images stacked at the same spot */
 .cloud-half.left.slide-in {
     transform: translateX(0);
 }
 .cloud-half.right.slide-in {
     transform: translateX(0);
 }
-/*
- * ── Scroll: seamless infinite drift ──
- *
- * Two copies of full.png in a 200%-wide container.
- * At translateX(-50%) the viewport shows copy 2.
- * The animation drifts to translateX(0%) showing copy 1.
- * Both are identical → the loop reset is invisible.
- *
- * Each copy is rendered at 50% of the 200% container = 100vw,
- * so it gets the exact same object-fit scaling as the intro
- * images above — guaranteeing a pixel-perfect swap.
- */
+/* ── Scroll: seamless infinite drift ── */
 .cloud-scroll {
     position: absolute;
     top: 0;
@@ -191,18 +192,10 @@ img {
 .cloud-layer[data-layer="near"] .cloud-scroll.scrolling {
     animation: cloudDrift 80s linear infinite;
 }
-/* ---- 5. Element Layer ---- */
-.element-layer {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    pointer-events: none;
-    overflow: hidden;
-}
-/* ---- 6. Content Overlay ---- */
+/* ---- 7. Content Overlay ---- */
 .content {
     position: relative;
-    z-index: 10;
+    z-index: 3;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -238,7 +231,7 @@ img {
     max-width: 480px;
     line-height: 1.5;
 }
-/* ---- 7. Buttons ---- */
+/* ---- 8. Buttons ---- */
 .button-group {
     display: flex;
     gap: 0.875rem;
@@ -292,7 +285,23 @@ img {
     background: var(--btn-sec-bg-hover);
     transform: translateY(-1px);
 }
-/* ---- 8. Keyframes ---- */
+/* ---- 9. Element Layer (moon, etc — ALWAYS topmost) ---- */
+.element-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center bottom;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 1.4s ease;
+    pointer-events: none;
+}
+.element-layer.visible {
+    opacity: 1;
+}
+/* ---- 10. Keyframes ---- */
 @keyframes cloudDrift {
     from {
         transform: translateX(-50%);
@@ -301,7 +310,7 @@ img {
         transform: translateX(0%);
     }
 }
-/* ---- 9. Responsive ---- */
+/* ---- 11. Responsive ---- */
 @media (max-width: 640px) {
     .button-group {
         flex-direction: column;
@@ -315,8 +324,15 @@ img {
         margin-bottom: 2rem;
     }
 }
-/* ---- 10. Accessibility — Reduced Motion ---- */
+/* ---- 12. Accessibility — Reduced Motion ---- */
 @media (prefers-reduced-motion: reduce) {
+    .sky-layer,
+    .element-layer,
+    .content {
+        transition-duration: 0.01ms !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
     .cloud-half.left,
     .cloud-half.right {
         transition: none !important;
@@ -328,10 +344,5 @@ img {
     .cloud-scroll.scrolling {
         animation: none !important;
         transform: translateX(-50%) !important;
-    }
-    .content {
-        transition: none !important;
-        opacity: 1 !important;
-        transform: none !important;
     }
 }
