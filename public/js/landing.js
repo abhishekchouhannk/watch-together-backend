@@ -3,45 +3,40 @@
    ============================================
    Layer stack (back → front):
      sky → far clouds → near clouds → content → element (moon)
-   Reveal sequence (sequential, so every layer gets noticed):
-     1. Sky fades in
-     2. Content fades in
-     3. Far-layer clouds merge in (slower, larger sprites)
-     4. Near-layer clouds merge in (after far finishes, slightly faster)
-     5. Element (moon/etc) fades in last, on top of everything
-   Test any theme with:  ?theme=morning | afternoon | evening | night
+   Cloud sizing strategy ("window onto a landscape"):
+     - Each cloud tile's pixel size is derived ONLY from the
+       layer's HEIGHT and the image's natural aspect ratio —
+       never from the viewport's width.
+     - The looping layer uses native CSS `background-repeat: repeat-x`,
+       which tiles perfectly at ANY container width, even narrower
+       than a single tile — eliminating the seam bug entirely.
+     - Drift speed is expressed in px/sec and converted to an
+       animation-duration based on the actual tile width, so
+       clouds appear to move at a constant real-world speed
+       regardless of screen size.
    ============================================ */
 // ─── Theme configuration ────────────────────────────────────────────
 const THEMES = {
-    morning: {
-        name: "morning",
-        motto: "Start your day watching together, anywhere.",
-    },
-    afternoon: {
-        name: "afternoon",
-        motto: "Take a break and watch together, anywhere.",
-    },
-    evening: {
-        name: "evening",
-        motto: "Unwind and watch together, anywhere.",
-    },
-    night: {
-        name: "night",
-        motto: "Movie nights made simple — together, anywhere.",
-    },
+    morning:   { motto: "Start your day watching together, anywhere." },
+    afternoon: { motto: "Take a break and watch together, anywhere." },
+    evening:   { motto: "Unwind and watch together, anywhere." },
+    night:     { motto: "Movie nights made simple — together, anywhere." },
 };
 // ─── Timing constants (ms) ──────────────────────────────────────────
-// Durations for cloud transitions MUST match the CSS transition-duration
-// values for .cloud-half (far = 1000ms, near = 800ms).
 const TIMING = {
     skyFadeDelay: 150,
     contentFadeDelay: 450,
-    farSlideDelay: 400,
-    farSlideDuration: 1000,
-    farToNearGap: -400,        // pause after far finishes, before near starts
-    nearSlideDuration: 200,   // duration for near cloud slide
-    loopActivateGap: 800,     // gap after a slide finishes before swapping to loop
-    elementFadeGap: 450,      // gap after near loop activates before moon appears
+    farSlideDelay: 700,
+    farSlideDuration: 2000,   // must match CSS .cloud-half transition for far
+    farToNearGap: 250,
+    nearSlideDuration: 1600,  // must match CSS .cloud-half transition for near
+    loopActivateGap: 100,
+    elementFadeGap: 450,
+};
+// ─── Drift speed (pixels per second) — constant across all screens ──
+const DRIFT_SPEED = {
+    far: 18,
+    near: 30,
 };
 // ─── Asset path helper ──────────────────────────────────────────────
 function themeAssets(themeName) {
@@ -71,26 +66,57 @@ function getTimeOfDay() {
     if (h >= 17 && h < 20) return "evening";
     return "night";
 }
+/** Preload an image and resolve with the actual <img> element
+ *  (so we can read naturalWidth / naturalHeight). */
 function preloadImage(src) {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        img.onload = () => resolve(src);
+        img.onload = () => resolve(img);
         img.onerror = () => reject(src);
         img.src = src;
     });
 }
-function preloadAllAssets(themeName) {
-    const a = themeAssets(themeName);
-    const urls = [
-        a.sky,
-        a.element,
-        a.far.left, a.far.right, a.far.full,
-        a.near.left, a.near.right, a.near.full,
-    ];
-    return Promise.allSettled(urls.map(preloadImage));
-}
 function delay(ms) {
     return new Promise((r) => setTimeout(r, ms));
+}
+// ─── Per-layer natural dimensions (filled in after preload) ─────────
+const layerNaturalSize = {
+    far: { width: 0, height: 0 },
+    near: { width: 0, height: 0 },
+};
+// ─── Preload everything, capturing cloud dimensions ──────────────────
+async function preloadAllAssets(themeName) {
+    const a = themeAssets(themeName);
+    const entries = [
+        ["sky", a.sky],
+        ["element", a.element],
+        ["farLeft", a.far.left],
+        ["farRight", a.far.right],
+        ["farFull", a.far.full],
+        ["nearLeft", a.near.left],
+        ["nearRight", a.near.right],
+        ["nearFull", a.near.full],
+    ];
+    const results = await Promise.allSettled(
+        entries.map(([, src]) => preloadImage(src))
+    );
+    const loaded = {};
+    entries.forEach(([key], i) => {
+        if (results[i].status === "fulfilled") {
+            loaded[key] = results[i].value;
+        }
+    });
+    // Capture natural pixel dimensions (left/right/full share the
+    // same canvas size, so "full" is a reliable reference).
+    if (loaded.farFull) {
+        layerNaturalSize.far.width = loaded.farFull.naturalWidth;
+        layerNaturalSize.far.height = loaded.farFull.naturalHeight;
+    }
+    if (loaded.nearFull) {
+        layerNaturalSize.near.width = loaded.nearFull.naturalWidth;
+        layerNaturalSize.near.height = loaded.nearFull.naturalHeight;
+    }
+    return loaded;
 }
 // ─── DOM setup ──────────────────────────────────────────────────────
 function applyTheme(themeName) {
@@ -102,14 +128,35 @@ function setCloudSources(layerId, assets) {
     const layer = document.getElementById(layerId);
     layer.querySelector(".cloud-half.left").src = assets.left;
     layer.querySelector(".cloud-half.right").src = assets.right;
-    layer.querySelectorAll(".cloud-full").forEach((img) => {
-        img.src = assets.full;
-    });
+    // Looping layer now uses a CSS background-image (native repeat-x)
+    const scroll = layer.querySelector(".cloud-scroll");
+    scroll.style.backgroundImage = `url("${assets.full}")`;
 }
 function setStaticSources(themeName) {
     const assets = themeAssets(themeName);
     document.getElementById("sky-image").src = assets.sky;
     document.getElementById("element-image").src = assets.element;
+}
+/**
+ * Compute and apply the tile width (px) + animation duration for a
+ * looping cloud layer, based ONLY on the layer's current height and
+ * the image's natural aspect ratio. Call again on resize.
+ */
+function updateTileMetrics(layerId, layerKey) {
+    const layerEl = document.getElementById(layerId);
+    const scroll = layerEl.querySelector(".cloud-scroll");
+    const { width: naturalW, height: naturalH } = layerNaturalSize[layerKey];
+    if (!naturalW || !naturalH) return;
+    const containerHeight = layerEl.clientHeight || window.innerHeight;
+    const tileWidth = naturalW * (containerHeight / naturalH);
+    scroll.style.setProperty("--tile-width", `${tileWidth}px`);
+    const speed = DRIFT_SPEED[layerKey];
+    const duration = tileWidth / speed;
+    scroll.style.animationDuration = `${duration}s`;
+}
+function updateAllTileMetrics() {
+    updateTileMetrics("far-cloud-layer", "far");
+    updateTileMetrics("near-cloud-layer", "near");
 }
 // ─── Animation orchestration ────────────────────────────────────────
 async function runIntro(themeName) {
@@ -118,25 +165,20 @@ async function runIntro(themeName) {
     const content = document.getElementById("content");
     const farLayer = document.getElementById("far-cloud-layer");
     const nearLayer = document.getElementById("near-cloud-layer");
-    // Preload everything, with a small minimum delay so the
-    // bg-color isn't replaced the instant the page paints.
     await Promise.all([preloadAllAssets(themeName), delay(150)]);
-    // ① Sky fades in
+    // Tile metrics depend on natural image size — compute now that
+    // preloading has populated layerNaturalSize.
+    updateAllTileMetrics();
     setTimeout(() => sky.classList.add("visible"), TIMING.skyFadeDelay);
-    // ② Content fades in
     setTimeout(() => content.classList.add("visible"), TIMING.contentFadeDelay);
-    // ③ Far clouds slide in
     const farStart = TIMING.farSlideDelay;
     const farEnd = farStart + TIMING.farSlideDuration;
     setTimeout(() => slideIn(farLayer), farStart);
     setTimeout(() => activateLoop(farLayer), farEnd + TIMING.loopActivateGap);
-    // ④ Near clouds slide in — only once far has finished merging,
-    //    so the user clearly sees each layer arrive in turn.
     const nearStart = farEnd + TIMING.farToNearGap;
     const nearEnd = nearStart + TIMING.nearSlideDuration;
     setTimeout(() => slideIn(nearLayer), nearStart);
     setTimeout(() => activateLoop(nearLayer), nearEnd + TIMING.loopActivateGap);
-    // ⑤ Element (moon/etc) fades in last, on top of everything
     const elementStart = nearEnd + TIMING.loopActivateGap + TIMING.elementFadeGap;
     setTimeout(() => element.classList.add("visible"), elementStart);
 }
@@ -165,6 +207,15 @@ function resetAnimations() {
         scroll.classList.remove("active", "scrolling");
     });
 }
+// ─── Resize handling ────────────────────────────────────────────────
+// Only the layer's HEIGHT affects tile size, so we only need to
+// recompute when height changes (e.g. orientation change, dev-tools
+// resize). A debounce keeps this cheap.
+let resizeTimer = null;
+function onWindowResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(updateAllTileMetrics, 150);
+}
 // ─── Boot ───────────────────────────────────────────────────────────
 function init() {
     const time = getTimeOfDay();
@@ -180,6 +231,7 @@ if (document.readyState === "loading") {
 } else {
     init();
 }
+window.addEventListener("resize", onWindowResize);
 window.addEventListener("pageshow", (e) => {
     if (e.persisted) {
         resetAnimations();

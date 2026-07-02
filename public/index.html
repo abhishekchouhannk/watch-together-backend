@@ -14,7 +14,7 @@
 </head>
 <body>
     <main id="landing" class="landing">
-        <!-- ═══ Sky (bottom-most visual layer, sits on top of the bg-color) ═══ -->
+        <!-- ═══ Sky ═══ -->
         <img class="sky-layer" id="sky-image" draggable="false" alt="" />
         <!-- ═══ Far Cloud Layer ═══ -->
         <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
@@ -22,10 +22,8 @@
                 <img class="cloud-half left" draggable="false" alt="" />
                 <img class="cloud-half right" draggable="false" alt="" />
             </div>
-            <div class="cloud-scroll">
-                <img class="cloud-full" draggable="false" alt="" />
-                <img class="cloud-full" draggable="false" alt="" />
-            </div>
+            <!-- background-image set via JS; tiles natively with repeat-x -->
+            <div class="cloud-scroll"></div>
         </div>
         <!-- ═══ Near Cloud Layer ═══ -->
         <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
@@ -33,10 +31,7 @@
                 <img class="cloud-half left" draggable="false" alt="" />
                 <img class="cloud-half right" draggable="false" alt="" />
             </div>
-            <div class="cloud-scroll">
-                <img class="cloud-full" draggable="false" alt="" />
-                <img class="cloud-full" draggable="false" alt="" />
-            </div>
+            <div class="cloud-scroll"></div>
         </div>
         <!-- ═══ Content Overlay ═══ -->
         <div class="content" id="content">
@@ -51,7 +46,7 @@
                 </button>
             </div>
         </div>
-        <!-- ═══ Element Layer (moon/etc — always topmost) ═══ -->
+        <!-- ═══ Element Layer (topmost) ═══ -->
         <img class="element-layer" id="element-image" draggable="false" alt="" />
     </main>
     <script src="/js/landing.js"></script>
