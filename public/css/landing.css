@@ -130,12 +130,10 @@ img {
 /*
  * ── Intro: two FULL-SIZE sprites that slide in and OVERLAP ──
  *
- * IMPORTANT: sized by HEIGHT only (width: auto), never by the
- * viewport's width. This means the rendered pixel size of the
- * cloud art is constant for a given window HEIGHT — shrinking
- * or growing the window WIDTH never rescales the artwork, it
- * only changes how much of it is visible (like a window onto
- * a fixed landscape).
+ * object-fit: cover guarantees the sprite ALWAYS fully covers the
+ * viewport (no edge/border gap), regardless of window aspect ratio.
+ * This matches background-size: cover used below for the loop, so
+ * the two stay pixel-consistent and the swap remains seamless.
  */
 .cloud-intro {
     position: absolute;
@@ -143,10 +141,11 @@ img {
 }
 .cloud-half {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
+    width: 100%;
     height: 100%;
-    width: auto; /* intrinsic aspect ratio — NOT tied to container width */
+    object-fit: cover;
+    object-position: center bottom;
 }
 .cloud-half.left {
     transform: translateX(-100%);
@@ -169,27 +168,22 @@ img {
 /*
  * ── Scroll: seamless infinite drift via native background tiling ──
  *
- * background-size: auto 100%  → tile height = container height,
- *                                tile width = natural aspect ratio
- *                                (computed by the browser, same
- *                                logic as the intro halves above)
+ * background-size: cover → the browser computes a single "tile" box
+ *   that fully covers the layer with no distortion (identical
+ *   scaling math to object-fit: cover above).
+ * background-repeat: repeat-x → additional copies of that exact
+ *   same tile are placed edge-to-edge — no seams, no gaps, and no
+ *   flex-child rounding artifacts (single element, not two).
  *
- * background-repeat: repeat-x → the browser tiles this horizontally
- *                                as many times as needed to fill ANY
- *                                container width, with zero seams,
- *                                even if the container is narrower
- *                                than a single tile.
- *
- * --tile-width is set by JS (see landing.js) so the keyframe can
- * shift by EXACTLY one tile width — guaranteeing a perfect,
- * invisible loop reset regardless of screen size.
+ * --tile-width is computed in JS using the SAME cover formula, just
+ * so the keyframe can shift by exactly one tile width.
  */
 .cloud-scroll {
     position: absolute;
     inset: 0;
     background-repeat: repeat-x;
     background-position: left bottom;
-    background-size: auto 100%;
+    background-size: cover;
     visibility: hidden;
     will-change: background-position;
 }
@@ -201,7 +195,6 @@ img {
         background-position-x: 0;
     }
     to {
-        /* fallback 100vw if JS hasn't set --tile-width yet */
         background-position-x: var(--tile-width, 100vw);
     }
 }
@@ -209,9 +202,7 @@ img {
     animation-name: cloudDriftBg;
     animation-timing-function: linear;
     animation-iteration-count: infinite;
-    /* animation-duration is set inline by JS, scaled to the
-       actual tile width so drift SPEED (px/sec) stays constant
-       across all screen sizes */
+    /* animation-duration set inline by JS based on actual tile width */
 }
 /* ---- 7. Content Overlay ---- */
 .content {

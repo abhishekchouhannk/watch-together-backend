@@ -3,17 +3,14 @@
    ============================================
    Layer stack (back → front):
      sky → far clouds → near clouds → content → element (moon)
-   Cloud sizing strategy ("window onto a landscape"):
-     - Each cloud tile's pixel size is derived ONLY from the
-       layer's HEIGHT and the image's natural aspect ratio —
-       never from the viewport's width.
-     - The looping layer uses native CSS `background-repeat: repeat-x`,
-       which tiles perfectly at ANY container width, even narrower
-       than a single tile — eliminating the seam bug entirely.
-     - Drift speed is expressed in px/sec and converted to an
-       animation-duration based on the actual tile width, so
-       clouds appear to move at a constant real-world speed
-       regardless of screen size.
+   Cloud sizing: object-fit/background-size: cover — guarantees full
+   viewport coverage (no edge gaps) with zero distortion. The loop
+   uses a SINGLE element with native background-repeat: repeat-x,
+   so there's no flex-child rounding seam. JS mirrors the exact same
+   "cover" scale formula purely to know the tile's pixel width, so
+   the drift animation resets after precisely one tile.
+   Parallax timing: near layer starts shortly AFTER the far layer
+   *starts* (not after it finishes) so both visibly move together.
    ============================================ */
 // ─── Theme configuration ────────────────────────────────────────────
 const THEMES = {
@@ -26,12 +23,12 @@ const THEMES = {
 const TIMING = {
     skyFadeDelay: 150,
     contentFadeDelay: 450,
-    farSlideDelay: 700,
-    farSlideDuration: 2000,   // must match CSS .cloud-half transition for far
-    farToNearGap: 250,
-    nearSlideDuration: 1600,  // must match CSS .cloud-half transition for near
-    loopActivateGap: 100,
-    elementFadeGap: 450,
+    farSlideDelay: 700,        // far layer starts sliding at this point
+    nearStaggerGap: 120,       // near starts this long AFTER far starts (parallax feel)
+    farSlideDuration: 2000,    // must match CSS .cloud-half transition for far
+    nearSlideDuration: 1600,   // must match CSS .cloud-half transition for near
+    loopActivateGap: 100,      // gap after a slide finishes before swapping to loop
+    elementFadeGap: 450,       // gap after both loops are active before moon appears
 };
 // ─── Drift speed (pixels per second) — constant across all screens ──
 const DRIFT_SPEED = {
@@ -66,8 +63,6 @@ function getTimeOfDay() {
     if (h >= 17 && h < 20) return "evening";
     return "night";
 }
-/** Preload an image and resolve with the actual <img> element
- *  (so we can read naturalWidth / naturalHeight). */
 function preloadImage(src) {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -84,7 +79,6 @@ const layerNaturalSize = {
     far: { width: 0, height: 0 },
     near: { width: 0, height: 0 },
 };
-// ─── Preload everything, capturing cloud dimensions ──────────────────
 async function preloadAllAssets(themeName) {
     const a = themeAssets(themeName);
     const entries = [
@@ -106,8 +100,6 @@ async function preloadAllAssets(themeName) {
             loaded[key] = results[i].value;
         }
     });
-    // Capture natural pixel dimensions (left/right/full share the
-    // same canvas size, so "full" is a reliable reference).
     if (loaded.farFull) {
         layerNaturalSize.far.width = loaded.farFull.naturalWidth;
         layerNaturalSize.far.height = loaded.farFull.naturalHeight;
@@ -128,7 +120,6 @@ function setCloudSources(layerId, assets) {
     const layer = document.getElementById(layerId);
     layer.querySelector(".cloud-half.left").src = assets.left;
     layer.querySelector(".cloud-half.right").src = assets.right;
-    // Looping layer now uses a CSS background-image (native repeat-x)
     const scroll = layer.querySelector(".cloud-scroll");
     scroll.style.backgroundImage = `url("${assets.full}")`;
 }
@@ -138,17 +129,24 @@ function setStaticSources(themeName) {
     document.getElementById("element-image").src = assets.element;
 }
 /**
- * Compute and apply the tile width (px) + animation duration for a
- * looping cloud layer, based ONLY on the layer's current height and
- * the image's natural aspect ratio. Call again on resize.
+ * Compute the rendered "cover" tile width (px) for a layer — i.e.
+ * the exact same scale the browser applies via object-fit/background-
+ * size: cover — then use it to drive the drift animation's distance
+ * and duration (so speed stays constant across screen sizes).
  */
 function updateTileMetrics(layerId, layerKey) {
     const layerEl = document.getElementById(layerId);
     const scroll = layerEl.querySelector(".cloud-scroll");
     const { width: naturalW, height: naturalH } = layerNaturalSize[layerKey];
     if (!naturalW || !naturalH) return;
+    const containerWidth = layerEl.clientWidth || window.innerWidth;
     const containerHeight = layerEl.clientHeight || window.innerHeight;
-    const tileWidth = naturalW * (containerHeight / naturalH);
+    // Same formula as CSS "cover": scale by whichever axis needs more
+    const scale = Math.max(
+        containerWidth / naturalW,
+        containerHeight / naturalH
+    );
+    const tileWidth = naturalW * scale;
     scroll.style.setProperty("--tile-width", `${tileWidth}px`);
     const speed = DRIFT_SPEED[layerKey];
     const duration = tileWidth / speed;
@@ -166,21 +164,20 @@ async function runIntro(themeName) {
     const farLayer = document.getElementById("far-cloud-layer");
     const nearLayer = document.getElementById("near-cloud-layer");
     await Promise.all([preloadAllAssets(themeName), delay(150)]);
-    // Tile metrics depend on natural image size — compute now that
-    // preloading has populated layerNaturalSize.
     updateAllTileMetrics();
     setTimeout(() => sky.classList.add("visible"), TIMING.skyFadeDelay);
     setTimeout(() => content.classList.add("visible"), TIMING.contentFadeDelay);
+    // Parallax: near starts shortly AFTER far starts — not after far ends.
     const farStart = TIMING.farSlideDelay;
+    const nearStart = farStart + TIMING.nearStaggerGap;
     const farEnd = farStart + TIMING.farSlideDuration;
-    setTimeout(() => slideIn(farLayer), farStart);
-    setTimeout(() => activateLoop(farLayer), farEnd + TIMING.loopActivateGap);
-    const nearStart = farEnd + TIMING.farToNearGap;
     const nearEnd = nearStart + TIMING.nearSlideDuration;
+    setTimeout(() => slideIn(farLayer), farStart);
     setTimeout(() => slideIn(nearLayer), nearStart);
+    setTimeout(() => activateLoop(farLayer), farEnd + TIMING.loopActivateGap);
     setTimeout(() => activateLoop(nearLayer), nearEnd + TIMING.loopActivateGap);
-    const elementStart = nearEnd + TIMING.loopActivateGap + TIMING.elementFadeGap;
-    setTimeout(() => element.classList.add("visible"), elementStart);
+    const bothDone = Math.max(farEnd, nearEnd) + TIMING.loopActivateGap;
+    setTimeout(() => element.classList.add("visible"), bothDone + TIMING.elementFadeGap);
 }
 function slideIn(layerEl) {
     layerEl.querySelectorAll(".cloud-half").forEach((el) => {
@@ -208,9 +205,8 @@ function resetAnimations() {
     });
 }
 // ─── Resize handling ────────────────────────────────────────────────
-// Only the layer's HEIGHT affects tile size, so we only need to
-// recompute when height changes (e.g. orientation change, dev-tools
-// resize). A debounce keeps this cheap.
+// "cover" scaling depends on BOTH width and height, so recompute on
+// any resize (debounced).
 let resizeTimer = null;
 function onWindowResize() {
     clearTimeout(resizeTimer);
