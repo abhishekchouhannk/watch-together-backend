@@ -32,15 +32,15 @@ const THEMES = {
 };
 // ─── Timing constants (ms) ──────────────────────────────────────────
 // Durations for cloud transitions MUST match the CSS transition-duration
-// values for .cloud-half (far = 2000ms, near = 1600ms).
+// values for .cloud-half (far = 1000ms, near = 800ms).
 const TIMING = {
     skyFadeDelay: 150,
     contentFadeDelay: 450,
-    farSlideDelay: 700,
-    farSlideDuration: 2000,
-    farToNearGap: 250,        // pause after far finishes, before near starts
-    nearSlideDuration: 1600,
-    loopActivateGap: 100,     // gap after a slide finishes before swapping to loop
+    farSlideDelay: 400,
+    farSlideDuration: 1000,
+    farToNearGap: -400,        // pause after far finishes, before near starts
+    nearSlideDuration: 200,   // duration for near cloud slide
+    loopActivateGap: 800,     // gap after a slide finishes before swapping to loop
     elementFadeGap: 450,      // gap after near loop activates before moon appears
 };
 // ─── Asset path helper ──────────────────────────────────────────────
