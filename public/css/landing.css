@@ -23,10 +23,9 @@ body {
 }
 img {
     display: block;
-    max-width: none; /* cloud images intentionally overflow */
+    max-width: none;
 }
 /* ---- 2. Theme Variables ---- */
-/* Morning — warm pinks, soft sunrise */
 .landing[data-theme="morning"] {
     --bg: linear-gradient(180deg, #fbcfe8 0%, #ffe4e6 50%, #bfdbfe 100%);
     --text-color: #881337;
@@ -41,7 +40,6 @@ img {
     --btn-sec-border: transparent;
     --btn-sec-border-w: 0px;
 }
-/* Afternoon — bright sky, sunny */
 .landing[data-theme="afternoon"] {
     --bg: #7dd3fc;
     --text-color: #0c4a6e;
@@ -56,7 +54,6 @@ img {
     --btn-sec-border: #93c5fd;
     --btn-sec-border-w: 1px;
 }
-/* Evening — purple-pink sunset */
 .landing[data-theme="evening"] {
     --bg: linear-gradient(180deg, #c084fc 0%, #f9a8d4 50%, #fdba74 100%);
     --text-color: #ec4899;
@@ -71,7 +68,6 @@ img {
     --btn-sec-border: transparent;
     --btn-sec-border-w: 0px;
 }
-/* Night — deep indigo, starry */
 .landing[data-theme="night"] {
     --bg: linear-gradient(180deg, #312e81 0%, #1e3a8a 100%);
     --text-color: #ffffff;
@@ -95,14 +91,6 @@ img {
     overflow: hidden;
 }
 /* ---- 4. Cloud Layers ---- */
-/*
- * Each cloud layer holds two sub-containers:
- *   .cloud-intro  — the left/right halves that slide in once
- *   .cloud-scroll  — two copies of full.png for the infinite drift
- *
- * z-order (back → front):
- *   far clouds (1) → element layer (2) → near clouds (3) → content (10)
- */
 .cloud-layer {
     position: absolute;
     inset: 0;
@@ -116,52 +104,65 @@ img {
 .cloud-layer[data-layer="near"] {
     z-index: 3;
 }
-/* -- Intro: the two halves that slide in -- */
+/*
+ * ── Intro: two FULL-SIZE sprites that slide in and OVERLAP ──
+ *
+ * left.png and right.png are the SAME resolution as full.png.
+ * left.png  = full image with the right portion erased (transparent)
+ * right.png = full image with the left portion erased (transparent)
+ *
+ * Both are absolutely positioned at the same spot.
+ * left.png  slides in from off-screen LEFT   → translateX(0)
+ * right.png slides in from off-screen RIGHT  → translateX(0)
+ *
+ * At translateX(0) they stack perfectly and together
+ * reproduce full.png — the swap is invisible.
+ */
 .cloud-intro {
     position: absolute;
     inset: 0;
-    display: flex;
+    /* NOT flex — children are stacked, not side-by-side */
 }
 .cloud-half {
-    width: 50%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
     height: 100%;
     object-fit: cover;
     object-position: center bottom;
 }
-/*
- * Starting positions — pushed completely offscreen.
- * The extra 10% guarantees no sub-pixel edge peeking.
- */
 .cloud-half.left {
-    transform: translateX(-110%);
+    transform: translateX(-100%);
     transition: transform 2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .cloud-half.right {
-    transform: translateX(110%);
+    transform: translateX(100%);
     transition: transform 2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-/* Near-layer halves slide a little faster for depth contrast */
+/* Near layer slides a touch faster for depth contrast */
 .cloud-layer[data-layer="near"] .cloud-half.left,
 .cloud-layer[data-layer="near"] .cloud-half.right {
     transition-duration: 1.6s;
 }
-/* Final positions — the two halves meet to form the full panorama */
+/* Final resting position — both images stacked at the same spot */
 .cloud-half.left.slide-in {
     transform: translateX(0);
 }
 .cloud-half.right.slide-in {
     transform: translateX(0);
 }
-/* -- Scroll: seamless infinite loop -- */
 /*
- * Contains TWO copies of full.png side-by-side (width 200%).
- * At translateX(-50%) the viewport shows the 2nd copy,
- * which is identical to the 1st — this is the "resting" state
- * that matches the intro halves perfectly.
+ * ── Scroll: seamless infinite drift ──
  *
- * The drift animation moves from -50% → 0%, sliding the
- * visible window to the right.  Because both copies are
- * identical the reset is invisible.
+ * Two copies of full.png in a 200%-wide container.
+ * At translateX(-50%) the viewport shows copy 2.
+ * The animation drifts to translateX(0%) showing copy 1.
+ * Both are identical → the loop reset is invisible.
+ *
+ * Each copy is rendered at 50% of the 200% container = 100vw,
+ * so it gets the exact same object-fit scaling as the intro
+ * images above — guaranteeing a pixel-perfect swap.
  */
 .cloud-scroll {
     position: absolute;
@@ -178,17 +179,15 @@ img {
     visibility: visible;
 }
 .cloud-full {
-    flex: 0 0 50%;       /* 50% of 200% container = 100vw */
+    flex: 0 0 50%;
     width: 50%;
     height: 100%;
     object-fit: cover;
     object-position: center bottom;
 }
-/* Far layer drifts slowly — feels distant */
 .cloud-layer[data-layer="far"] .cloud-scroll.scrolling {
     animation: cloudDrift 120s linear infinite;
 }
-/* Near layer drifts faster — feels closer */
 .cloud-layer[data-layer="near"] .cloud-scroll.scrolling {
     animation: cloudDrift 80s linear infinite;
 }
@@ -213,7 +212,6 @@ img {
     padding: 2rem;
     text-align: center;
     color: var(--text-color);
-    /* starts hidden, JS adds .visible */
     opacity: 0;
     transform: translateY(28px);
     transition:
@@ -273,7 +271,6 @@ img {
 .btn:active {
     transform: scale(0.96) translateY(0) !important;
 }
-/* Primary */
 .btn-primary {
     background: var(--btn-pri-bg);
     color: var(--btn-pri-text);
@@ -284,7 +281,6 @@ img {
     box-shadow: 0 6px 24px var(--btn-pri-shadow);
     transform: translateY(-1px);
 }
-/* Secondary */
 .btn-secondary {
     background: var(--btn-sec-bg);
     color: var(--btn-sec-text);
@@ -297,13 +293,6 @@ img {
     transform: translateY(-1px);
 }
 /* ---- 8. Keyframes ---- */
-/*
- * Drift direction: LEFT → RIGHT (clouds move rightward).
- *
- * At -50%  the container is shifted left by 100 vw → viewport sees copy 2.
- * At  0%   the container is at origin             → viewport sees copy 1.
- * Both copies are the same image, so the loop is seamless.
- */
 @keyframes cloudDrift {
     from {
         transform: translateX(-50%);
@@ -328,7 +317,6 @@ img {
 }
 /* ---- 10. Accessibility — Reduced Motion ---- */
 @media (prefers-reduced-motion: reduce) {
-    /* Kill all motion but keep content visible */
     .cloud-half.left,
     .cloud-half.right {
         transition: none !important;
