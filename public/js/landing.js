@@ -23,8 +23,8 @@ const THEMES = {
 const TIMING = {
     skyFadeDelay: 150,
     contentFadeDelay: 450,
-    farSlideDelay: 700,        // far layer starts sliding at this point
-    nearStaggerGap: 120,       // near starts this long AFTER far starts (parallax feel)
+    farSlideDelay: 400,        // far layer starts sliding at this point
+    nearStaggerGap: 500,       // near starts this long AFTER far starts (parallax feel)
     farSlideDuration: 2000,    // must match CSS .cloud-half transition for far
     nearSlideDuration: 1600,   // must match CSS .cloud-half transition for near
     loopActivateGap: 100,      // gap after a slide finishes before swapping to loop
