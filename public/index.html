@@ -16,13 +16,14 @@
     <main id="landing" class="landing">
         <!-- ═══ Sky ═══ -->
         <img class="sky-layer" id="sky-image" draggable="false" alt="" />
+        <!-- ═══ Element Layer (celestial body + particles, behind clouds) ═══ -->
+        <div class="element-layer" id="element-layer"></div>
         <!-- ═══ Far Cloud Layer ═══ -->
         <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
             <div class="cloud-intro">
                 <img class="cloud-half left" draggable="false" alt="" />
                 <img class="cloud-half right" draggable="false" alt="" />
             </div>
-            <!-- background-image set via JS; tiles natively with repeat-x -->
             <div class="cloud-scroll"></div>
         </div>
         <!-- ═══ Near Cloud Layer ═══ -->
@@ -46,8 +47,6 @@
                 </button>
             </div>
         </div>
-        <!-- ═══ Element Layer (topmost) ═══ -->
-        <img class="element-layer" id="element-image" draggable="false" alt="" />
     </main>
     <script src="/js/landing.js"></script>
 </body>

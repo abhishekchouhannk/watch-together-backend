@@ -92,7 +92,7 @@ img {
 }
 /* ---- 4. Layer Stack (z-index reference) ----
    0  sky            — background image, sits above bg-color
-   1  element        — moon/etc, always topmost
+   1  element        — celestial body & particles, behind clouds
    2  far clouds     — distant parallax layer
    3  near clouds    — closer parallax layer
    4  content        — title / motto / buttons
@@ -127,14 +127,6 @@ img {
 .cloud-layer[data-layer="near"] {
     z-index: 3;
 }
-/*
- * ── Intro: two FULL-SIZE sprites that slide in and OVERLAP ──
- *
- * object-fit: cover guarantees the sprite ALWAYS fully covers the
- * viewport (no edge/border gap), regardless of window aspect ratio.
- * This matches background-size: cover used below for the loop, so
- * the two stay pixel-consistent and the swap remains seamless.
- */
 .cloud-intro {
     position: absolute;
     inset: 0;
@@ -165,19 +157,6 @@ img {
 .cloud-half.right.slide-in {
     transform: translateX(0);
 }
-/*
- * ── Scroll: seamless infinite drift via native background tiling ──
- *
- * background-size: cover → the browser computes a single "tile" box
- *   that fully covers the layer with no distortion (identical
- *   scaling math to object-fit: cover above).
- * background-repeat: repeat-x → additional copies of that exact
- *   same tile are placed edge-to-edge — no seams, no gaps, and no
- *   flex-child rounding artifacts (single element, not two).
- *
- * --tile-width is computed in JS using the SAME cover formula, just
- * so the keyframe can shift by exactly one tile width.
- */
 .cloud-scroll {
     position: absolute;
     inset: 0;
@@ -202,7 +181,6 @@ img {
     animation-name: cloudDriftBg;
     animation-timing-function: linear;
     animation-iteration-count: infinite;
-    /* animation-duration set inline by JS based on actual tile width */
 }
 /* ---- 7. Content Overlay ---- */
 .content {
@@ -297,23 +275,183 @@ img {
     background: var(--btn-sec-bg-hover);
     transform: translateY(-1px);
 }
-/* ---- 9. Element Layer (moon, etc — ALWAYS topmost) ---- */
+/* ---- 9. Element Layer (container for dynamic celestial elements) ---- */
 .element-layer {
     position: absolute;
     inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    /* No overflow:hidden — .landing clips; bodies must start off-screen */
+}
+/* ---- 10. Element Sprites (pixel-art celestial bodies) ---- */
+.element-sprite {
+    position: absolute;
+    pointer-events: none;
+    aspect-ratio: 1;
+}
+/*
+ * image-rendering: pixelated keeps the pixel-art crisp when CSS
+ * scales the canvas beyond its native resolution.
+ */
+.element-sprite canvas {
+    display: block;
     width: 100%;
     height: 100%;
-    object-fit: cover;
-    object-position: center bottom;
-    z-index: 1;
-    opacity: 0;
-    transition: opacity 1.4s ease;
-    pointer-events: none;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
 }
-.element-layer.visible {
+/* ── Moon (Night) — drops from above ── */
+.moon {
+    width: clamp(80px, 10vw, 130px);
+    top: 12%;
+    right: 18%;
+    transform: translateY(-150vh);
+    opacity: 0;
+    filter: drop-shadow(0 0 0px rgba(255, 255, 200, 0));
+    transition:
+        transform 3s cubic-bezier(0.25, 1, 0.3, 1),
+        opacity 0.5s ease,
+        filter 2s ease-in-out;
+}
+.moon.animate-in {
+    transform: translateY(0);
     opacity: 1;
 }
-/* ---- 10. Responsive ---- */
+.moon.glowing {
+    filter: drop-shadow(0 0 10px rgba(255, 255, 200, 0.8));
+}
+.moon.glowing canvas {
+    animation: moonGlowPulse 3s ease-in-out infinite;
+}
+@keyframes moonGlowPulse {
+    0%, 100% {
+        filter: drop-shadow(0 0 6px rgba(255, 255, 200, 0.6));
+    }
+    50% {
+        filter: drop-shadow(0 0 14px rgba(255, 255, 200, 0.95));
+    }
+}
+/* ── Sun — Morning (rises from below) ── */
+.sun-morning {
+    width: clamp(90px, 12vw, 150px);
+    top: 15%;
+    right: 12%;
+    transform: translateY(150vh);
+    opacity: 0;
+    filter: drop-shadow(0 0 0px rgba(255, 200, 50, 0));
+    transition:
+        transform 3s cubic-bezier(0.25, 1, 0.3, 1),
+        opacity 0.5s ease,
+        filter 2s ease-in-out;
+}
+.sun-morning.animate-in {
+    transform: translateY(0);
+    opacity: 1;
+}
+.sun-morning.glowing {
+    filter: drop-shadow(0 0 14px rgba(255, 200, 50, 0.7));
+}
+.sun-morning.glowing canvas {
+    animation: sunMorningGlow 4s ease-in-out infinite;
+}
+@keyframes sunMorningGlow {
+    0%, 100% {
+        filter: drop-shadow(0 0 8px rgba(255, 200, 50, 0.5));
+    }
+    50% {
+        filter: drop-shadow(0 0 20px rgba(255, 220, 80, 0.85));
+    }
+}
+/* ── Sun — Afternoon (scales in from center-top) ── */
+.sun-afternoon {
+    width: clamp(100px, 14vw, 170px);
+    top: 8%;
+    left: 50%;
+    transform: translateX(-50%) scale(0);
+    opacity: 0;
+    filter: drop-shadow(0 0 0px rgba(255, 240, 100, 0));
+    transition:
+        transform 2s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 0.8s ease,
+        filter 1.5s ease-in-out;
+}
+.sun-afternoon.animate-in {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+}
+.sun-afternoon.glowing {
+    filter: drop-shadow(0 0 18px rgba(255, 240, 100, 0.8));
+}
+.sun-afternoon.glowing canvas {
+    animation: sunAfternoonGlow 3.5s ease-in-out infinite;
+}
+@keyframes sunAfternoonGlow {
+    0%, 100% {
+        filter: drop-shadow(0 0 10px rgba(255, 240, 100, 0.6));
+    }
+    50% {
+        filter: drop-shadow(0 0 24px rgba(255, 255, 150, 0.95));
+    }
+}
+/* ── Sun — Evening (fades in at position) ── */
+.sun-evening {
+    width: clamp(85px, 11vw, 140px);
+    top: 30%;
+    left: 15%;
+    opacity: 0;
+    filter: drop-shadow(0 0 0px rgba(255, 120, 50, 0));
+    transition:
+        opacity 2.5s ease,
+        filter 2s ease-in-out;
+}
+.sun-evening.animate-in {
+    opacity: 1;
+}
+.sun-evening.glowing {
+    filter: drop-shadow(0 0 14px rgba(255, 120, 50, 0.8));
+}
+.sun-evening.glowing canvas {
+    animation: sunEveningGlow 4s ease-in-out infinite;
+}
+@keyframes sunEveningGlow {
+    0%, 100% {
+        filter: drop-shadow(0 0 8px rgba(255, 120, 50, 0.5));
+    }
+    50% {
+        filter: drop-shadow(0 0 18px rgba(255, 140, 70, 0.9));
+    }
+}
+/* ---- 11. Particle System (stars / sparkles) ---- */
+.particle-field {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 2s ease;
+}
+.particle-field.visible {
+    opacity: 1;
+}
+.particle {
+    position: absolute;
+    border-radius: 50%;
+}
+.star {
+    background: #ffffff;
+    box-shadow: 0 0 2px rgba(255, 255, 255, 0.6);
+    animation: twinkle 3s ease-in-out infinite;
+}
+@keyframes twinkle {
+    0%, 100% {
+        opacity: 0.2;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.3);
+    }
+}
+/* ---- 12. Responsive ---- */
 @media (max-width: 640px) {
     .button-group {
         flex-direction: column;
@@ -327,15 +465,16 @@ img {
         margin-bottom: 2rem;
     }
 }
-/* ---- 11. Accessibility — Reduced Motion ---- */
+/* ---- 13. Accessibility — Reduced Motion ---- */
 @media (prefers-reduced-motion: reduce) {
+    /* Sky + content: instant visibility */
     .sky-layer,
-    .element-layer,
     .content {
         transition-duration: 0.01ms !important;
         opacity: 1 !important;
         transform: none !important;
     }
+    /* Clouds: skip intro slide, show static loop */
     .cloud-half.left,
     .cloud-half.right {
         transition: none !important;
@@ -347,5 +486,33 @@ img {
     .cloud-scroll.scrolling {
         animation: none !important;
         background-position-x: 0 !important;
+    }
+    /* Celestial bodies: show at final position, no motion */
+    .element-sprite {
+        transition: none !important;
+        opacity: 1 !important;
+    }
+    .moon {
+        transform: translateY(0) !important;
+    }
+    .sun-morning {
+        transform: translateY(0) !important;
+    }
+    .sun-afternoon {
+        transform: translateX(-50%) scale(1) !important;
+    }
+    /* sun-evening has no transform to reset */
+    /* Disable glow pulse; keep static glow */
+    .element-sprite canvas {
+        animation: none !important;
+    }
+    /* Particles: visible + static */
+    .particle-field {
+        transition: none !important;
+        opacity: 1 !important;
+    }
+    .particle {
+        animation: none !important;
+        opacity: 0.6 !important;
     }
 }
