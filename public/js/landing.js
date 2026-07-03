@@ -2,7 +2,7 @@
    Watch Together — Landing Page Controller
    ============================================
    Layer stack (back → front):
-     sky → element (moon/sun + particles) → far clouds → near clouds → content
+     sky → starry-sky canvas + celestial body → far clouds → near clouds → content
    Cloud sizing uses object-fit / background-size: cover for seamless
    full-viewport coverage. The loop is a SINGLE element with native
    background-repeat: repeat-x. JS mirrors the cover formula purely
@@ -10,9 +10,15 @@
    Parallax timing: the near cloud layer starts shortly AFTER the far
    layer *starts* (not after it finishes) so both visibly move together.
    Theme elements: each time-of-day has a canvas-drawn pixel-art
-   celestial body (moon or sun) with optional particle effects (stars).
-   These sit at z-index 1 — behind both cloud layers — for natural
-   atmospheric depth.
+   celestial body (moon or sun). Morning, evening, and night also
+   get a full-viewport starry-sky canvas with smooth per-star twinkle
+   and (for night) shooting star effects. All of these sit at z-index 1
+   — behind both cloud layers — for natural atmospheric depth.
+   Starry sky resize strategy: stars are stored in absolute pixel
+   coordinates and are NEVER removed. When the viewport shrinks the
+   off-screen stars are simply clipped. When the viewport grows, new
+   stars are generated proportionally to fill only the expanded region,
+   keeping existing stars perfectly stable.
    ============================================ */
 // ─── Theme configuration ────────────────────────────────────────────
 const THEMES = {
@@ -25,21 +31,22 @@ const THEMES = {
 const TIMING = {
     skyFadeDelay:       150,
     contentFadeDelay:   450,
-    farSlideDelay:      400,       // far cloud intro starts
-    nearStaggerGap:     500,       // near starts this long AFTER far starts
-    farSlideDuration:   2000,      // must match CSS transition for far
-    nearSlideDuration:  1600,      // must match CSS transition for near
-    loopActivateGap:    100,       // gap after a slide finishes before loop swap
-    elementAnimateGap:  0,       // gap after both loops run before element enters
+    farSlideDelay:      400,
+    nearStaggerGap:     500,
+    farSlideDuration:   2000,
+    nearSlideDuration:  1600,
+    loopActivateGap:    100,
+    elementAnimateGap:  450,
 };
-// ─── Drift speed (px / s) — constant across all viewport sizes ──────
+// ─── Drift speed (px / s) ──────────────────────────────────────────
 const DRIFT_SPEED = { far: 18, near: 30 };
 // ─── Theme element definitions ──────────────────────────────────────
 //
-// body.draw(ctx, canvasSize, pixelSize) renders the pixel-art shape.
-// body.className maps to CSS that controls position, entrance, & glow.
-// body.glowDelay (ms from entrance start) is when the glow kicks in.
-// particles (optional) scatters animated dots (stars / sparkles).
+// body   — pixel-art celestial body drawn on a small canvas.
+// starrySky — full-viewport canvas star field (null = no stars).
+//   baseCount: reference star count (scaled by density multiplier).
+//   density: 'sparse' | 'normal' | 'dense' → ×0.6 / ×1 / ×1.5.
+//   showShootingStars: enable random shooting-star streaks.
 const THEME_ELEMENTS = {
     morning: {
         body: {
@@ -49,7 +56,11 @@ const THEME_ELEMENTS = {
             className:  "sun-morning",
             glowDelay:  3200,
         },
-        particles: null,
+        starrySky: {
+            baseCount: 80,
+            density: "sparse",
+            showShootingStars: false,
+        },
     },
     afternoon: {
         body: {
@@ -59,7 +70,7 @@ const THEME_ELEMENTS = {
             className:  "sun-afternoon",
             glowDelay:  2500,
         },
-        particles: null,
+        starrySky: null,
     },
     evening: {
         body: {
@@ -69,10 +80,10 @@ const THEME_ELEMENTS = {
             className:  "sun-evening",
             glowDelay:  1500,
         },
-        particles: {
-            count: 18, className: "star",
-            yMax: 50, sizeMin: 1.5, sizeMax: 2.5,
-            durationMin: 2.5, durationMax: 4.5,
+        starrySky: {
+            baseCount: 80,
+            density: "normal",
+            showShootingStars: false,
         },
     },
     night: {
@@ -83,10 +94,10 @@ const THEME_ELEMENTS = {
             className:  "moon",
             glowDelay:  3200,
         },
-        particles: {
-            count: 30, className: "star",
-            yMax: 55, sizeMin: 1.5, sizeMax: 3,
-            durationMin: 2, durationMax: 4,
+        starrySky: {
+            baseCount: 80,
+            density: "dense",
+            showShootingStars: true,
         },
     },
 };
@@ -162,10 +173,7 @@ async function preloadAllAssets(themeName) {
     return loaded;
 }
 // ─── Canvas drawing — pixel-art celestial bodies ────────────────────
-/**
- * Draw a pixelated moon with subtle craters.
- * Matches the original React PixelMoon component's rendering.
- */
+/** Pixelated moon with subtle craters. */
 function drawMoon(ctx, canvasSize, pixelSize) {
     const grid   = Math.floor(canvasSize / pixelSize);
     const center = grid / 2;
@@ -195,9 +203,7 @@ function drawMoon(ctx, canvasSize, pixelSize) {
         }
     }
 }
-/**
- * Draw a pixelated sun with a bright inner zone and warmer outer ring.
- */
+/** Pixelated sun with bright inner / warmer outer zone. */
 function drawSun(ctx, canvasSize, pixelSize, innerColor, outerColor) {
     const grid        = Math.floor(canvasSize / pixelSize);
     const center      = grid / 2;
@@ -213,68 +219,336 @@ function drawSun(ctx, canvasSize, pixelSize, innerColor, outerColor) {
         }
     }
 }
+// ═════════════════════════════════════════════════════════════════════
+// ─── Starry sky system ──────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// A full-viewport <canvas> drawn with requestAnimationFrame.
+// Three star types (bright 10 %, dim 20 %, normal 70 %) each with
+// independent sine-wave twinkle. Bright stars get a radial-gradient
+// glow halo. Night theme also spawns occasional shooting-star streaks.
+//
+// Resize strategy:
+//   • Stars live in absolute CSS-pixel coordinates and are NEVER removed.
+//   • coveredW / coveredSH track the largest viewport we've generated
+//     stars for. When the viewport grows beyond those bounds, new stars
+//     are added proportionally in the expanded L-shaped strip only.
+//   • When the viewport shrinks, off-screen stars are simply not drawn.
+// ═════════════════════════════════════════════════════════════════════
+let starrySkyState = null;
+/** Create a single star object at the given CSS-pixel position. */
+function createStar(x, y) {
+    const r = Math.random();
+    const type = r < 0.1 ? "bright" : r < 0.3 ? "dim" : "normal";
+    const baseSize =
+        type === "bright" ? Math.random() * 2 + 1
+      : type === "dim"    ? Math.random() * 0.8 + 0.3
+      :                     Math.random() * 1.5 + 0.5;
+    const baseOpacity =
+        type === "bright" ? Math.random() * 0.2 + 0.6
+      : type === "dim"    ? Math.random() * 0.3 + 0.3
+      :                     Math.random() * 0.4 + 0.4;
+    return {
+        x, y, type, baseSize, baseOpacity,
+        currentSize:    baseSize,
+        currentOpacity: baseOpacity,
+        twinkleSpeed:   Math.random() * 0.02 + 0.005,
+        twinklePhase:   Math.random() * Math.PI * 2,
+    };
+}
+/**
+ * (Re)set a canvas's pixel buffer + CSS size to the current viewport,
+ * applying devicePixelRatio scaling for crisp rendering on HiDPI
+ * screens. Returns the drawing context and CSS dimensions.
+ */
+function sizeStarCanvas(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    canvas.width  = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width  = w + "px";
+    canvas.style.height = h + "px";
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);         // all drawing now uses CSS pixels
+    return { ctx, w, h };
+}
+/**
+ * Build the starry sky canvas, generate initial stars, and store
+ * everything in `starrySkyState`. Animation does NOT start yet —
+ * call `startStarrySkyAnimation()` later.
+ */
+function initStarrySky(container, config) {
+    const canvas = document.createElement("canvas");
+    canvas.className = "starry-sky-canvas";
+    container.appendChild(canvas);
+    const { ctx, w, h } = sizeStarCanvas(canvas);
+    const densityMult =
+        config.density === "sparse" ? 0.6
+      : config.density === "dense"  ? 1.5
+      : 1;
+    const count       = Math.floor(config.baseCount * densityMult);
+    const starRegionH = h * 0.65;
+    const stars = [];
+    for (let i = 0; i < count; i++) {
+        stars.push(createStar(
+            Math.random() * w,
+            Math.random() * starRegionH,
+        ));
+    }
+    starrySkyState = {
+        canvas,
+        ctx,
+        cssW: w,
+        cssH: h,
+        stars,
+        shootingStars: [],
+        config,
+        animId:           null,
+        shootingTimerId:  null,
+        coveredW:  w,
+        coveredSH: starRegionH,
+        density:   count / (w * starRegionH || 1),
+    };
+}
+/**
+ * When the viewport GROWS beyond previously-covered bounds, generate
+ * new stars proportionally in the expanded L-shaped strip so the
+ * density stays consistent. Existing stars are never touched.
+ */
+function expandStarField() {
+    const st = starrySkyState;
+    if (!st) return;
+    const newW  = st.cssW;
+    const newSH = st.cssH * 0.65;
+    if (newW <= st.coveredW && newSH <= st.coveredSH) return;
+    const rightW    = Math.max(0, newW - st.coveredW);
+    const bottomH   = Math.max(0, newSH - st.coveredSH);
+    const rightArea  = rightW * newSH;
+    const bottomArea = st.coveredW * bottomH;
+    const totalArea  = rightArea + bottomArea;
+    if (totalArea <= 0) return;
+    const newCount = Math.max(1, Math.round(st.density * totalArea));
+    for (let i = 0; i < newCount; i++) {
+        let x, y;
+        if (rightArea > 0 && bottomArea > 0) {
+            if (Math.random() < rightArea / totalArea) {
+                x = st.coveredW + Math.random() * rightW;
+                y = Math.random() * newSH;
+            } else {
+                x = Math.random() * st.coveredW;
+                y = st.coveredSH + Math.random() * bottomH;
+            }
+        } else if (rightArea > 0) {
+            x = st.coveredW + Math.random() * rightW;
+            y = Math.random() * newSH;
+        } else {
+            x = Math.random() * newW;
+            y = st.coveredSH + Math.random() * bottomH;
+        }
+        st.stars.push(createStar(x, y));
+    }
+    st.coveredW  = Math.max(st.coveredW, newW);
+    st.coveredSH = Math.max(st.coveredSH, newSH);
+}
+/** Resize the canvas buffer + grow the star field if needed. */
+function resizeStarrySky() {
+    if (!starrySkyState) return;
+    const { ctx, w, h } = sizeStarCanvas(starrySkyState.canvas);
+    starrySkyState.ctx  = ctx;
+    starrySkyState.cssW = w;
+    starrySkyState.cssH = h;
+    expandStarField();
+}
+// ── Drawing ─────────────────────────────────────────────────────────
+/**
+ * Render one frame of stars + shooting stars.
+ * @param {boolean} isStatic  If true, skip twinkle updates and
+ *   shooting stars (used for prefers-reduced-motion).
+ */
+function drawStarrySkyFrame(isStatic) {
+    const st = starrySkyState;
+    if (!st) return;
+    const { ctx, cssW, cssH } = st;
+    ctx.clearRect(0, 0, cssW, cssH);
+    // ── Stars ──
+    for (const s of st.stars) {
+        // Skip anything outside the current viewport
+        if (s.x < -4 || s.x > cssW + 4 || s.y < -4 || s.y > cssH + 4) continue;
+        if (!isStatic) {
+            s.twinklePhase += s.twinkleSpeed;
+            const tf = (Math.sin(s.twinklePhase) + 1) / 2; // 0 → 1
+            s.currentOpacity = s.baseOpacity * (0.3 + tf * 0.7);
+            s.currentSize    = s.baseSize    * (0.8 + tf * 0.2);
+        }
+        ctx.save();
+        // Radial glow halo for bright stars
+        if (s.type === "bright") {
+            const r = s.currentSize * 4;
+            const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
+            g.addColorStop(0,   `rgba(255,255,255,${s.currentOpacity * 0.8})`);
+            g.addColorStop(0.5, `rgba(200,220,255,${s.currentOpacity * 0.3})`);
+            g.addColorStop(1,   "rgba(200,220,255,0)");
+            ctx.fillStyle = g;
+            ctx.fillRect(s.x - r, s.y - r, r * 2, r * 2);
+        }
+        // Star core
+        ctx.globalAlpha = s.currentOpacity;
+        ctx.fillStyle =
+            s.type === "bright" ? "#ffffff"
+          : s.type === "dim"    ? "#e0e7ff"
+          :                       "#f3f4f6";
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.currentSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+    // ── Shooting stars ──
+    if (!isStatic) {
+        for (let i = st.shootingStars.length - 1; i >= 0; i--) {
+            const ss = st.shootingStars[i];
+            ss.progress += ss.speed;
+            if (ss.progress >= 1) { st.shootingStars.splice(i, 1); continue; }
+            drawShootingStar(ctx, ss);
+        }
+    }
+}
+/** Render a single shooting-star streak. */
+function drawShootingStar(ctx, ss) {
+    const easedDist = (1 - Math.pow(1 - ss.progress, 3)) * 280; // ease-out
+    const hx = ss.startX + Math.cos(ss.angle) * easedDist;
+    const hy = ss.startY + Math.sin(ss.angle) * easedDist;
+    const trail = Math.min(easedDist, ss.trailLen);
+    const tx = hx - Math.cos(ss.angle) * trail;
+    const ty = hy - Math.sin(ss.angle) * trail;
+    // Fade out during last 30 % of the streak's lifetime
+    const fade = ss.progress < 0.7 ? 1 : 1 - (ss.progress - 0.7) / 0.3;
+    if (fade <= 0) return;
+    ctx.save();
+    ctx.lineCap = "round";
+    // Outer glow trail (wider, softer)
+    const g1 = ctx.createLinearGradient(tx, ty, hx, hy);
+    g1.addColorStop(0, "rgba(255,255,255,0)");
+    g1.addColorStop(1, `rgba(255,255,255,${0.4 * fade})`);
+    ctx.strokeStyle = g1;
+    ctx.lineWidth   = 3;
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
+    // Core trail (thinner, brighter)
+    const g2 = ctx.createLinearGradient(tx, ty, hx, hy);
+    g2.addColorStop(0, "rgba(255,255,255,0)");
+    g2.addColorStop(1, `rgba(255,255,255,${0.8 * fade})`);
+    ctx.strokeStyle = g2;
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
+    // Head glow
+    const hr = 4;
+    const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr * 3);
+    glow.addColorStop(0,   `rgba(255,255,255,${0.9 * fade})`);
+    glow.addColorStop(0.4, `rgba(200,220,255,${0.4 * fade})`);
+    glow.addColorStop(1,   "rgba(200,220,255,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(hx, hy, hr * 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+// ── Lifecycle ───────────────────────────────────────────────────────
+/** Start the rAF loop (or draw once for reduced-motion). */
+function startStarrySkyAnimation() {
+    if (!starrySkyState) return;
+    starrySkyState.canvas.classList.add("visible");
+    // Respect prefers-reduced-motion: draw a single static frame
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        drawStarrySkyFrame(true);
+        return;
+    }
+    function loop() {
+        if (!starrySkyState) return;
+        drawStarrySkyFrame(false);
+        starrySkyState.animId = requestAnimationFrame(loop);
+    }
+    starrySkyState.animId = requestAnimationFrame(loop);
+    if (starrySkyState.config.showShootingStars) {
+        scheduleShootingStar();
+    }
+}
+/** Kick off the recurring shooting-star scheduler. */
+function scheduleShootingStar() {
+    if (!starrySkyState) return;
+    function attempt() {
+        const st = starrySkyState;
+        if (!st) return;
+        if (Math.random() > 0.5) {
+            st.shootingStars.push({
+                startX:   st.cssW * 0.2 + Math.random() * st.cssW * 0.6,
+                startY:   Math.random() * st.cssH * 0.3,
+                angle:    Math.PI / 4 + (Math.random() - 0.5) * 0.5, // ~31°–59°
+                speed:    1 / 90,                                      // ~1.5 s at 60 fps
+                trailLen: 80 + Math.random() * 40,
+                progress: 0,
+            });
+        }
+        st.shootingTimerId = setTimeout(attempt, 2000 + Math.random() * 1000);
+    }
+    // First attempt after a longer random delay
+    starrySkyState.shootingTimerId = setTimeout(
+        attempt,
+        3000 + Math.random() * 5000,
+    );
+}
+/** Cancel animation + timers and release state. Idempotent. */
+function destroyStarrySky() {
+    if (!starrySkyState) return;
+    if (starrySkyState.animId != null)          cancelAnimationFrame(starrySkyState.animId);
+    if (starrySkyState.shootingTimerId != null)  clearTimeout(starrySkyState.shootingTimerId);
+    starrySkyState = null;
+}
 // ─── Theme element creation & lifecycle ─────────────────────────────
 let activeThemeElement = null;
 /**
- * Build the celestial-body canvas + optional particle field for the
- * current theme, append them to #element-layer, and store an
- * animate() handle so the intro sequence can trigger the entrance.
+ * Build the starry-sky canvas (if applicable) + celestial-body canvas
+ * for the current theme, append to #element-layer, and expose an
+ * animate() handle for the intro sequence.
  */
 function createThemeElements(themeName) {
     const config = THEME_ELEMENTS[themeName];
     if (!config) return;
+    // Clean up any previous starry sky animation/timers
+    destroyStarrySky();
     const container = document.getElementById("element-layer");
     container.innerHTML = "";
-    // ── Celestial body (canvas) ──
-    const wrapper  = document.createElement("div");
+    // 1. Starry sky canvas — appended FIRST so it sits behind the body
+    if (config.starrySky) {
+        initStarrySky(container, config.starrySky);
+    }
+    // 2. Celestial body — in front of the star field
+    const wrapper = document.createElement("div");
     wrapper.className = `element-sprite ${config.body.className}`;
-    const canvas = document.createElement("canvas");
-    canvas.width  = config.body.canvasSize;
-    canvas.height = config.body.canvasSize;
+    const bodyCanvas = document.createElement("canvas");
+    bodyCanvas.width  = config.body.canvasSize;
+    bodyCanvas.height = config.body.canvasSize;
     config.body.draw(
-        canvas.getContext("2d"),
+        bodyCanvas.getContext("2d"),
         config.body.canvasSize,
         config.body.pixelSize,
     );
-    wrapper.appendChild(canvas);
+    wrapper.appendChild(bodyCanvas);
     container.appendChild(wrapper);
-    // ── Particles (stars / sparkles) ──
-    let particleField = null;
-    if (config.particles) {
-        particleField = document.createElement("div");
-        particleField.className = "particle-field";
-        const pc = config.particles;
-        for (let i = 0; i < pc.count; i++) {
-            const dot = document.createElement("div");
-            dot.className = `particle ${pc.className}`;
-            dot.style.left = `${2 + Math.random() * 96}%`;
-            dot.style.top  = `${2 + Math.random() * Math.max(pc.yMax - 2, 1)}%`;
-            const size = pc.sizeMin + Math.random() * (pc.sizeMax - pc.sizeMin);
-            dot.style.width  = `${size}px`;
-            dot.style.height = `${size}px`;
-            const dur = pc.durationMin + Math.random() * (pc.durationMax - pc.durationMin);
-            dot.style.animationDuration = `${dur}s`;
-            dot.style.animationDelay    = `${Math.random() * dur}s`;
-            particleField.appendChild(dot);
-        }
-        container.appendChild(particleField);
-    }
-    // ── Public animate() — called by runIntro at the right moment ──
+    // 3. Expose animate()
     const glowDelay = config.body.glowDelay;
     activeThemeElement = {
         animate() {
-            // rAF ensures initial CSS state has been painted before we
-            // add the class that triggers the transition.
-            requestAnimationFrame(() => {
-                wrapper.classList.add("animate-in");
-                if (particleField) particleField.classList.add("visible");
-            });
+            // Starry sky fades in + starts its rAF loop
+            if (starrySkyState) startStarrySkyAnimation();
+            // Celestial body entrance transition
+            requestAnimationFrame(() => wrapper.classList.add("animate-in"));
             setTimeout(() => wrapper.classList.add("glowing"), glowDelay);
         },
     };
 }
-/** Remove all dynamic element children and reset state. */
+/** Remove all dynamic element children and cancel animations. */
 function clearThemeElements() {
+    destroyStarrySky();
     const container = document.getElementById("element-layer");
     if (container) container.innerHTML = "";
     activeThemeElement = null;
@@ -295,11 +569,6 @@ function setCloudSources(layerId, assets) {
 function setSkySource(themeName) {
     document.getElementById("sky-image").src = themeAssets(themeName).sky;
 }
-/**
- * Compute the rendered "cover" tile width (px) for a cloud layer —
- * the same scale the browser applies via background-size: cover —
- * so the drift keyframe shifts by exactly one tile per cycle.
- */
 function updateTileMetrics(layerId, layerKey) {
     const layerEl = document.getElementById(layerId);
     const scroll  = layerEl.querySelector(".cloud-scroll");
@@ -324,10 +593,8 @@ async function runIntro(themeName) {
     const nearLyr = document.getElementById("near-cloud-layer");
     await Promise.all([preloadAllAssets(themeName), delay(150)]);
     updateAllTileMetrics();
-    // Sky + content fade in
     setTimeout(() => sky.classList.add("visible"),     TIMING.skyFadeDelay);
     setTimeout(() => content.classList.add("visible"), TIMING.contentFadeDelay);
-    // Parallax cloud intro — near starts shortly after far *starts*
     const farStart  = TIMING.farSlideDelay;
     const nearStart = farStart + TIMING.nearStaggerGap;
     const farEnd    = farStart  + TIMING.farSlideDuration;
@@ -336,7 +603,6 @@ async function runIntro(themeName) {
     setTimeout(() => slideIn(nearLyr),      nearStart);
     setTimeout(() => activateLoop(farLyr),  farEnd  + TIMING.loopActivateGap);
     setTimeout(() => activateLoop(nearLyr), nearEnd + TIMING.loopActivateGap);
-    // Theme element enters once both cloud loops are running
     const bothDone = Math.max(farEnd, nearEnd) + TIMING.loopActivateGap;
     setTimeout(() => {
         if (activeThemeElement) activeThemeElement.animate();
@@ -370,7 +636,10 @@ function resetAnimations() {
 let resizeTimer = null;
 function onWindowResize() {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(updateAllTileMetrics, 150);
+    resizeTimer = setTimeout(() => {
+        updateAllTileMetrics();
+        resizeStarrySky();
+    }, 150);
 }
 // ─── Boot ───────────────────────────────────────────────────────────
 function init() {
@@ -380,8 +649,8 @@ function init() {
     const assets = themeAssets(time);
     setCloudSources("far-cloud-layer",  assets.far);
     setCloudSources("near-cloud-layer", assets.near);
-    createThemeElements(time);   // builds canvas + particles (hidden)
-    runIntro(time);              // orchestrates the full entrance
+    createThemeElements(time);
+    runIntro(time);
 }
 if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

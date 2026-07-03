@@ -92,7 +92,7 @@ img {
 }
 /* ---- 4. Layer Stack (z-index reference) ----
    0  sky            — background image, sits above bg-color
-   1  element        — celestial body & particles, behind clouds
+   1  element        — starry sky canvas + celestial body, behind clouds
    2  far clouds     — distant parallax layer
    3  near clouds    — closer parallax layer
    4  content        — title / motto / buttons
@@ -275,13 +275,12 @@ img {
     background: var(--btn-sec-bg-hover);
     transform: translateY(-1px);
 }
-/* ---- 9. Element Layer (container for dynamic celestial elements) ---- */
+/* ---- 9. Element Layer (container for all dynamic sky elements) ---- */
 .element-layer {
     position: absolute;
     inset: 0;
     z-index: 1;
     pointer-events: none;
-    /* No overflow:hidden — .landing clips; bodies must start off-screen */
 }
 /* ---- 10. Element Sprites (pixel-art celestial bodies) ---- */
 .element-sprite {
@@ -289,10 +288,6 @@ img {
     pointer-events: none;
     aspect-ratio: 1;
 }
-/*
- * image-rendering: pixelated keeps the pixel-art crisp when CSS
- * scales the canvas beyond its native resolution.
- */
 .element-sprite canvas {
     display: block;
     width: 100%;
@@ -422,34 +417,18 @@ img {
         filter: drop-shadow(0 0 18px rgba(255, 140, 70, 0.9));
     }
 }
-/* ---- 11. Particle System (stars / sparkles) ---- */
-.particle-field {
+/* ---- 11. Starry Sky Canvas ---- */
+.starry-sky-canvas {
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    /* width & height set by JS to match viewport */
     opacity: 0;
-    transition: opacity 2s ease;
+    transition: opacity 2.5s ease;
+    pointer-events: none;
 }
-.particle-field.visible {
+.starry-sky-canvas.visible {
     opacity: 1;
-}
-.particle {
-    position: absolute;
-    border-radius: 50%;
-}
-.star {
-    background: #ffffff;
-    box-shadow: 0 0 2px rgba(255, 255, 255, 0.6);
-    animation: twinkle 3s ease-in-out infinite;
-}
-@keyframes twinkle {
-    0%, 100% {
-        opacity: 0.2;
-        transform: scale(1);
-    }
-    50% {
-        opacity: 1;
-        transform: scale(1.3);
-    }
 }
 /* ---- 12. Responsive ---- */
 @media (max-width: 640px) {
@@ -501,18 +480,13 @@ img {
     .sun-afternoon {
         transform: translateX(-50%) scale(1) !important;
     }
-    /* sun-evening has no transform to reset */
     /* Disable glow pulse; keep static glow */
     .element-sprite canvas {
         animation: none !important;
     }
-    /* Particles: visible + static */
-    .particle-field {
+    /* Starry sky: visible instantly, animation handled in JS */
+    .starry-sky-canvas {
         transition: none !important;
         opacity: 1 !important;
-    }
-    .particle {
-        animation: none !important;
-        opacity: 0.6 !important;
     }
 }
