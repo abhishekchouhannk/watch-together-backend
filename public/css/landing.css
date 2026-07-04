@@ -133,6 +133,10 @@ img {
 }
 .cloud-half {
     position: absolute;
+    /* Default before JS: viewport-sized with cover.
+       JS overrides width/height/left/bottom to the real
+       cover-fit dimensions so the element always extends
+       past both screen edges — no mid-viewport clipping. */
     inset: 0;
     width: 100%;
     height: 100%;
@@ -140,11 +144,11 @@ img {
     object-position: center bottom;
 }
 .cloud-half.left {
-    transform: translateX(-100%);
+    transform: translateX(var(--off-x, -100%));                /* ← FIXED: was translateX(-100%) */
     transition: transform 2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .cloud-half.right {
-    transform: translateX(100%);
+    transform: translateX(var(--off-x, 100%));                 /* ← FIXED: was translateX(100%) */
     transition: transform 2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .cloud-layer[data-layer="near"] .cloud-half.left,
@@ -171,10 +175,10 @@ img {
 }
 @keyframes cloudDriftBg {
     from {
-        background-position-x: 0;
+        background-position-x: var(--initial-x, 0px);                                  /* ← FIXED: was 0 */
     }
     to {
-        background-position-x: var(--tile-width, 100vw);
+        background-position-x: calc(var(--initial-x, 0px) + var(--tile-width, 100vw));  /* ← FIXED */
     }
 }
 .cloud-scroll.scrolling {
@@ -464,7 +468,7 @@ img {
     }
     .cloud-scroll.scrolling {
         animation: none !important;
-        background-position-x: 0 !important;
+        background-position-x: var(--initial-x, 0px) !important;  /* ← FIXED: was 0 */
     }
     /* Celestial bodies: show at final position, no motion */
     .element-sprite {

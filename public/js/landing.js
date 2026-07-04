@@ -43,31 +43,11 @@ const DRIFT_SPEED = { far: 18, near: 30 };
 // ═════════════════════════════════════════════════════════════════════
 // ─── Star profiles ──────────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
-//
-// Each theme that uses a starry sky references one of these profiles.
-// A profile controls:
-//
-//   distribution — what fraction of stars fall into each type.
-//     Expressed as cumulative thresholds checked against Math.random():
-//       if (r < brightThreshold)       → bright
-//       else if (r < dimThreshold)     → dim
-//       else                            → normal
-//
-//   bright / dim / normal — per-type visual properties:
-//     size:    [min, max]  — base radius in CSS pixels
-//     opacity: [min, max]  — base opacity (before twinkle modulation)
-//     twinkle: [min, max]  — radians-per-frame twinkle speed
-//
-//   colors — fill colour per type (core of the dot)
-//   glowRadius — multiplier for bright-star radial glow (bigger = softer halo)
-//
-// Tweak any value here and the canvas will reflect it immediately.
-// ═════════════════════════════════════════════════════════════════════
 const STAR_PROFILES = {
     morning: {
         distribution: {
-            brightThreshold: 0.05,   //  5 % bright
-            dimThreshold:    0.45,   // 40 % dim, 55 % normal
+            brightThreshold: 0.05,
+            dimThreshold:    0.45,
         },
         bright: {
             size:    [0.8, 1.8],
@@ -89,8 +69,8 @@ const STAR_PROFILES = {
     },
     evening: {
         distribution: {
-            brightThreshold: 0.08,   //  8 % bright
-            dimThreshold:    0.35,   // 27 % dim, 65 % normal
+            brightThreshold: 0.08,
+            dimThreshold:    0.35,
         },
         bright: {
             size:    [1.0, 2.2],
@@ -112,8 +92,8 @@ const STAR_PROFILES = {
     },
     night: {
         distribution: {
-            brightThreshold: 0.12,   // 12 % bright
-            dimThreshold:    0.30,   // 18 % dim, 70 % normal
+            brightThreshold: 0.12,
+            dimThreshold:    0.30,
         },
         bright: {
             size:    [1.2, 3.0],
@@ -135,14 +115,6 @@ const STAR_PROFILES = {
     },
 };
 // ─── Theme element definitions ──────────────────────────────────────
-//
-// body     — pixel-art celestial body drawn on a small canvas.
-// starrySky — full-viewport canvas star field (null = no stars).
-//   baseCount: reference star count (scaled by density multiplier).
-//   density: 'sparse' | 'normal' | 'dense' → ×0.6 / ×1 / ×1.5.
-//   starProfile: key into STAR_PROFILES for per-type tuning.
-//   showShootingStars: enable random shooting-star streaks.
-//   starRegion: fraction of viewport height in which stars spawn (0–1).
 const THEME_ELEMENTS = {
     morning: {
         body: {
@@ -329,10 +301,6 @@ function drawSun(ctx, canvasSize, pixelSize, innerColor, outerColor) {
 // ─── Starry sky system ──────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 let starrySkyState = null;
-/**
- * Create a single star at the given CSS-pixel position, using the
- * supplied STAR_PROFILES entry for type distribution and ranges.
- */
 function createStar(x, y, profile) {
     const r    = Math.random();
     const dist = profile.distribution;
@@ -351,7 +319,6 @@ function createStar(x, y, profile) {
         twinklePhase:   Math.random() * Math.PI * 2,
     };
 }
-/** Set canvas buffer to viewport × devicePixelRatio; return ctx + CSS dims. */
 function sizeStarCanvas(canvas) {
     const dpr = window.devicePixelRatio || 1;
     const w = window.innerWidth;
@@ -364,10 +331,6 @@ function sizeStarCanvas(canvas) {
     ctx.scale(dpr, dpr);
     return { ctx, w, h };
 }
-/**
- * Build the starry sky canvas, generate initial stars, store state.
- * Animation does NOT start until startStarrySkyAnimation().
- */
 function initStarrySky(container, config) {
     const canvas = document.createElement("canvas");
     canvas.className = "starry-sky-canvas";
@@ -406,7 +369,6 @@ function initStarrySky(container, config) {
         region,
     };
 }
-/** Generate new stars in the L-shaped strip when the viewport grows. */
 function expandStarField() {
     const st = starrySkyState;
     if (!st) return;
@@ -442,7 +404,6 @@ function expandStarField() {
     st.coveredW  = Math.max(st.coveredW, newW);
     st.coveredSH = Math.max(st.coveredSH, newSH);
 }
-/** Resize the canvas buffer and grow the star field if needed. */
 function resizeStarrySky() {
     if (!starrySkyState) return;
     const { ctx, w, h } = sizeStarCanvas(starrySkyState.canvas);
@@ -452,10 +413,6 @@ function resizeStarrySky() {
     expandStarField();
 }
 // ── Drawing ─────────────────────────────────────────────────────────
-/**
- * Render one frame of stars + shooting stars.
- * @param {boolean} isStatic  Skip twinkle / shooting stars (reduced motion).
- */
 function drawStarrySkyFrame(isStatic) {
     const st = starrySkyState;
     if (!st) return;
@@ -472,7 +429,6 @@ function drawStarrySkyFrame(isStatic) {
             s.currentSize    = s.baseSize    * (0.8 + tf * 0.2);
         }
         ctx.save();
-        // Radial glow halo for bright stars
         if (s.type === "bright") {
             const r = s.currentSize * glowR;
             const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
@@ -498,7 +454,6 @@ function drawStarrySkyFrame(isStatic) {
         }
     }
 }
-/** Render a single shooting-star streak. */
 function drawShootingStar(ctx, ss) {
     const easedDist = (1 - Math.pow(1 - ss.progress, 3)) * 280;
     const hx = ss.startX + Math.cos(ss.angle) * easedDist;
@@ -633,6 +588,9 @@ function setCloudSources(layerId, assets) {
 function setSkySource(themeName) {
     document.getElementById("sky-image").src = themeAssets(themeName).sky;
 }
+// ── FIXED: updateTileMetrics now also cover-fit-sizes the half images
+//    and sets the centred scroll origin so halves → scroll is seamless
+//    at every viewport width. ────────────────────────────────────────
 function updateTileMetrics(layerId, layerKey) {
     const layerEl = document.getElementById(layerId);
     const scroll  = layerEl.querySelector(".cloud-scroll");
@@ -640,10 +598,42 @@ function updateTileMetrics(layerId, layerKey) {
     if (!naturalW || !naturalH) return;
     const cW = layerEl.clientWidth  || window.innerWidth;
     const cH = layerEl.clientHeight || window.innerHeight;
-    const scale     = Math.max(cW / naturalW, cH / naturalH);
-    const tileWidth = naturalW * scale;
+    const scale      = Math.max(cW / naturalW, cH / naturalH);
+    const tileWidth  = naturalW * scale;
+    const tileHeight = naturalH * scale;                        // ← FIXED (new)
+    const initialX   = (cW - tileWidth) / 2;                   // ← FIXED (new)
+    // ── Scroll metrics ──────────────────────────────────────
     scroll.style.setProperty("--tile-width", `${tileWidth}px`);
+    scroll.style.setProperty("--initial-x",  `${initialX}px`); // ← FIXED (new)
     scroll.style.animationDuration = `${tileWidth / DRIFT_SPEED[layerKey]}s`;
+    // ── Half-image cover-fit sizing & positioning ───────────  ← FIXED (entire block is new)
+    //
+    //  Instead of letting each <img> be viewport-sized with
+    //  object-fit:cover (which centres the crop and creates
+    //  hard clip lines on narrow screens), we size the element
+    //  to the ACTUAL cover dimensions and position it centred-
+    //  bottom.  The image fills the element exactly (no crop
+    //  inside the element), and the viewport boundary
+    //  (.cloud-layer overflow:hidden) provides the only clip —
+    //  always at the screen edge, never mid-viewport.
+    //
+    //  --off-x is set to ±viewportWidth so the slide distance
+    //  stays proportional to what the user sees, keeping timing
+    //  visually identical to the desktop experience.
+    //
+    layerEl.querySelectorAll(".cloud-half").forEach((el) => {
+        el.style.width  = `${tileWidth}px`;
+        el.style.height = `${tileHeight}px`;
+        el.style.left   = `${initialX}px`;
+        el.style.top    = "auto";
+        el.style.right  = "auto";
+        el.style.bottom = "0";
+        if (el.classList.contains("left")) {
+            el.style.setProperty("--off-x", `${-cW}px`);
+        } else {
+            el.style.setProperty("--off-x", `${cW}px`);
+        }
+    });
 }
 function updateAllTileMetrics() {
     updateTileMetrics("far-cloud-layer",  "far");
@@ -682,6 +672,9 @@ function activateLoop(layerEl) {
     const scroll = layerEl.querySelector(".cloud-scroll");
     scroll.classList.add("active", "scrolling");
 }
+// ── FIXED: resetAnimations now clears the inline styles that
+//    updateTileMetrics sets on the half images, so a fresh init()
+//    can re-apply them cleanly. ──────────────────────────────────────
 function resetAnimations() {
     document.getElementById("sky-image").classList.remove("visible");
     document.getElementById("content").classList.remove("visible");
@@ -689,11 +682,14 @@ function resetAnimations() {
     document.querySelectorAll(".cloud-layer").forEach((layer) => {
         const intro = layer.querySelector(".cloud-intro");
         intro.style.display = "";
-        intro.querySelectorAll(".cloud-half").forEach((h) =>
-            h.classList.remove("slide-in"),
-        );
+        intro.querySelectorAll(".cloud-half").forEach((h) => {
+            h.classList.remove("slide-in");
+            h.removeAttribute("style");                    // ← FIXED (new) — clear cover-fit inline styles
+        });
         const scroll = layer.querySelector(".cloud-scroll");
         scroll.classList.remove("active", "scrolling");
+        scroll.style.removeProperty("--initial-x");        // ← FIXED (new)
+        scroll.style.removeProperty("--tile-width");        // ← FIXED (new)
     });
 }
 // ─── Resize handling ────────────────────────────────────────────────
@@ -709,7 +705,7 @@ function onWindowResize() {
 function init() {
     const time = getTimeOfDay();
     applyTheme(time);
-    setSkySource(time);      
+    setSkySource(time);
     const assets = themeAssets(time);
     setCloudSources("far-cloud-layer",  assets.far);
     setCloudSources("near-cloud-layer", assets.near);
