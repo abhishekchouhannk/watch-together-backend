@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Watch Together</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* ============================================
+       0. Reset & Base
+       ============================================ */
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    html{height:100%}
+    body{
+      min-height:100%;
+      font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      -webkit-font-smoothing:antialiased;
+      overflow-x:hidden;
+    }
+    button{font-family:inherit;cursor:pointer;border:none;outline:none}
+    input,textarea,select{font-family:inherit;outline:none}
+    /* ============================================
+       1. Theme Variables
+       ============================================ */
+    /* ---- Morning  (sky ≈ #b5b6ee  light lavender) ---- */
+    [data-theme="morning"]{
+      --sky-fb:#b5b6ee;
+      --glass:rgba(255,255,255,.48);--glass-border:rgba(255,255,255,.55);
+      --card:rgba(255,255,255,.52);--card-h:rgba(255,255,255,.68);
+      --card-bdr:rgba(190,130,160,.2);
+      --card-sh:0 4px 16px rgba(136,19,55,.06);
+      --card-sh-h:0 8px 28px rgba(136,19,55,.1);
+      --hdr:rgba(255,255,255,.42);--hdr-bdr:rgba(190,130,160,.25);
+      --t1:#4a0e2b;--t2:#6e1d42;--t3:#8c3a5e;
+      --acc:#e11d48;--acc-h:#be185d;--acc-t:#fff;
+      --acc-glow:rgba(225,29,72,.25);
+      --surf:rgba(255,228,230,.65);--surf-h:rgba(254,205,211,.8);--surf-t:#881337;
+      --in-bg:rgba(255,255,255,.6);--in-bdr:rgba(190,130,160,.3);
+      --in-t:#4a0e2b;--in-ph:rgba(140,58,94,.5);
+      --in-foc:#e11d48;--in-ring:rgba(225,29,72,.15);
+      --tog-on:#e11d48;--tog-on-t:#fff;
+      --tog-off:rgba(140,58,94,.6);--tog-off-h:rgba(255,228,230,.4);
+      --f-on-bg:rgba(225,29,72,.1);--f-on-t:#be185d;--f-on-bdr:rgba(225,29,72,.28);
+      --f-off-bg:rgba(255,255,255,.35);--f-off-t:#6e1d42;--f-off-bdr:rgba(190,130,160,.2);
+      --sk:rgba(225,180,200,.22);--sk-sh:rgba(255,255,255,.55);
+      --ov:rgba(74,14,43,.3);
+      --modal:rgba(255,248,250,.96);--modal-bdr:rgba(190,130,160,.25);
+      --tag-bg:rgba(251,207,232,.45);--tag-t:#9f1239;
+      --scr-th:rgba(225,29,72,.25);--scr-tr:transparent;
+      --toast-ok:rgba(5,150,105,.92);--toast-err:rgba(225,29,72,.92);--toast-t:#fff;
+    }
+    /* ---- Afternoon  (sky ≈ #229df2  vivid blue) ---- */
+    [data-theme="afternoon"]{
+      --sky-fb:#229df2;
+      --glass:rgba(255,255,255,.48);--glass-border:rgba(255,255,255,.5);
+      --card:rgba(255,255,255,.55);--card-h:rgba(255,255,255,.72);
+      --card-bdr:rgba(100,160,220,.2);
+      --card-sh:0 4px 16px rgba(12,74,110,.06);
+      --card-sh-h:0 8px 28px rgba(12,74,110,.1);
+      --hdr:rgba(255,255,255,.4);--hdr-bdr:rgba(100,160,220,.25);
+      --t1:#0c3d5e;--t2:#075985;--t3:#0c6aa7;
+      --acc:#eab308;--acc-h:#ca8a04;--acc-t:#0c3d5e;
+      --acc-glow:rgba(234,179,8,.25);
+      --surf:rgba(255,255,255,.55);--surf-h:rgba(255,255,255,.75);--surf-t:#075985;
+      --in-bg:rgba(255,255,255,.6);--in-bdr:rgba(100,160,220,.3);
+      --in-t:#0c3d5e;--in-ph:rgba(12,106,167,.45);
+      --in-foc:#eab308;--in-ring:rgba(234,179,8,.18);
+      --tog-on:#eab308;--tog-on-t:#0c3d5e;
+      --tog-off:rgba(7,89,133,.55);--tog-off-h:rgba(255,255,255,.35);
+      --f-on-bg:rgba(234,179,8,.12);--f-on-t:#92400e;--f-on-bdr:rgba(234,179,8,.3);
+      --f-off-bg:rgba(255,255,255,.35);--f-off-t:#075985;--f-off-bdr:rgba(100,160,220,.2);
+      --sk:rgba(100,160,220,.18);--sk-sh:rgba(255,255,255,.55);
+      --ov:rgba(12,61,94,.3);
+      --modal:rgba(240,249,255,.96);--modal-bdr:rgba(100,160,220,.25);
+      --tag-bg:rgba(186,230,253,.45);--tag-t:#075985;
+      --scr-th:rgba(234,179,8,.3);--scr-tr:transparent;
+      --toast-ok:rgba(5,150,105,.92);--toast-err:rgba(220,38,38,.92);--toast-t:#fff;
+    }
+    /* ---- Evening  (sky ≈ #a47cab → #6dadc8) ---- */
+    [data-theme="evening"]{
+      --sky-fb:#8d6daa;
+      --glass:rgba(35,15,55,.35);--glass-border:rgba(180,130,200,.18);
+      --card:rgba(35,15,55,.38);--card-h:rgba(45,22,70,.5);
+      --card-bdr:rgba(180,130,200,.15);
+      --card-sh:0 4px 16px rgba(0,0,0,.12);
+      --card-sh-h:0 8px 28px rgba(0,0,0,.2);
+      --hdr:rgba(35,15,55,.35);--hdr-bdr:rgba(180,130,200,.15);
+      --t1:#f3ecff;--t2:#d8c5f0;--t3:#b89dd4;
+      --acc:#9333ea;--acc-h:#7e22ce;--acc-t:#fff;
+      --acc-glow:rgba(147,51,234,.3);
+      --surf:rgba(240,225,255,.12);--surf-h:rgba(240,225,255,.2);--surf-t:#d8c5f0;
+      --in-bg:rgba(35,15,55,.42);--in-bdr:rgba(180,130,200,.25);
+      --in-t:#f3ecff;--in-ph:rgba(184,157,212,.55);
+      --in-foc:#9333ea;--in-ring:rgba(147,51,234,.2);
+      --tog-on:#9333ea;--tog-on-t:#fff;
+      --tog-off:rgba(184,157,212,.55);--tog-off-h:rgba(240,225,255,.1);
+      --f-on-bg:rgba(147,51,234,.18);--f-on-t:#d8b4fe;--f-on-bdr:rgba(147,51,234,.3);
+      --f-off-bg:rgba(35,15,55,.25);--f-off-t:#b89dd4;--f-off-bdr:rgba(180,130,200,.12);
+      --sk:rgba(180,130,200,.12);--sk-sh:rgba(255,255,255,.06);
+      --ov:rgba(18,5,30,.5);
+      --modal:rgba(40,20,60,.96);--modal-bdr:rgba(180,130,200,.2);
+      --tag-bg:rgba(168,85,247,.16);--tag-t:#d8b4fe;
+      --scr-th:rgba(147,51,234,.3);--scr-tr:transparent;
+      --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
+    }
+    /* ---- Night  (sky ≈ #171f43  deep navy) ---- */
+    [data-theme="night"]{
+      --sky-fb:#171f43;
+      --glass:rgba(25,35,72,.4);--glass-border:rgba(99,102,241,.15);
+      --card:rgba(28,38,78,.45);--card-h:rgba(35,48,95,.58);
+      --card-bdr:rgba(99,102,241,.12);
+      --card-sh:0 4px 16px rgba(0,0,0,.18);
+      --card-sh-h:0 8px 28px rgba(0,0,0,.28);
+      --hdr:rgba(22,30,62,.5);--hdr-bdr:rgba(99,102,241,.15);
+      --t1:#e0e7ff;--t2:#c0caee;--t3:#8b9ad4;
+      --acc:#6366f1;--acc-h:#4f46e5;--acc-t:#fff;
+      --acc-glow:rgba(99,102,241,.3);
+      --surf:rgba(99,102,241,.12);--surf-h:rgba(99,102,241,.2);--surf-t:#c0caee;
+      --in-bg:rgba(25,35,72,.48);--in-bdr:rgba(99,102,241,.2);
+      --in-t:#e0e7ff;--in-ph:rgba(139,154,212,.5);
+      --in-foc:#6366f1;--in-ring:rgba(99,102,241,.18);
+      --tog-on:#6366f1;--tog-on-t:#fff;
+      --tog-off:rgba(139,154,212,.5);--tog-off-h:rgba(99,102,241,.1);
+      --f-on-bg:rgba(99,102,241,.15);--f-on-t:#a5b4fc;--f-on-bdr:rgba(99,102,241,.3);
+      --f-off-bg:rgba(25,35,72,.3);--f-off-t:#8b9ad4;--f-off-bdr:rgba(99,102,241,.1);
+      --sk:rgba(99,102,241,.1);--sk-sh:rgba(255,255,255,.04);
+      --ov:rgba(8,12,28,.6);
+      --modal:rgba(22,30,60,.97);--modal-bdr:rgba(99,102,241,.18);
+      --tag-bg:rgba(99,102,241,.15);--tag-t:#a5b4fc;
+      --scr-th:rgba(99,102,241,.25);--scr-tr:transparent;
+      --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
+    }
+    /* ---- Mode-badge colours (light themes) ---- */
+    [data-theme="morning"] .badge-sync,
+    [data-theme="afternoon"] .badge-sync{background:rgba(5,150,105,.1);color:#065f46}
+    [data-theme="morning"] .badge-theater,
+    [data-theme="afternoon"] .badge-theater{background:rgba(217,119,6,.1);color:#92400e}
+    [data-theme="morning"] .badge-freeplay,
+    [data-theme="afternoon"] .badge-freeplay{background:rgba(147,51,234,.1);color:#6b21a8}
+    [data-theme="morning"] .badge-default,
+    [data-theme="afternoon"] .badge-default{background:rgba(100,116,139,.1);color:#475569}
+    /* ---- Mode-badge colours (dark themes) ---- */
+    [data-theme="evening"] .badge-sync,
+    [data-theme="night"] .badge-sync{background:rgba(52,211,153,.13);color:#6ee7b7}
+    [data-theme="evening"] .badge-theater,
+    [data-theme="night"] .badge-theater{background:rgba(251,191,36,.13);color:#fcd34d}
+    [data-theme="evening"] .badge-freeplay,
+    [data-theme="night"] .badge-freeplay{background:rgba(168,85,247,.14);color:#d8b4fe}
+    [data-theme="evening"] .badge-default,
+    [data-theme="night"] .badge-default{background:rgba(148,163,184,.12);color:#94a3b8}
+    /* ============================================
+       2. Sky Background
+       ============================================ */
+    .sky-bg{
+      position:fixed;inset:0;z-index:0;
+      background-color:var(--sky-fb);
+      background-size:cover;background-position:center;background-repeat:no-repeat;
+    }
+    /* ============================================
+       3. Layout
+       ============================================ */
+    #dashboard{position:relative;min-height:100vh}
+    .header{
+      position:sticky;top:0;z-index:40;
+      background:var(--hdr);
+      backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+      border-bottom:1px solid var(--hdr-bdr);
+    }
+    .header-inner{
+      max-width:80rem;margin:0 auto;padding:1rem 1.5rem;
+      display:flex;align-items:center;justify-content:space-between;gap:1rem;
+      flex-wrap:wrap;
+    }
+    .header-title{font-size:1.5rem;font-weight:700;color:var(--t1)}
+    .header-actions{display:flex;align-items:center;gap:.75rem}
+    .main{
+      position:relative;z-index:1;
+      max-width:80rem;margin:0 auto;
+      padding:1.5rem 1.5rem 3rem;
+      animation:fadeUp .4s ease;
+    }
+    /* ============================================
+       4. Buttons
+       ============================================ */
+    .btn{
+      display:inline-flex;align-items:center;gap:.45rem;
+      padding:.6rem 1.15rem;border-radius:10px;
+      font-size:.88rem;font-weight:600;
+      transition:all .2s ease;white-space:nowrap;
+    }
+    .btn-primary{
+      background:var(--acc);color:var(--acc-t);
+      box-shadow:0 2px 8px var(--acc-glow);
+    }
+    .btn-primary:hover{
+      background:var(--acc-h);
+      box-shadow:0 4px 14px var(--acc-glow);
+      transform:translateY(-1px);
+    }
+    .btn-secondary{
+      background:var(--surf);color:var(--surf-t);
+      backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    }
+    .btn-secondary:hover{background:var(--surf-h)}
+    /* ============================================
+       5. Search
+       ============================================ */
+    .search-section{margin-bottom:1rem}
+    .search-wrap{position:relative}
+    .search-icon{
+      position:absolute;left:1rem;top:50%;transform:translateY(-50%);
+      width:1.1rem;height:1.1rem;color:var(--t3);pointer-events:none;
+    }
+    .search-input{
+      width:100%;padding:.75rem 1rem .75rem 2.75rem;
+      background:var(--in-bg);border:1px solid var(--in-bdr);
+      border-radius:12px;color:var(--in-t);font-size:.95rem;
+      backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      transition:border-color .2s,box-shadow .2s;
+    }
+    .search-input:focus{
+      border-color:var(--in-foc);
+      box-shadow:0 0 0 3px var(--in-ring);
+    }
+    .search-input::placeholder{color:var(--in-ph)}
+    /* ============================================
+       6. Filters
+       ============================================ */
+    .filters-section{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem}
+    .filter-btn{
+      padding:.42rem .95rem;border-radius:999px;
+      border:1px solid var(--f-off-bdr);
+      background:var(--f-off-bg);color:var(--f-off-t);
+      font-size:.84rem;font-weight:500;
+      backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+      transition:all .2s ease;
+    }
+    .filter-btn:hover{border-color:var(--f-on-bdr);color:var(--f-on-t)}
+    .filter-btn.active{
+      background:var(--f-on-bg);color:var(--f-on-t);
+      border-color:var(--f-on-bdr);
+    }
+    /* ============================================
+       7. Rooms Header / Toggle
+       ============================================ */
+    .rooms-header{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap;
+    }
+    .rooms-title{font-size:1.2rem;font-weight:700;color:var(--t1)}
+    .room-count{font-size:.85rem;font-weight:500;color:var(--t3);margin-left:.4rem}
+    .view-toggle{
+      display:flex;
+      background:var(--glass);
+      backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+      border-radius:999px;padding:.25rem;
+      border:1px solid var(--glass-border);
+    }
+    .toggle-btn{
+      padding:.48rem 1.1rem;border-radius:999px;
+      font-size:.84rem;font-weight:600;
+      background:transparent;color:var(--tog-off);
+      transition:all .25s ease;
+    }
+    .toggle-btn:hover:not(.active){background:var(--tog-off-h)}
+    .toggle-btn.active{
+      background:var(--tog-on);color:var(--tog-on-t);
+      box-shadow:0 2px 8px var(--acc-glow);
+    }
+    /* ============================================
+       8. Room Grid & Cards
+       ============================================ */
+    .rooms-grid{
+      display:grid;gap:1rem;
+      grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+    }
+    .room-card{
+      background:var(--card);
+      backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+      border:1px solid var(--card-bdr);border-radius:14px;
+      padding:1.1rem;display:flex;flex-direction:column;gap:.55rem;
+      cursor:pointer;transition:all .22s ease;
+      box-shadow:var(--card-sh);
+    }
+    .room-card:hover{
+      background:var(--card-h);
+      transform:translateY(-3px);
+      box-shadow:var(--card-sh-h);
+    }
+    .card-top{display:flex;align-items:center;justify-content:space-between}
+    .mode-badge{
+      padding:.2rem .6rem;border-radius:6px;
+      font-size:.73rem;font-weight:600;letter-spacing:.01em;
+    }
+    .member-count{
+      font-size:.78rem;font-weight:500;color:var(--t3);
+      display:flex;align-items:center;gap:.25rem;
+    }
+    .card-title{
+      font-size:1.02rem;font-weight:700;color:var(--t1);line-height:1.35;
+      display:-webkit-box;-webkit-line-clamp:2;
+      -webkit-box-orient:vertical;overflow:hidden;
+    }
+    .card-desc{
+      font-size:.84rem;color:var(--t3);line-height:1.5;
+      display:-webkit-box;-webkit-line-clamp:2;
+      -webkit-box-orient:vertical;overflow:hidden;
+    }
+    .card-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.1rem}
+    .tag{
+      padding:.12rem .5rem;border-radius:5px;
+      font-size:.72rem;font-weight:500;
+      background:var(--tag-bg);color:var(--tag-t);
+    }
+    .card-footer{
+      display:flex;align-items:center;justify-content:space-between;
+      margin-top:auto;padding-top:.45rem;
+    }
+    .card-meta{font-size:.76rem;color:var(--t3)}
+    .join-btn{
+      padding:.38rem .8rem;border-radius:8px;
+      font-size:.8rem;font-weight:600;
+      background:var(--acc);color:var(--acc-t);
+      transition:all .18s ease;
+    }
+    .join-btn:hover{background:var(--acc-h);transform:translateY(-1px)}
+    /* ============================================
+       9. Empty State
+       ============================================ */
+    .empty-state{
+      text-align:center;padding:3.5rem 1rem;
+      grid-column:1/-1;
+    }
+    .empty-icon{font-size:2.8rem;margin-bottom:.65rem;opacity:.45}
+    .empty-title{font-size:1.02rem;font-weight:600;color:var(--t2);margin-bottom:.3rem}
+    .empty-desc{font-size:.88rem;color:var(--t3)}
+    /* ============================================
+       10. Skeleton Loading
+       ============================================ */
+    .skel-card{
+      background:var(--card);
+      backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+      border:1px solid var(--card-bdr);border-radius:14px;
+      padding:1.1rem;display:flex;flex-direction:column;gap:.7rem;
+    }
+    .sk{
+      border-radius:6px;
+      background:linear-gradient(90deg,var(--sk) 25%,var(--sk-sh) 50%,var(--sk) 75%);
+      background-size:200% 100%;
+      animation:shimmer 1.8s ease infinite;
+    }
+    .sk-badge{width:5rem;height:1.35rem}
+    .sk-title{width:72%;height:1.1rem}
+    .sk-text{width:100%;height:.82rem}
+    .sk-text-s{width:58%;height:.82rem}
+    .sk-tags{display:flex;gap:.35rem}
+    .sk-tag{width:3.4rem;height:1.1rem;border-radius:5px}
+    .sk-foot{display:flex;justify-content:space-between;align-items:center;margin-top:.4rem}
+    .sk-meta{width:3.8rem;height:.82rem;border-radius:4px}
+    .sk-btn{width:4.2rem;height:1.7rem;border-radius:8px}
+    @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+    /* ============================================
+       11. Modal
+       ============================================ */
+    .modal-overlay{
+      position:fixed;inset:0;z-index:100;
+      display:flex;align-items:center;justify-content:center;
+      background:var(--ov);
+      backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+      opacity:0;visibility:hidden;
+      transition:opacity .25s,visibility .25s;
+      padding:1rem;
+    }
+    .modal-overlay.active{opacity:1;visibility:visible}
+    .modal{
+      background:var(--modal);border:1px solid var(--modal-bdr);
+      border-radius:18px;width:100%;max-width:480px;max-height:90vh;
+      overflow-y:auto;
+      transform:translateY(16px) scale(.97);
+      transition:transform .25s ease;
+      box-shadow:0 20px 60px rgba(0,0,0,.15);
+    }
+    .modal-overlay.active .modal{transform:translateY(0) scale(1)}
+    .modal-head{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:1.2rem 1.5rem;border-bottom:1px solid var(--modal-bdr);
+    }
+    .modal-title{font-size:1.12rem;font-weight:700;color:var(--t1)}
+    .modal-close{
+      width:2rem;height:2rem;display:flex;align-items:center;justify-content:center;
+      border-radius:8px;background:transparent;color:var(--t3);
+      font-size:1.4rem;line-height:1;transition:all .15s;
+    }
+    .modal-close:hover{background:var(--surf);color:var(--t1)}
+    .modal-body{padding:1.5rem}
+    /* ============================================
+       12. Form Elements
+       ============================================ */
+    .form-group{margin-bottom:1.1rem}
+    .form-label{
+      display:block;font-size:.84rem;font-weight:600;
+      color:var(--t2);margin-bottom:.35rem;
+    }
+    .form-input,.form-textarea,.form-select{
+      width:100%;padding:.62rem .85rem;
+      background:var(--in-bg);border:1px solid var(--in-bdr);
+      border-radius:10px;color:var(--in-t);font-size:.9rem;
+      backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+      transition:border-color .2s,box-shadow .2s;
+    }
+    .form-input:focus,.form-textarea:focus,.form-select:focus{
+      border-color:var(--in-foc);box-shadow:0 0 0 3px var(--in-ring);
+    }
+    .form-input::placeholder,.form-textarea::placeholder{color:var(--in-ph)}
+    .form-textarea{resize:vertical;min-height:4.5rem}
+    .form-select{
+      appearance:none;-webkit-appearance:none;cursor:pointer;
+      padding-right:2.4rem;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;background-position:right .75rem center;
+    }
+    .form-select option{background:var(--modal);color:var(--t1)}
+    .form-check{display:flex;align-items:center;gap:.6rem;cursor:pointer}
+    .form-checkbox{
+      width:1.15rem;height:1.15rem;flex-shrink:0;
+      border:2px solid var(--in-bdr);border-radius:4px;
+      background:var(--in-bg);
+      appearance:none;-webkit-appearance:none;cursor:pointer;
+      transition:all .15s;position:relative;
+    }
+    .form-checkbox:checked{background:var(--acc);border-color:var(--acc)}
+    .form-checkbox:checked::after{
+      content:'';position:absolute;left:3px;top:0;
+      width:5px;height:9px;
+      border:solid var(--acc-t);border-width:0 2px 2px 0;
+      transform:rotate(45deg);
+    }
+    .form-checkbox:focus{box-shadow:0 0 0 3px var(--in-ring)}
+    .form-check-label{font-size:.87rem;color:var(--t2);cursor:pointer;user-select:none}
+    .form-actions{display:flex;justify-content:flex-end;gap:.75rem;padding-top:.75rem}
+    /* ============================================
+       13. Toasts
+       ============================================ */
+    .toast-wrap{
+      position:fixed;bottom:1.5rem;right:1.5rem;z-index:200;
+      display:flex;flex-direction:column;gap:.5rem;pointer-events:none;
+    }
+    .toast{
+      padding:.72rem 1.1rem;border-radius:10px;
+      font-size:.87rem;font-weight:500;color:var(--toast-t);
+      backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      pointer-events:auto;animation:toastIn .3s ease;
+      box-shadow:0 4px 16px rgba(0,0,0,.15);
+    }
+    .toast-success{background:var(--toast-ok)}
+    .toast-error{background:var(--toast-err)}
+    .toast.hiding{animation:toastOut .3s ease forwards}
+    @keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes toastOut{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(10px) scale(.95)}}
+    /* ============================================
+       14. Scrollbar
+       ============================================ */
+    ::-webkit-scrollbar{width:6px}
+    ::-webkit-scrollbar-track{background:var(--scr-tr)}
+    ::-webkit-scrollbar-thumb{background:var(--scr-th);border-radius:3px}
+    ::-webkit-scrollbar-thumb:hover{background:var(--acc)}
+    *{scrollbar-width:thin;scrollbar-color:var(--scr-th) var(--scr-tr)}
+    /* ============================================
+       15. Misc Animations
+       ============================================ */
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    /* ============================================
+       16. Responsive
+       ============================================ */
+    @media(max-width:640px){
+      .header-inner{flex-direction:column;align-items:stretch;gap:.7rem}
+      .header-actions{justify-content:space-between}
+      .header-title{font-size:1.2rem}
+      .rooms-header{flex-direction:column;align-items:stretch}
+      .view-toggle{align-self:flex-start}
+      .rooms-grid{grid-template-columns:1fr}
+      .main{padding:1rem 1rem 2rem}
+    }
+  </style>
+</head>
+<body>
+<div id="dashboard" data-theme="morning">
+  <!-- fixed sky image -->
+  <div class="sky-bg" id="skyBg"></div>
+  <!-- ========== HEADER ========== -->
+  <header class="header">
+    <div class="header-inner">
+      <h1 class="header-title">Welcome back! 👋</h1>
+      <div class="header-actions">
+        <button class="btn btn-primary" id="createBtn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Create Room
+        </button>
+        <button class="btn btn-secondary" id="logoutBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          Logout
+        </button>
+      </div>
+    </div>
+  </header>
+  <!-- ========== MAIN ========== -->
+  <main class="main">
+    <!-- search -->
+    <div class="search-section">
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" class="search-input" id="searchInput"
+               placeholder="Search rooms by name, description, or tags…"
+               autocomplete="off">
+      </div>
+    </div>
+    <!-- filters -->
+    <div class="filters-section" id="filters">
+      <button class="filter-btn active" data-mode="all">All</button>
+      <button class="filter-btn" data-mode="sync">🔄 Sync</button>
+      <button class="filter-btn" data-mode="theater">🎬 Theater</button>
+      <button class="filter-btn" data-mode="freeplay">🎮 Free Play</button>
+    </div>
+    <!-- rooms -->
+    <section class="rooms-section">
+      <div class="rooms-header">
+        <div>
+          <span class="rooms-title" id="sectionTitle">Discover Rooms</span>
+          <span class="room-count" id="roomCount"></span>
+        </div>
+        <div class="view-toggle">
+          <button class="toggle-btn active" data-view="public">Public Rooms</button>
+          <button class="toggle-btn" data-view="my">My Rooms</button>
+        </div>
+      </div>
+      <div class="rooms-grid" id="roomsGrid"></div>
+    </section>
+  </main>
+  <!-- ========== CREATE MODAL ========== -->
+  <div class="modal-overlay" id="createModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 class="modal-title">Create a Room</h2>
+        <button class="modal-close" id="modalCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="createForm">
+          <div class="form-group">
+            <label class="form-label" for="f_name">Room Name *</label>
+            <input class="form-input" id="f_name" type="text" required
+                   placeholder="Movie night marathon">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="f_desc">Description</label>
+            <textarea class="form-textarea" id="f_desc"
+                      placeholder="What's this room about?"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="f_mode">Mode</label>
+            <select class="form-select" id="f_mode">
+              <option value="sync">🔄  Sync — Watch together in sync</option>
+              <option value="theater">🎬  Theater — Host controls playback</option>
+              <option value="freeplay">🎮  Free Play — Watch at your own pace</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="f_tags">Tags</label>
+            <input class="form-input" id="f_tags" type="text"
+                   placeholder="movies, anime, chill  (comma-separated)">
+          </div>
+          <div class="form-group">
+            <label class="form-check">
+              <input class="form-checkbox" type="checkbox" id="f_public" checked>
+              <span class="form-check-label">Make this room public</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="submitBtn">Create Room</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <!-- toasts -->
+  <div class="toast-wrap" id="toastWrap"></div>
+</div>
+<!-- ============================================
+     Scripts
+     ============================================ -->
+<script type="module" src="/js/helpers/timeOfDay.js"></script>
+<script>
+/* ============================================
+   Dashboard — Client Logic
+   ============================================ */
+(function () {
+  'use strict';
+  /* ---------- mode config ---------- */
+  const MODES = {
+    sync:     { label: 'Sync',      icon: '🔄' },
+    theater:  { label: 'Theater',   icon: '🎬' },
+    freeplay: { label: 'Free Play', icon: '🎮' },
+  };
+  /* ---------- state ---------- */
+  const S = {
+    myRooms: [],
+    pubRooms: [],
+    view: 'public',   // 'public' | 'my'
+    mode: 'all',
+    query: '',
+    loading: true,
+  };
+  /* ---------- DOM refs ---------- */
+  const $ = id => document.getElementById(id);
+  const dom = {
+    root:       $('dashboard'),
+    sky:        $('skyBg'),
+    search:     $('searchInput'),
+    grid:       $('roomsGrid'),
+    title:      $('sectionTitle'),
+    count:      $('roomCount'),
+    overlay:    $('createModal'),
+    form:       $('createForm'),
+    submitBtn:  $('submitBtn'),
+    toasts:     $('toastWrap'),
+  };
+  /* ---------- init ---------- */
+  document.addEventListener('DOMContentLoaded', () => {
+    const tod = resolveTime();
+    dom.root.dataset.theme = tod;
+    dom.sky.style.backgroundImage = "url('/assets/" + tod + "/sky.png')";
+    wireEvents();
+    fetchRooms();
+  });
+  function resolveTime() {
+    try { if (typeof getTimeOfDay === 'function') return getTimeOfDay(); } catch(_){}
+    var h = new Date().getHours();
+    if (h >= 5  && h < 12) return 'morning';
+    if (h >= 12 && h < 17) return 'afternoon';
+    if (h >= 17 && h < 20) return 'evening';
+    return 'night';
+  }
+  /* ---------- event wiring ---------- */
+  function wireEvents() {
+    // search (debounced)
+    var t;
+    dom.search.addEventListener('input', function (e) {
+      clearTimeout(t);
+      t = setTimeout(function () { S.query = e.target.value; render(); }, 220);
+    });
+    // filters
+    document.querySelectorAll('.filter-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        S.mode = this.dataset.mode;
+        document.querySelectorAll('.filter-btn').forEach(function (b) {
+          b.classList.toggle('active', b.dataset.mode === S.mode);
+        });
+        render();
+      });
+    });
+    // view toggle
+    document.querySelectorAll('.toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        S.view = this.dataset.view;
+        S.mode = 'all'; S.query = ''; dom.search.value = '';
+        document.querySelectorAll('.toggle-btn').forEach(function (b) {
+          b.classList.toggle('active', b.dataset.view === S.view);
+        });
+        document.querySelectorAll('.filter-btn').forEach(function (b) {
+          b.classList.toggle('active', b.dataset.mode === 'all');
+        });
+        render();
+      });
+    });
+    // create modal
+    $('createBtn').addEventListener('click', openModal);
+    $('modalCloseBtn').addEventListener('click', closeModal);
+    $('cancelBtn').addEventListener('click', closeModal);
+    dom.overlay.addEventListener('click', function (e) {
+      if (e.target === dom.overlay) closeModal();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && dom.overlay.classList.contains('active')) closeModal();
+    });
+    // form submit
+    dom.form.addEventListener('submit', handleCreate);
+    // logout
+    $('logoutBtn').addEventListener('click', handleLogout);
+  }
+  /* ---------- API ---------- */
+  function authGuard(res) {
+    if (res.status === 401) { window.location.href = '/'; throw new Error('auth'); }
+    return res;
+  }
+  async function fetchRooms() {
+    S.loading = true; render();
+    try {
+      var results = await Promise.all([
+        fetch('/api/rooms/my-rooms', { credentials: 'include' }).then(authGuard),
+        fetch('/api/rooms/public',   { credentials: 'include' }).then(authGuard),
+      ]);
+      var myData  = results[0].ok ? await results[0].json() : { rooms: [] };
+      var pubData = results[1].ok ? await results[1].json() : { rooms: [] };
+      S.myRooms  = myData.rooms  || [];
+      S.pubRooms = pubData.rooms || [];
+    } catch (err) {
+      if (err.message === 'auth') return;
+      console.error(err);
+      toast('Failed to load rooms', 'error');
+      S.myRooms = []; S.pubRooms = [];
+    } finally {
+      S.loading = false; render();
+    }
+  }
+  async function handleCreate(e) {
+    e.preventDefault();
+    var btn = dom.submitBtn;
+    btn.disabled = true; btn.textContent = 'Creating…';
+    var rawTags = $('f_tags').value;
+    var body = {
+      roomName:    $('f_name').value.trim(),
+      description: $('f_desc').value.trim(),
+      mode:        $('f_mode').value,
+      tags:        rawTags ? rawTags.split(',').map(function(s){return s.trim()}).filter(Boolean) : [],
+      isPublic:    $('f_public').checked,
+    };
+    try {
+      var res = await fetch('/api/rooms', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      authGuard(res);
+      if (!res.ok) {
+        var d = await res.json().catch(function(){return {}});
+        throw new Error(d.message || 'Creation failed');
+      }
+      toast('Room created!', 'success');
+      closeModal(); dom.form.reset(); $('f_public').checked = true;
+      await fetchRooms();
+    } catch (err) {
+      if (err.message !== 'auth') toast(err.message || 'Could not create room', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Create Room';
+    }
+  }
+  async function handleLogout() {
+    try { await fetch('/api/auth/logout', { method:'POST', credentials:'include' }); }
+    catch(_){}
+    window.location.href = '/';
+  }
+  /* ---------- filtering ---------- */
+  function filtered() {
+    var list = S.view === 'public' ? S.pubRooms : S.myRooms;
+    if (S.mode !== 'all') list = list.filter(function(r){return r.mode === S.mode});
+    if (S.query.trim()) {
+      var q = S.query.toLowerCase();
+      list = list.filter(function(r){
+        return (r.roomName  && r.roomName.toLowerCase().indexOf(q) !== -1)
+            || (r.description && r.description.toLowerCase().indexOf(q) !== -1)
+            || (r.tags && r.tags.some(function(t){return t.toLowerCase().indexOf(q) !== -1}));
+      });
+    }
+    return list;
+  }
+  /* ---------- rendering ---------- */
+  function render() {
+    dom.title.textContent = S.view === 'public' ? 'Discover Rooms' : 'My Rooms';
+    if (S.loading) { dom.grid.innerHTML = skeletons(8); dom.count.textContent = ''; return; }
+    var rooms = filtered();
+    dom.count.textContent = '(' + rooms.length + ' room' + (rooms.length !== 1 ? 's' : '') + ')';
+    if (!rooms.length) { dom.grid.innerHTML = emptyHTML(); return; }
+    dom.grid.innerHTML = rooms.map(cardHTML).join('');
+    // card click handlers  (event-delegation)
+    dom.grid.querySelectorAll('.room-card').forEach(function(card){
+      card.addEventListener('click', function(){ go(this.dataset.rid); });
+    });
+    dom.grid.querySelectorAll('.join-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){ e.stopPropagation(); go(this.dataset.rid); });
+    });
+  }
+  function cardHTML(r) {
+    var cfg   = MODES[r.mode] || { label: r.mode || 'Room', icon: '📺' };
+    var badge = MODES[r.mode] ? 'badge-' + r.mode : 'badge-default';
+    var tags  = (r.tags || []).slice(0, 4);
+    var rid   = esc(r.roomId || r._id || '');
+    var label = S.view === 'my' ? 'Open' : 'Join';
+    return '<div class="room-card" data-rid="' + rid + '">'
+      + '<div class="card-top">'
+        + '<span class="mode-badge ' + badge + '">' + cfg.icon + ' ' + cfg.label + '</span>'
+        + (r.memberCount != null
+            ? '<span class="member-count">👥 ' + r.memberCount + (r.maxMembers ? '/' + r.maxMembers : '') + '</span>'
+            : '')
+      + '</div>'
+      + '<h3 class="card-title">' + esc(r.roomName) + '</h3>'
+      + (r.description ? '<p class="card-desc">' + esc(r.description) + '</p>' : '')
+      + (tags.length
+          ? '<div class="card-tags">' + tags.map(function(t){return '<span class="tag">' + esc(t) + '</span>'}).join('') + '</div>'
+          : '')
+      + '<div class="card-footer">'
+        + '<span class="card-meta">' + timeAgo(r.createdAt) + '</span>'
+        + '<button class="join-btn" data-rid="' + rid + '">' + label + ' →</button>'
+      + '</div>'
+    + '</div>';
+  }
+  function skeletons(n) {
+    var h = '';
+    while (n--) {
+      h += '<div class="skel-card">'
+        + '<div class="sk sk-badge"></div>'
+        + '<div class="sk sk-title"></div>'
+        + '<div class="sk sk-text"></div>'
+        + '<div class="sk sk-text-s"></div>'
+        + '<div class="sk-tags"><div class="sk sk-tag"></div><div class="sk sk-tag"></div></div>'
+        + '<div class="sk-foot"><div class="sk sk-meta"></div><div class="sk sk-btn"></div></div>'
+      + '</div>';
+    }
+    return h;
+  }
+  function emptyHTML() {
+    var icon, msg;
+    if (S.view === 'my')             { icon = '🏠'; msg = "You haven't created any rooms yet."; }
+    else if (S.mode !== 'all')       { icon = '🔍'; msg = 'No ' + (MODES[S.mode]||{}).label + ' rooms found.'; }
+    else if (S.query.trim())         { icon = '🔍'; msg = 'No rooms match your search.'; }
+    else                             { icon = '📺'; msg = 'No rooms available right now.'; }
+    return '<div class="empty-state">'
+      + '<div class="empty-icon">' + icon + '</div>'
+      + '<p class="empty-title">' + msg + '</p>'
+      + '<p class="empty-desc">Try a different search or filter, or create a room!</p>'
+    + '</div>';
+  }
+  /* ---------- modal ---------- */
+  function openModal()  {
+    dom.overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    setTimeout(function(){ $('f_name').focus(); }, 200);
+  }
+  function closeModal() {
+    dom.overlay.classList.remove('active');
+    document.body.style.overflow = '';
+  }
+  /* ---------- navigation ---------- */
+  function go(rid) { if (rid) window.location.href = '/room/' + rid; }
+  /* ---------- toasts ---------- */
+  function toast(msg, type) {
+    var el = document.createElement('div');
+    el.className = 'toast toast-' + (type || 'success');
+    el.textContent = msg;
+    dom.toasts.appendChild(el);
+    setTimeout(function () {
+      el.classList.add('hiding');
+      setTimeout(function () { el.remove(); }, 300);
+    }, 3200);
+  }
+  /* ---------- helpers ---------- */
+  function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+  function timeAgo(ds) {
+    if (!ds) return '';
+    var diff = Math.floor((Date.now() - new Date(ds).getTime()) / 1000);
+    if (isNaN(diff) || diff < 0) return '';
+    if (diff < 60)    return 'just now';
+    if (diff < 3600)  return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 604800)return Math.floor(diff / 86400) + 'd ago';
+    return new Date(ds).toLocaleDateString();
+  }
+})();
+</script>
+</body>
+</html>

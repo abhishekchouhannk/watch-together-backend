@@ -47,6 +47,9 @@ app.get("/forgot-password", (req, res) => res.redirect("/auth?mode=forgotPasswor
 // token and shows the "please use the link from your email" message.
 app.get(["/reset-password", "/reset-password/:token"], page("reset-password.html"));
 app.get("/verify-email", page("verify-email.html"));
+app.get('/dashboard', /* requireAuth, */ (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
 
 const server = http.createServer(app);
 
