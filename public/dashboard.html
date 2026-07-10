@@ -24,7 +24,7 @@
     /* ============================================
        1. Theme Variables
        ============================================ */
-    /* ---- Morning  (sky ≈ #b5b6ee  light lavender) ---- */
+    /* ---- Morning  (sky ≈ #b5b6ee) ---- */
     [data-theme="morning"]{
       --sky-fb:#b5b6ee;
       --glass:rgba(255,255,255,.48);--glass-border:rgba(255,255,255,.55);
@@ -51,7 +51,7 @@
       --scr-th:rgba(225,29,72,.25);--scr-tr:transparent;
       --toast-ok:rgba(5,150,105,.92);--toast-err:rgba(225,29,72,.92);--toast-t:#fff;
     }
-    /* ---- Afternoon  (sky ≈ #229df2  vivid blue) ---- */
+    /* ---- Afternoon  (sky ≈ #229df2) ---- */
     [data-theme="afternoon"]{
       --sky-fb:#229df2;
       --glass:rgba(255,255,255,.48);--glass-border:rgba(255,255,255,.5);
@@ -105,7 +105,7 @@
       --scr-th:rgba(147,51,234,.3);--scr-tr:transparent;
       --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
     }
-    /* ---- Night  (sky ≈ #171f43  deep navy) ---- */
+    /* ---- Night  (sky ≈ #171f43) ---- */
     [data-theme="night"]{
       --sky-fb:#171f43;
       --glass:rgba(25,35,72,.4);--glass-border:rgba(99,102,241,.15);
@@ -132,24 +132,32 @@
       --scr-th:rgba(99,102,241,.25);--scr-tr:transparent;
       --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
     }
-    /* ---- Mode-badge colours (light themes) ---- */
-    [data-theme="morning"] .badge-sync,
-    [data-theme="afternoon"] .badge-sync{background:rgba(5,150,105,.1);color:#065f46}
-    [data-theme="morning"] .badge-theater,
-    [data-theme="afternoon"] .badge-theater{background:rgba(217,119,6,.1);color:#92400e}
-    [data-theme="morning"] .badge-freeplay,
-    [data-theme="afternoon"] .badge-freeplay{background:rgba(147,51,234,.1);color:#6b21a8}
+    /* ---- Room-type badge colours (light themes) ---- */
+    [data-theme="morning"] .badge-study,
+    [data-theme="afternoon"] .badge-study{background:rgba(37,99,235,.1);color:#1e40af}
+    [data-theme="morning"] .badge-gaming,
+    [data-theme="afternoon"] .badge-gaming{background:rgba(147,51,234,.1);color:#6b21a8}
+    [data-theme="morning"] .badge-entertainment,
+    [data-theme="afternoon"] .badge-entertainment{background:rgba(217,119,6,.1);color:#92400e}
+    [data-theme="morning"] .badge-casual,
+    [data-theme="afternoon"] .badge-casual{background:rgba(5,150,105,.1);color:#065f46}
     [data-theme="morning"] .badge-default,
     [data-theme="afternoon"] .badge-default{background:rgba(100,116,139,.1);color:#475569}
-    /* ---- Mode-badge colours (dark themes) ---- */
-    [data-theme="evening"] .badge-sync,
-    [data-theme="night"] .badge-sync{background:rgba(52,211,153,.13);color:#6ee7b7}
-    [data-theme="evening"] .badge-theater,
-    [data-theme="night"] .badge-theater{background:rgba(251,191,36,.13);color:#fcd34d}
-    [data-theme="evening"] .badge-freeplay,
-    [data-theme="night"] .badge-freeplay{background:rgba(168,85,247,.14);color:#d8b4fe}
+    [data-theme="morning"] .owner-badge,
+    [data-theme="afternoon"] .owner-badge{background:rgba(217,119,6,.14);color:#92400e}
+    /* ---- Room-type badge colours (dark themes) ---- */
+    [data-theme="evening"] .badge-study,
+    [data-theme="night"] .badge-study{background:rgba(96,165,250,.15);color:#93c5fd}
+    [data-theme="evening"] .badge-gaming,
+    [data-theme="night"] .badge-gaming{background:rgba(168,85,247,.14);color:#d8b4fe}
+    [data-theme="evening"] .badge-entertainment,
+    [data-theme="night"] .badge-entertainment{background:rgba(251,191,36,.13);color:#fcd34d}
+    [data-theme="evening"] .badge-casual,
+    [data-theme="night"] .badge-casual{background:rgba(52,211,153,.13);color:#6ee7b7}
     [data-theme="evening"] .badge-default,
     [data-theme="night"] .badge-default{background:rgba(148,163,184,.12);color:#94a3b8}
+    [data-theme="evening"] .owner-badge,
+    [data-theme="night"] .owner-badge{background:rgba(251,191,36,.16);color:#fcd34d}
     /* ============================================
        2. Sky Background
        ============================================ */
@@ -220,10 +228,7 @@
       backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
       transition:border-color .2s,box-shadow .2s;
     }
-    .search-input:focus{
-      border-color:var(--in-foc);
-      box-shadow:0 0 0 3px var(--in-ring);
-    }
+    .search-input:focus{border-color:var(--in-foc);box-shadow:0 0 0 3px var(--in-ring)}
     .search-input::placeholder{color:var(--in-ph)}
     /* ============================================
        6. Filters
@@ -283,21 +288,38 @@
       padding:1.1rem;display:flex;flex-direction:column;gap:.55rem;
       cursor:pointer;transition:all .22s ease;
       box-shadow:var(--card-sh);
+      overflow:hidden;
     }
     .room-card:hover{
       background:var(--card-h);
       transform:translateY(-3px);
       box-shadow:var(--card-sh-h);
     }
-    .card-top{display:flex;align-items:center;justify-content:space-between}
-    .mode-badge{
+    /* optional thumbnail banner (bleeds to card edges) */
+    .card-thumb{
+      margin:-1.1rem -1.1rem .35rem;
+      height:8rem;overflow:hidden;
+    }
+    .card-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+    .card-top{
+      display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+    }
+    .card-badges{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+    .mode-badge,.owner-badge{
       padding:.2rem .6rem;border-radius:6px;
       font-size:.73rem;font-weight:600;letter-spacing:.01em;
+      white-space:nowrap;
     }
     .member-count{
       font-size:.78rem;font-weight:500;color:var(--t3);
-      display:flex;align-items:center;gap:.25rem;
+      display:flex;align-items:center;gap:.35rem;white-space:nowrap;
     }
+    .status-dot{
+      width:.5rem;height:.5rem;border-radius:50%;display:inline-block;flex-shrink:0;
+    }
+    .status-active{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.6)}
+    .status-idle{background:#eab308}
+    .status-ended{background:#94a3b8}
     .card-title{
       font-size:1.02rem;font-weight:700;color:var(--t1);line-height:1.35;
       display:-webkit-box;-webkit-line-clamp:2;
@@ -316,12 +338,15 @@
     }
     .card-footer{
       display:flex;align-items:center;justify-content:space-between;
-      margin-top:auto;padding-top:.45rem;
+      margin-top:auto;padding-top:.45rem;gap:.5rem;
     }
-    .card-meta{font-size:.76rem;color:var(--t3)}
+    .card-meta{
+      font-size:.76rem;color:var(--t3);
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
     .join-btn{
       padding:.38rem .8rem;border-radius:8px;
-      font-size:.8rem;font-weight:600;
+      font-size:.8rem;font-weight:600;flex-shrink:0;
       background:var(--acc);color:var(--acc-t);
       transition:all .18s ease;
     }
@@ -329,10 +354,7 @@
     /* ============================================
        9. Empty State
        ============================================ */
-    .empty-state{
-      text-align:center;padding:3.5rem 1rem;
-      grid-column:1/-1;
-    }
+    .empty-state{text-align:center;padding:3.5rem 1rem;grid-column:1/-1}
     .empty-icon{font-size:2.8rem;margin-bottom:.65rem;opacity:.45}
     .empty-title{font-size:1.02rem;font-weight:600;color:var(--t2);margin-bottom:.3rem}
     .empty-desc{font-size:.88rem;color:var(--t3)}
@@ -376,7 +398,7 @@
     .modal-overlay.active{opacity:1;visibility:visible}
     .modal{
       background:var(--modal);border:1px solid var(--modal-bdr);
-      border-radius:18px;width:100%;max-width:480px;max-height:90vh;
+      border-radius:18px;width:100%;max-width:500px;max-height:90vh;
       overflow-y:auto;
       transform:translateY(16px) scale(.97);
       transition:transform .25s ease;
@@ -399,6 +421,8 @@
        12. Form Elements
        ============================================ */
     .form-group{margin-bottom:1.1rem}
+    .form-row{display:flex;gap:.75rem}
+    .form-row .form-group{flex:1}
     .form-label{
       display:block;font-size:.84rem;font-weight:600;
       color:var(--t2);margin-bottom:.35rem;
@@ -422,23 +446,37 @@
       background-repeat:no-repeat;background-position:right .75rem center;
     }
     .form-select option{background:var(--modal);color:var(--t1)}
-    .form-check{display:flex;align-items:center;gap:.6rem;cursor:pointer}
-    .form-checkbox{
-      width:1.15rem;height:1.15rem;flex-shrink:0;
-      border:2px solid var(--in-bdr);border-radius:4px;
-      background:var(--in-bg);
-      appearance:none;-webkit-appearance:none;cursor:pointer;
-      transition:all .15s;position:relative;
+    /* privacy segmented toggle */
+    .seg-toggle{display:flex;gap:.4rem}
+    .seg-btn{
+      flex:1;padding:.55rem .8rem;border-radius:10px;
+      border:1px solid var(--in-bdr);
+      background:var(--in-bg);color:var(--t3);
+      font-size:.86rem;font-weight:600;transition:all .2s ease;
     }
-    .form-checkbox:checked{background:var(--acc);border-color:var(--acc)}
-    .form-checkbox:checked::after{
-      content:'';position:absolute;left:3px;top:0;
-      width:5px;height:9px;
-      border:solid var(--acc-t);border-width:0 2px 2px 0;
-      transform:rotate(45deg);
+    .seg-btn:hover:not(.active){color:var(--t1)}
+    .seg-btn.active{
+      background:var(--acc);color:var(--acc-t);border-color:var(--acc);
+      box-shadow:0 2px 8px var(--acc-glow);
     }
-    .form-checkbox:focus{box-shadow:0 0 0 3px var(--in-ring)}
-    .form-check-label{font-size:.87rem;color:var(--t2);cursor:pointer;user-select:none}
+    /* tag add row + chips */
+    .tag-add-row{display:flex;gap:.5rem}
+    .tag-add-row .form-input{flex:1}
+    .tag-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.55rem}
+    .chip{
+      display:inline-flex;align-items:center;gap:.3rem;
+      padding:.25rem .65rem;border-radius:999px;
+      font-size:.78rem;font-weight:600;
+      background:var(--tag-bg);color:var(--tag-t);
+      animation:chipIn .2s ease;
+    }
+    .chip-x{
+      background:transparent;color:inherit;
+      font-size:1rem;line-height:1;padding:0;opacity:.65;
+      transition:opacity .15s;
+    }
+    .chip-x:hover{opacity:1}
+    @keyframes chipIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
     .form-actions{display:flex;justify-content:flex-end;gap:.75rem;padding-top:.75rem}
     /* ============================================
        13. Toasts
@@ -460,19 +498,16 @@
     @keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
     @keyframes toastOut{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(10px) scale(.95)}}
     /* ============================================
-       14. Scrollbar
+       14. Scrollbar / Misc
        ============================================ */
     ::-webkit-scrollbar{width:6px}
     ::-webkit-scrollbar-track{background:var(--scr-tr)}
     ::-webkit-scrollbar-thumb{background:var(--scr-th);border-radius:3px}
     ::-webkit-scrollbar-thumb:hover{background:var(--acc)}
     *{scrollbar-width:thin;scrollbar-color:var(--scr-th) var(--scr-tr)}
-    /* ============================================
-       15. Misc Animations
-       ============================================ */
     @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
     /* ============================================
-       16. Responsive
+       15. Responsive
        ============================================ */
     @media(max-width:640px){
       .header-inner{flex-direction:column;align-items:stretch;gap:.7rem}
@@ -482,33 +517,30 @@
       .view-toggle{align-self:flex-start}
       .rooms-grid{grid-template-columns:1fr}
       .main{padding:1rem 1rem 2rem}
+      .form-row{flex-direction:column;gap:0}
     }
   </style>
 </head>
 <body>
 <div id="dashboard" data-theme="morning">
-  <!-- fixed sky image -->
   <div class="sky-bg" id="skyBg"></div>
   <!-- ========== HEADER ========== -->
   <header class="header">
     <div class="header-inner">
-      <h1 class="header-title">Welcome back! 👋</h1>
+      <h1 class="header-title" id="welcomeTitle">Welcome back! 👋</h1>
       <div class="header-actions">
         <button class="btn btn-primary" id="createBtn">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           Create Room
         </button>
         <button class="btn btn-secondary" id="logoutBtn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round"
-               stroke-linejoin="round">
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-            <polyline points="16 17 21 12 16 7"/>
-            <line x1="21" y1="12" x2="9" y2="12"/>
+            <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
           Logout
         </button>
@@ -517,27 +549,24 @@
   </header>
   <!-- ========== MAIN ========== -->
   <main class="main">
-    <!-- search -->
     <div class="search-section">
       <div class="search-wrap">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2" stroke-linecap="round"
-             stroke-linejoin="round">
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
         <input type="text" class="search-input" id="searchInput"
-               placeholder="Search rooms by name, description, or tags…"
-               autocomplete="off">
+               placeholder="Search rooms by name, description, or tags…" autocomplete="off">
       </div>
     </div>
-    <!-- filters -->
+    <!-- Room Type filters (matches Room model enum) -->
     <div class="filters-section" id="filters">
       <button class="filter-btn active" data-mode="all">All</button>
-      <button class="filter-btn" data-mode="sync">🔄 Sync</button>
-      <button class="filter-btn" data-mode="theater">🎬 Theater</button>
-      <button class="filter-btn" data-mode="freeplay">🎮 Free Play</button>
+      <button class="filter-btn" data-mode="study">📚 Study</button>
+      <button class="filter-btn" data-mode="gaming">🎮 Gaming</button>
+      <button class="filter-btn" data-mode="entertainment">🎬 Entertainment</button>
+      <button class="filter-btn" data-mode="casual">☕ Casual</button>
     </div>
-    <!-- rooms -->
     <section class="rooms-section">
       <div class="rooms-header">
         <div>
@@ -568,27 +597,40 @@
           </div>
           <div class="form-group">
             <label class="form-label" for="f_desc">Description</label>
-            <textarea class="form-textarea" id="f_desc"
-                      placeholder="What's this room about?"></textarea>
+            <textarea class="form-textarea" id="f_desc" maxlength="200"
+                      placeholder="What's this room about? (max 200 chars)"></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="f_mode">Room Type</label>
+              <select class="form-select" id="f_mode">
+                <option value="casual" selected>☕ Casual</option>
+                <option value="study">📚 Study</option>
+                <option value="gaming">🎮 Gaming</option>
+                <option value="entertainment">🎬 Entertainment</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="f_max">Max Participants</label>
+              <input class="form-input" id="f_max" type="number"
+                     min="2" max="50" value="10">
+            </div>
           </div>
           <div class="form-group">
-            <label class="form-label" for="f_mode">Mode</label>
-            <select class="form-select" id="f_mode">
-              <option value="sync">🔄  Sync — Watch together in sync</option>
-              <option value="theater">🎬  Theater — Host controls playback</option>
-              <option value="freeplay">🎮  Free Play — Watch at your own pace</option>
-            </select>
+            <label class="form-label">Privacy</label>
+            <div class="seg-toggle" id="privacyToggle">
+              <button type="button" class="seg-btn active" data-privacy="public">🌐 Public</button>
+              <button type="button" class="seg-btn" data-privacy="private">🔒 Private</button>
+            </div>
           </div>
           <div class="form-group">
-            <label class="form-label" for="f_tags">Tags</label>
-            <input class="form-input" id="f_tags" type="text"
-                   placeholder="movies, anime, chill  (comma-separated)">
-          </div>
-          <div class="form-group">
-            <label class="form-check">
-              <input class="form-checkbox" type="checkbox" id="f_public" checked>
-              <span class="form-check-label">Make this room public</span>
-            </label>
+            <label class="form-label" for="f_tagInput">Tags</label>
+            <div class="tag-add-row">
+              <input class="form-input" id="f_tagInput" type="text"
+                     placeholder="e.g. anime" maxlength="24" autocomplete="off">
+              <button type="button" class="btn btn-secondary" id="addTagBtn">Add</button>
+            </div>
+            <div class="tag-chips" id="tagChips"></div>
           </div>
           <div class="form-actions">
             <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
@@ -598,62 +640,62 @@
       </div>
     </div>
   </div>
-  <!-- toasts -->
   <div class="toast-wrap" id="toastWrap"></div>
 </div>
 <!-- ============================================
      Scripts
      ============================================ -->
-<script type="module" src="/js/helpers/timeOfDay.js"></script>
+<script src="/js/helpers/timeOfDay.js"></script>
 <script>
-/* ============================================
-   Dashboard — Client Logic
-   ============================================ */
 (function () {
   'use strict';
-  /* ---------- mode config ---------- */
+  /* ---------- room-type config (matches Room model enum) ---------- */
   const MODES = {
-    sync:     { label: 'Sync',      icon: '🔄' },
-    theater:  { label: 'Theater',   icon: '🎬' },
-    freeplay: { label: 'Free Play', icon: '🎮' },
+    study:         { label: 'Study',         icon: '📚' },
+    gaming:        { label: 'Gaming',        icon: '🎮' },
+    entertainment: { label: 'Entertainment', icon: '🎬' },
+    casual:        { label: 'Casual',        icon: '☕' },
   };
+  const MAX_TAGS = 8;
   /* ---------- state ---------- */
   const S = {
     myRooms: [],
     pubRooms: [],
-    view: 'public',   // 'public' | 'my'
+    view: 'public',
     mode: 'all',
     query: '',
     loading: true,
+    userId: null,
+    username: null,
+    draftTags: [],
+    draftPublic: true,
   };
   /* ---------- DOM refs ---------- */
   const $ = id => document.getElementById(id);
   const dom = {
-    root:       $('dashboard'),
-    sky:        $('skyBg'),
-    search:     $('searchInput'),
-    grid:       $('roomsGrid'),
-    title:      $('sectionTitle'),
-    count:      $('roomCount'),
-    overlay:    $('createModal'),
-    form:       $('createForm'),
-    submitBtn:  $('submitBtn'),
-    toasts:     $('toastWrap'),
+    root: $('dashboard'),   sky: $('skyBg'),
+    search: $('searchInput'), grid: $('roomsGrid'),
+    title: $('sectionTitle'), count: $('roomCount'),
+    overlay: $('createModal'), form: $('createForm'),
+    submitBtn: $('submitBtn'), toasts: $('toastWrap'),
+    tagInput: $('f_tagInput'), tagChips: $('tagChips'),
+    welcome: $('welcomeTitle'),
   };
   /* ---------- init ---------- */
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     const tod = resolveTime();
     dom.root.dataset.theme = tod;
     dom.sky.style.backgroundImage = "url('/assets/" + tod + "/sky.png')";
     wireEvents();
+    await fetchMe();     // need identity before rendering owner badges
     fetchRooms();
   });
   function resolveTime() {
     try { if (typeof getTimeOfDay === 'function') return getTimeOfDay(); } catch(_){}
     var h = new Date().getHours();
-    if (h >= 5  && h < 12) return 'morning';
+    if (h >= 6  && h < 12) return 'morning';
     if (h >= 12 && h < 17) return 'afternoon';
-    if (h >= 17 && h < 20) return 'evening';
+    if (h >= 17 && h < 21) return 'evening';
     return 'night';
   }
   /* ---------- event wiring ---------- */
@@ -664,7 +706,7 @@
       clearTimeout(t);
       t = setTimeout(function () { S.query = e.target.value; render(); }, 220);
     });
-    // filters
+    // room-type filters
     document.querySelectorAll('.filter-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         S.mode = this.dataset.mode;
@@ -674,7 +716,7 @@
         render();
       });
     });
-    // view toggle
+    // public / my toggle
     document.querySelectorAll('.toggle-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         S.view = this.dataset.view;
@@ -688,7 +730,7 @@
         render();
       });
     });
-    // create modal
+    // modal open/close
     $('createBtn').addEventListener('click', openModal);
     $('modalCloseBtn').addEventListener('click', closeModal);
     $('cancelBtn').addEventListener('click', closeModal);
@@ -698,15 +740,73 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && dom.overlay.classList.contains('active')) closeModal();
     });
-    // form submit
+    // privacy segmented toggle
+    document.querySelectorAll('#privacyToggle .seg-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        S.draftPublic = this.dataset.privacy === 'public';
+        document.querySelectorAll('#privacyToggle .seg-btn').forEach(function (b) {
+          b.classList.toggle('active',
+            (b.dataset.privacy === 'public') === S.draftPublic);
+        });
+      });
+    });
+    // tag adding: button click OR Enter inside the tag input
+    $('addTagBtn').addEventListener('click', addDraftTag);
+    dom.tagInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); addDraftTag(); }
+    });
     dom.form.addEventListener('submit', handleCreate);
-    // logout
     $('logoutBtn').addEventListener('click', handleLogout);
+  }
+  /* ---------- tag chips ---------- */
+  function addDraftTag() {
+    var raw = dom.tagInput.value.trim().replace(/^#/, '');
+    if (!raw) return;
+    if (S.draftTags.length >= MAX_TAGS) {
+      toast('Maximum ' + MAX_TAGS + ' tags', 'error'); return;
+    }
+    var exists = S.draftTags.some(function (t) {
+      return t.toLowerCase() === raw.toLowerCase();
+    });
+    if (exists) { dom.tagInput.value = ''; return; }
+    S.draftTags.push(raw);
+    dom.tagInput.value = '';
+    dom.tagInput.focus();
+    renderChips();
+  }
+  function removeDraftTag(i) {
+    S.draftTags.splice(i, 1);
+    renderChips();
+  }
+  function renderChips() {
+    dom.tagChips.innerHTML = S.draftTags.map(function (t, i) {
+      return '<span class="chip">#' + esc(t)
+        + '<button type="button" class="chip-x" data-i="' + i + '" aria-label="Remove tag">×</button>'
+        + '</span>';
+    }).join('');
+    dom.tagChips.querySelectorAll('.chip-x').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        removeDraftTag(parseInt(this.dataset.i, 10));
+      });
+    });
   }
   /* ---------- API ---------- */
   function authGuard(res) {
     if (res.status === 401) { window.location.href = '/'; throw new Error('auth'); }
     return res;
+  }
+  // current user — needed to show the 👑 Owner badge in "My Rooms"
+  // (adjust the endpoint if your auth route differs — see notes below)
+  async function fetchMe() {
+    try {
+      var res = await fetch('/api/auth/me', { credentials: 'include' });
+      if (!res.ok) return;
+      var d = await res.json();
+      var u = d.user || d;
+      S.userId   = u.id || u._id || u.userId || null;
+      S.username = u.username || null;
+      if (S.username) dom.welcome.textContent = 'Welcome back, ' + S.username + '! 👋';
+    } catch (_) { /* badge simply won't show */ }
   }
   async function fetchRooms() {
     S.loading = true; render();
@@ -732,16 +832,19 @@
     e.preventDefault();
     var btn = dom.submitBtn;
     btn.disabled = true; btn.textContent = 'Creating…';
-    var rawTags = $('f_tags').value;
+    var maxP = parseInt($('f_max').value, 10);
+    if (isNaN(maxP) || maxP < 2) maxP = 2;
+    if (maxP > 50) maxP = 50;
     var body = {
-      roomName:    $('f_name').value.trim(),
-      description: $('f_desc').value.trim(),
-      mode:        $('f_mode').value,
-      tags:        rawTags ? rawTags.split(',').map(function(s){return s.trim()}).filter(Boolean) : [],
-      isPublic:    $('f_public').checked,
+      roomName:        $('f_name').value.trim(),
+      description:     $('f_desc').value.trim(),
+      mode:            $('f_mode').value,          // study|gaming|entertainment|casual
+      maxParticipants: maxP,
+      isPublic:        S.draftPublic,
+      tags:            S.draftTags.slice(),
     };
     try {
-      var res = await fetch('/api/rooms', {
+      var res = await fetch('/api/rooms/create', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -749,16 +852,27 @@
       authGuard(res);
       if (!res.ok) {
         var d = await res.json().catch(function(){return {}});
-        throw new Error(d.message || 'Creation failed');
+        throw new Error(d.error || 'Creation failed');
       }
       toast('Room created!', 'success');
-      closeModal(); dom.form.reset(); $('f_public').checked = true;
+      closeModal(); resetForm();
       await fetchRooms();
+      // — or auto-enter the room instead: —
+      // const data = await res.json(); go(data.room.roomId);
     } catch (err) {
       if (err.message !== 'auth') toast(err.message || 'Could not create room', 'error');
     } finally {
       btn.disabled = false; btn.textContent = 'Create Room';
     }
+  }
+  function resetForm() {
+    dom.form.reset();
+    $('f_max').value = 10;
+    S.draftTags = []; renderChips();
+    S.draftPublic = true;
+    document.querySelectorAll('#privacyToggle .seg-btn').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.privacy === 'public');
+    });
   }
   async function handleLogout() {
     try { await fetch('/api/auth/logout', { method:'POST', credentials:'include' }); }
@@ -768,13 +882,13 @@
   /* ---------- filtering ---------- */
   function filtered() {
     var list = S.view === 'public' ? S.pubRooms : S.myRooms;
-    if (S.mode !== 'all') list = list.filter(function(r){return r.mode === S.mode});
+    if (S.mode !== 'all') list = list.filter(function(r){ return r.mode === S.mode; });
     if (S.query.trim()) {
       var q = S.query.toLowerCase();
       list = list.filter(function(r){
-        return (r.roomName  && r.roomName.toLowerCase().indexOf(q) !== -1)
+        return (r.roomName    && r.roomName.toLowerCase().indexOf(q) !== -1)
             || (r.description && r.description.toLowerCase().indexOf(q) !== -1)
-            || (r.tags && r.tags.some(function(t){return t.toLowerCase().indexOf(q) !== -1}));
+            || (r.tags && r.tags.some(function(t){ return t.toLowerCase().indexOf(q) !== -1; }));
       });
     }
     return list;
@@ -787,7 +901,6 @@
     dom.count.textContent = '(' + rooms.length + ' room' + (rooms.length !== 1 ? 's' : '') + ')';
     if (!rooms.length) { dom.grid.innerHTML = emptyHTML(); return; }
     dom.grid.innerHTML = rooms.map(cardHTML).join('');
-    // card click handlers  (event-delegation)
     dom.grid.querySelectorAll('.room-card').forEach(function(card){
       card.addEventListener('click', function(){ go(this.dataset.rid); });
     });
@@ -795,26 +908,48 @@
       btn.addEventListener('click', function(e){ e.stopPropagation(); go(this.dataset.rid); });
     });
   }
+  function isOwned(r) {
+    if (!r.admin) return false;
+    if (S.userId && String(r.admin.userId) === String(S.userId)) return true;
+    if (S.username && r.admin.username === S.username) return true;
+    return false;
+  }
   function cardHTML(r) {
     var cfg   = MODES[r.mode] || { label: r.mode || 'Room', icon: '📺' };
     var badge = MODES[r.mode] ? 'badge-' + r.mode : 'badge-default';
     var tags  = (r.tags || []).slice(0, 4);
     var rid   = esc(r.roomId || r._id || '');
+    var owned = isOwned(r);
     var label = S.view === 'my' ? 'Open' : 'Join';
+    var nMembers = (r.participants || []).length;
+    var status = r.status || 'active';
+    var hostBy = r.admin && r.admin.username ? 'by ' + esc(r.admin.username) : '';
+    var when = timeAgo(r.createdAt);
+    var meta = [hostBy, when].filter(Boolean).join(' · ');
     return '<div class="room-card" data-rid="' + rid + '">'
+      + (r.thumbnail
+          ? '<div class="card-thumb"><img src="' + esc(r.thumbnail)
+            + '" alt="" loading="lazy" onerror="this.parentElement.remove()"></div>'
+          : '')
       + '<div class="card-top">'
-        + '<span class="mode-badge ' + badge + '">' + cfg.icon + ' ' + cfg.label + '</span>'
-        + (r.memberCount != null
-            ? '<span class="member-count">👥 ' + r.memberCount + (r.maxMembers ? '/' + r.maxMembers : '') + '</span>'
-            : '')
+        + '<div class="card-badges">'
+          + '<span class="mode-badge ' + badge + '">' + cfg.icon + ' ' + cfg.label + '</span>'
+          + (owned ? '<span class="owner-badge">👑 Owner</span>' : '')
+        + '</div>'
+        + '<span class="member-count">'
+          + '<span class="status-dot status-' + esc(status) + '" title="' + esc(status) + '"></span>'
+          + '👥 ' + nMembers + '/' + (r.maxParticipants || 10)
+        + '</span>'
       + '</div>'
       + '<h3 class="card-title">' + esc(r.roomName) + '</h3>'
       + (r.description ? '<p class="card-desc">' + esc(r.description) + '</p>' : '')
       + (tags.length
-          ? '<div class="card-tags">' + tags.map(function(t){return '<span class="tag">' + esc(t) + '</span>'}).join('') + '</div>'
+          ? '<div class="card-tags">'
+            + tags.map(function(t){ return '<span class="tag">#' + esc(t) + '</span>'; }).join('')
+            + '</div>'
           : '')
       + '<div class="card-footer">'
-        + '<span class="card-meta">' + timeAgo(r.createdAt) + '</span>'
+        + '<span class="card-meta">' + meta + '</span>'
         + '<button class="join-btn" data-rid="' + rid + '">' + label + ' →</button>'
       + '</div>'
     + '</div>';
@@ -835,10 +970,10 @@
   }
   function emptyHTML() {
     var icon, msg;
-    if (S.view === 'my')             { icon = '🏠'; msg = "You haven't created any rooms yet."; }
-    else if (S.mode !== 'all')       { icon = '🔍'; msg = 'No ' + (MODES[S.mode]||{}).label + ' rooms found.'; }
-    else if (S.query.trim())         { icon = '🔍'; msg = 'No rooms match your search.'; }
-    else                             { icon = '📺'; msg = 'No rooms available right now.'; }
+    if (S.view === 'my')       { icon = '🏠'; msg = "You haven't created or joined any rooms yet."; }
+    else if (S.mode !== 'all') { icon = '🔍'; msg = 'No ' + (MODES[S.mode]||{label:S.mode}).label + ' rooms found.'; }
+    else if (S.query.trim())   { icon = '🔍'; msg = 'No rooms match your search.'; }
+    else                       { icon = '📺'; msg = 'No rooms available right now.'; }
     return '<div class="empty-state">'
       + '<div class="empty-icon">' + icon + '</div>'
       + '<p class="empty-title">' + msg + '</p>'
@@ -878,10 +1013,10 @@
     if (!ds) return '';
     var diff = Math.floor((Date.now() - new Date(ds).getTime()) / 1000);
     if (isNaN(diff) || diff < 0) return '';
-    if (diff < 60)    return 'just now';
-    if (diff < 3600)  return Math.floor(diff / 60) + 'm ago';
-    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-    if (diff < 604800)return Math.floor(diff / 86400) + 'd ago';
+    if (diff < 60)     return 'just now';
+    if (diff < 3600)   return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400)  return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
     return new Date(ds).toLocaleDateString();
   }
 })();
