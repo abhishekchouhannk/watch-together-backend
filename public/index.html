@@ -1,53 +1,50 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Watch Together</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-        rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
     />
     <link rel="stylesheet" href="/css/landing.css" />
-</head>
-<body>
+  </head>
+  <body>
     <main id="landing" class="landing">
-        <!-- ═══ Sky ═══ -->
-        <img class="sky-layer" id="sky-image" draggable="false" alt="" />
-        <!-- ═══ Element Layer (celestial body + particles, behind clouds) ═══ -->
-        <div class="element-layer" id="element-layer"></div>
-        <!-- ═══ Far Cloud Layer ═══ -->
-        <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
-            <div class="cloud-intro">
-                <img class="cloud-half left" draggable="false" alt="" />
-                <img class="cloud-half right" draggable="false" alt="" />
-            </div>
-            <div class="cloud-scroll"></div>
+      <!-- ═══ Sky ═══ -->
+      <img class="sky-layer" id="sky-image" draggable="false" alt="" />
+      <!-- ═══ Element Layer (celestial body + particles, behind clouds) ═══ -->
+      <div class="element-layer" id="element-layer"></div>
+      <!-- ═══ Far Cloud Layer ═══ -->
+      <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
+        <div class="cloud-intro">
+          <img class="cloud-half left" draggable="false" alt="" />
+          <img class="cloud-half right" draggable="false" alt="" />
         </div>
-        <!-- ═══ Near Cloud Layer ═══ -->
-        <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
-            <div class="cloud-intro">
-                <img class="cloud-half left" draggable="false" alt="" />
-                <img class="cloud-half right" draggable="false" alt="" />
-            </div>
-            <div class="cloud-scroll"></div>
+        <div class="cloud-scroll"></div>
+      </div>
+      <!-- ═══ Near Cloud Layer ═══ -->
+      <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
+        <div class="cloud-intro">
+          <img class="cloud-half left" draggable="false" alt="" />
+          <img class="cloud-half right" draggable="false" alt="" />
         </div>
-        <!-- ═══ Content Overlay ═══ -->
-        <div class="content" id="content">
-            <h1 class="title">Watch Together</h1>
-            <p class="motto" id="motto"></p>
-            <div class="button-group">
-                <button class="btn btn-primary" id="btn-start">
-                    Start Watching
-                </button>
-                <button class="btn btn-secondary" id="btn-learn">
-                    Learn More
-                </button>
-            </div>
+        <div class="cloud-scroll"></div>
+      </div>
+      <!-- ═══ Content Overlay ═══ -->
+      <div class="content" id="content">
+        <h1 class="title">Watch Together</h1>
+        <p class="motto" id="motto"></p>
+        <div class="button-group">
+          <button class="btn btn-primary" id="btn-start">Start Watching</button>
+          <button class="btn btn-secondary" id="btn-learn">Learn More</button>
         </div>
+      </div>
     </main>
     <script src="/js/landing.js"></script>
-</body>
+    <script type=module src="/js/sky.js"></script>
+  </body>
 </html>

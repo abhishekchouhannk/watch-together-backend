@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In — Watch Together</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/landing.css" />
+    <link rel="stylesheet" href="/css/auth.css" />
+</head>
+<body>
+    <main id="landing" class="landing">
+        <!-- ═══ Shared sky background (identical on every page) ═══ -->
+        <img class="sky-layer" id="sky-image" draggable="false" alt="" />
+        <div class="element-layer" id="element-layer"></div>
+        <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
+            <div class="cloud-intro">
+                <img class="cloud-half left" draggable="false" alt="" />
+                <img class="cloud-half right" draggable="false" alt="" />
+            </div>
+            <div class="cloud-scroll"></div>
+        </div>
+        <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
+            <div class="cloud-intro">
+                <img class="cloud-half left" draggable="false" alt="" />
+                <img class="cloud-half right" draggable="false" alt="" />
+            </div>
+            <div class="cloud-scroll"></div>
+        </div>
+        <!-- ═══ Page content ═══ -->
+        <nav class="brand-bar" id="brand-bar" hidden>
+            <h1 class="brand-title">Watch Together</h1>
+        </nav>
+        <div class="page-content" id="page-content">
+            <div class="auth-card" id="auth-card" data-mode="login">
+                <!-- Mode toggle pills (hidden in forgotPassword mode) -->
+                <div class="mode-toggle">
+                    <button type="button" class="pill" data-set-mode="login">Login</button>
+                    <button type="button" class="pill" data-set-mode="register">Register</button>
+                </div>
+                <!-- forgotPassword header -->
+                <div class="forgot-header">
+                    <h2>Reset Password</h2>
+                    <p>Enter your email to receive a password reset link</p>
+                </div>
+                <!-- Helper text (one per mode) -->
+                <p class="helper helper-login">
+                    New User?
+                    <button type="button" class="link-btn" data-set-mode="register">Register</button>
+                    to get started!
+                </p>
+                <p class="helper helper-register">
+                    Already have an account?
+                    <button type="button" class="link-btn" data-set-mode="login">Click to login</button>.
+                </p>
+                <p class="helper helper-forgot">
+                    Remember your password?
+                    <button type="button" class="link-btn" data-set-mode="login">Back to login</button>
+                </p>
+                <!-- Error / success message -->
+                <div class="form-message" id="form-message" hidden></div>
+                <form id="auth-form" class="auth-form">
+                    <div class="field">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" required
+                               placeholder="your@email.com" autocomplete="email" />
+                    </div>
+                    <div class="field field-username">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" required
+                               placeholder="Choose a username" autocomplete="username" />
+                    </div>
+                    <div class="field field-password">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" required
+                               placeholder="••••••••" autocomplete="current-password" />
+                    </div>
+                    <button type="submit" class="submit-btn" id="submit-btn">
+                        <span class="spinner" id="spinner" hidden></span>
+                        <span id="submit-label">Sign In</span>
+                    </button>
+                </form>
+                <div class="extra extra-login">
+                    <button type="button" class="link-subtle" data-set-mode="forgotPassword">
+                        Forgot password?
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script type=module src="/js/sky.js"></script>
+    <script type=module src="/js/auth.js"></script>
+</body>
+</html>

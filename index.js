@@ -31,6 +31,22 @@ app.set('trust proxy', true);
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/rooms', require('./routes/rooms'));
 
+const path = require("path");
+const PUBLIC_DIR = path.join(__dirname, "public");
+app.use(express.static(PUBLIC_DIR));
+const page = (file) => (req, res) =>
+    res.sendFile(path.join(PUBLIC_DIR, file));
+// Pages
+app.get("/",       page("index.html"));
+app.get("/auth",   page("auth.html"));
+// Redirect shortcuts (replaces your Next.js redirect 'pages')
+app.get("/login",           (req, res) => res.redirect("/auth?mode=login"));
+app.get("/register",        (req, res) => res.redirect("/auth?mode=register"));
+app.get("/forgot-password", (req, res) => res.redirect("/auth?mode=forgotPassword"));
+// Reset password — same HTML serves both; the page JS detects a missing
+// token and shows the "please use the link from your email" message.
+app.get(["/reset-password", "/reset-password/:token"], page("reset-password.html"));
+app.get("/verify-email", page("verify-email.html"));
 
 const server = http.createServer(app);
 
