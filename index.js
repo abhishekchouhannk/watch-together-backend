@@ -8,8 +8,6 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 
-
-
 // app modules
 const connectDB = require("./db-init");
 connectDB();
@@ -55,32 +53,17 @@ app.get('/room/:roomId', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'room.html'));
 });
 
+// SOCKET.IO SETUP
 const server = http.createServer(app);
+
+// Attach Socket.IO to the server
+const io = new Server(server);
+require('./socket')(io); // Import the socket.io logic
+
 
 //  PORT CONFIGURATION
 const SERVER_PORT = process.env.SERVER_PORT || 5000;
 const FRONTEND_URL = process.env.FRONTEND_URL || `http://localhost:3000`;
-
-const io = new Server(server, {
-    cors: { origin: FRONTEND_URL },
-});
-
-io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
-
-    socket.on("join_room", (data) => {
-        socket.join(data.roomId);
-        console.log(`${socket.id} joined room ${data.roomId}`);
-    });
-
-    socket.on("send_message", (data) => {
-        io.to(data.roomId).emit("receive_message", data);
-    });
-
-    socket.on("disconnect", () => {
-        console.log("User disconnected:", socket.id);
-    });
-});
 
 app.use(express.static("public"));
 
