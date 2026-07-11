@@ -51,6 +51,10 @@ app.get('/dashboard', /* requireAuth, */ (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+app.get('/room/:roomId', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'room.html'));
+});
+
 const server = http.createServer(app);
 
 //  PORT CONFIGURATION

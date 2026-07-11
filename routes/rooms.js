@@ -110,4 +110,50 @@ router.post('/create', authenticateToken, async (req, res) => {
   }
 });
 
+// ── GET single room ──────────────────────────────
+router.get('/:roomId', authenticateToken, async (req, res) => {
+  try {
+    const room = await Room.findOne({ roomId: req.params.roomId });
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    res.json({ room });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch room' });
+  }
+});
+// ── JOIN room (adds user to participants if not already in) ──
+router.post('/:roomId/join', authenticateToken, async (req, res) => {
+  try {
+    const room = await Room.findOne({ roomId: req.params.roomId });
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    const already = room.participants.some(
+      p => String(p.userId) === String(req.user.id)
+    );
+    if (!already) {
+      room.participants.push({
+        userId:   req.user.id,
+        username: req.user.username,
+        joinedAt: new Date(),
+      });
+      await room.save();
+    }
+    res.json({ room });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to join room' });
+  }
+});
+// ── LEAVE room (removes user from participants) ──
+router.post('/:roomId/leave', authenticateToken, async (req, res) => {
+  try {
+    const room = await Room.findOne({ roomId: req.params.roomId });
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    room.participants = room.participants.filter(
+      p => String(p.userId) !== String(req.user.id)
+    );
+    await room.save();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to leave room' });
+  }
+});
+
 module.exports = router;
