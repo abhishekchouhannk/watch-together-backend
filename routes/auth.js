@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 
+const { authenticateToken } = require('../middleware/auth');
+
 // all auth controllers
 const {
     forgotPassword,
@@ -52,5 +54,10 @@ router.post('/reset-password/:token', resetPassword);
 // email verification routes
 router.get('/verify-email/:token', verifyEmail);
 router.post('resend-verification', resendVerification);
+
+// @route   GET /api/auth/me
+router.get('/me', authenticateToken, (req, res) => {
+    res.json({ user: req.user });
+});
 
 module.exports = router;
