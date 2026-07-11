@@ -4,6 +4,12 @@ const Message = require("../models/Message");
 const User = require("../models/User");
 // Build a clean room object for the client
 function serializeRoom(room) {
+  const v = room.video || {};
+  let currentTime = v.currentTime || 0;
+  // if it's playing, advance by however long it's been playing (server clock → safe)
+  if (v.isPlaying && v.updatedAt) {
+    currentTime += (Date.now() - new Date(v.updatedAt).getTime()) / 1000;
+  }
   return {
     roomId: room.roomId,
     roomName: room.roomName,
@@ -12,8 +18,10 @@ function serializeRoom(room) {
     status: room.status,
     maxParticipants: room.maxParticipants,
     tags: room.tags,
-    video: room.video,
-    admin: room.admin ? { username: room.admin.username } : null,
+    admin: room.admin
+      ? { userId: room.admin.userId, username: room.admin.username }  // <-- expose userId
+      : null,
+    video: { url: v.url || null, currentTime, isPlaying: !!v.isPlaying },
     participants: room.participants.map((p) => ({
       userId: p.userId,
       username: p.username,
@@ -130,6 +138,47 @@ module.exports = function registerRoomHandlers(io, socket) {
     } catch (err) {
       console.error("chat-message error:", err);
     }
+  });
+   // ===== VIDEO SYNC =====
+  socket.on("video-load", async ({ url }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !url) return;
+    await Room.updateOne(
+      { roomId },
+      { $set: { video: { url, currentTime: 0, isPlaying: false, updatedAt: new Date() } } }
+    );
+    // to EVERYONE (incl. sender) so all load via the same path
+    io.to(roomId).emit("video-load", { url, by: user.username });
+  });
+  socket.on("video-play", async ({ currentTime }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    await Room.updateOne({ roomId }, {
+      $set: { "video.isPlaying": true, "video.currentTime": currentTime, "video.updatedAt": new Date() },
+    });
+    socket.to(roomId).emit("video-play", { currentTime }); // everyone except sender
+  });
+  socket.on("video-pause", async ({ currentTime }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    await Room.updateOne({ roomId }, {
+      $set: { "video.isPlaying": false, "video.currentTime": currentTime, "video.updatedAt": new Date() },
+    });
+    socket.to(roomId).emit("video-pause", { currentTime });
+  });
+  socket.on("video-seek", async ({ currentTime }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    await Room.updateOne({ roomId }, {
+      $set: { "video.currentTime": currentTime, "video.updatedAt": new Date() },
+    });
+    socket.to(roomId).emit("video-seek", { currentTime });
+  });
+  // host's periodic clock → keeps everyone drift-free
+  socket.on("video-heartbeat", ({ currentTime, isPlaying }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    socket.to(roomId).emit("video-heartbeat", { currentTime, isPlaying });
   });
   socket.on("leave-room", () => handleLeave(io, socket));
   socket.on("disconnecting", () => handleLeave(io, socket));

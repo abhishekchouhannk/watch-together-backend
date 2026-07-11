@@ -22,7 +22,8 @@ const RoomSchema = new mongoose.Schema({
         title: { type: String },
         currentTime: { type: Number, default: 0 },
         duration: { type: Number },
-        isPlaying: { type: Boolean, default: false }
+        isPlaying: { type: Boolean, default: false },
+        updatedAt: { type: Date }
     },
     participants: [
         {

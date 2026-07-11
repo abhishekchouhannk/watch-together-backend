@@ -66,13 +66,25 @@
     if (h >= 17 && h < 21) return "evening";
     return "night";
   }
+  function loadVideoFromInput() {
+    var url = $("urlInput").value.trim();
+    if (!url) {
+      toast("Enter a URL", "error");
+      return;
+    }
+    if (!extractYT(url) && !/^https?:\/\/.+/.test(url)) {
+      toast("Enter a valid URL", "error");
+      return;
+    }
+    socket.emit("video-load", { url }); // server broadcasts back → everyone loads
+  }
   /* ====== EVENTS ====== */
   function wireEvents() {
     $("backBtn").onclick = leaveRoom;
     $("leaveBtn").onclick = leaveRoom;
-    $("loadUrlBtn").onclick = () => loadVideo($("urlInput").value.trim());
+    $("loadUrlBtn").onclick = loadVideoFromInput;
     $("urlInput").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") loadVideo($("urlInput").value.trim());
+      if (e.key === "Enter") loadVideoFromInput();
     });
     $("sendBtn").onclick = sendMessage;
     dom.chatInput.addEventListener("keydown", (e) => {
@@ -112,14 +124,57 @@
     });
     socket.on("room-state", async ({ room }) => {
       S.room = room;
+      isHost = !!(
+        room.admin &&
+        room.admin.userId &&
+        S.userId &&
+        room.admin.userId.toString() === S.userId
+      );
       renderHeader();
       renderDetails();
       addSystemMsg("You joined the room");
-      if (room.video && room.video.url && !videoLoaded) {
-        $("urlInput").value = room.video.url;
-        loadVideo(room.video.url);
+      if (room.video && room.video.url) {
+        buildPlayer(
+          room.video.url,
+          room.video.currentTime || 0,
+          !!room.video.isPlaying,
+        );
       }
+      startHeartbeat();
       await loadInitialMessages();
+    });
+    // ===== video sync incoming =====
+    socket.on("video-load", ({ url, by }) => {
+      buildPlayer(url, 0, false);
+      if (by && by !== S.username) toast((by || "Someone") + " loaded a video");
+    });
+    socket.on("video-play", ({ currentTime }) => {
+      if (!player) return;
+      withSuppress(() => {
+        player.seek(currentTime);
+        player.play();
+      });
+    });
+    socket.on("video-pause", ({ currentTime }) => {
+      if (!player) return;
+      withSuppress(() => {
+        player.seek(currentTime);
+        player.pause();
+      });
+    });
+    socket.on("video-seek", ({ currentTime }) => {
+      if (!player) return;
+      withSuppress(() => {
+        player.seek(currentTime);
+      });
+    });
+    socket.on("video-heartbeat", ({ currentTime, isPlaying }) => {
+      if (!player || isHost) return; // host doesn't correct itself
+      if (Math.abs(player.getTime() - currentTime) > 0.75) {
+        withSuppress(() => player.seek(currentTime));
+      }
+      if (isPlaying && player.isPaused()) withSuppress(() => player.play());
+      if (!isPlaying && !player.isPaused()) withSuppress(() => player.pause());
     });
     socket.on("room-error", ({ message }) => {
       toast(message || "Room error", "error");
@@ -223,35 +278,183 @@
       h += '<div class="avatar-sm avatar-more">+' + extra + "</div>";
     return h + "</div>";
   }
-  /* ====== VIDEO PLAYER ====== */
-  var videoEl = null,
-    isYT = false;
-  function loadVideo(url) {
-    if (!url) {
-      toast("Enter a URL", "error");
+  /* ====== VIDEO PLAYER (synced) ====== */
+  let player = null; // unified interface: play/pause/seek/getTime/isPaused/destroy
+  let videoEl = null; // html5 element (for custom controls)
+  let suppress = false; // true while applying a remote action (prevents echo)
+  let isHost = false;
+  let heartbeatTimer = null;
+  let seekWatch = null,
+    lastWatchTime = 0,
+    watchStamp = 0;
+  let ytApiLoading = false,
+    ytCallbacks = [];
+  function withSuppress(fn, ms) {
+    suppress = true;
+    try {
+      fn();
+    } catch (_) {}
+    clearTimeout(withSuppress._t);
+    withSuppress._t = setTimeout(() => (suppress = false), ms || 800);
+  }
+  function emitVideo(type) {
+    if (!socket || !player || suppress) return;
+    socket.emit(type, { currentTime: player.getTime() });
+  }
+  function destroyPlayer() {
+    stopSeekWatcher();
+    if (player && player.destroy) {
+      try {
+        player.destroy();
+      } catch (_) {}
+    }
+    player = null;
+    videoEl = null;
+  }
+  function buildPlayer(url, startAt, autoplay) {
+    destroyPlayer();
+    videoLoaded = true;
+    $("urlInput").value = url;
+    if (dom.placeholder && dom.placeholder.parentNode) dom.placeholder.remove();
+    var ytId = extractYT(url);
+    if (ytId) buildYouTube(ytId, startAt || 0, !!autoplay);
+    else buildHtml5(url, startAt || 0, !!autoplay);
+  }
+  /* ---- HTML5 <video> ---- */
+  function buildHtml5(url, startAt, autoplay) {
+    dom.videoWrap.innerHTML = '<video id="videoEl" preload="metadata"></video>';
+    videoEl = $("videoEl");
+    videoEl.src = url;
+    dom.controls.style.display = "";
+    player = {
+      kind: "html5",
+      play: () => videoEl.play().catch(() => {}),
+      pause: () => videoEl.pause(),
+      seek: (t) => {
+        videoEl.currentTime = t;
+      },
+      getTime: () => videoEl.currentTime || 0,
+      getDuration: () => videoEl.duration || 0,
+      isPaused: () => videoEl.paused,
+      destroy: () => {
+        try {
+          videoEl.pause();
+          videoEl.removeAttribute("src");
+          videoEl.load();
+        } catch (_) {}
+      },
+    };
+    videoEl.addEventListener("loadedmetadata", () => {
+      if (startAt) videoEl.currentTime = startAt;
+      if (autoplay) videoEl.play().catch(() => {});
+    });
+    videoEl.addEventListener("play", () => emitVideo("video-play"));
+    videoEl.addEventListener("pause", () => emitVideo("video-pause"));
+    videoEl.addEventListener("seeked", () => emitVideo("video-seek"));
+    wireVideoControls();
+  }
+  /* ---- YouTube (IFrame Player API) ---- */
+  function buildYouTube(id, startAt, autoplay) {
+    dom.controls.style.display = "none"; // use YT's native controls
+    dom.videoWrap.innerHTML = '<div id="ytPlayer"></div>';
+    ensureYTApi(() => {
+      var yt = new YT.Player("ytPlayer", {
+        width: "100%",
+        height: "100%",
+        videoId: id,
+        playerVars: {
+          autoplay: autoplay ? 1 : 0,
+          rel: 0,
+          start: Math.floor(startAt || 0),
+          playsinline: 1,
+        },
+        events: {
+          onReady: (e) => {
+            if (startAt) e.target.seekTo(startAt, true);
+            if (autoplay) e.target.playVideo();
+            startSeekWatcher();
+          },
+          onStateChange: (e) => {
+            if (suppress) return;
+            if (e.data === YT.PlayerState.PLAYING) emitVideo("video-play");
+            else if (e.data === YT.PlayerState.PAUSED) emitVideo("video-pause");
+          },
+        },
+      });
+      player = {
+        kind: "yt",
+        play: () => yt.playVideo(),
+        pause: () => yt.pauseVideo(),
+        seek: (t) => yt.seekTo(t, true),
+        getTime: () => (yt.getCurrentTime ? yt.getCurrentTime() : 0),
+        getDuration: () => (yt.getDuration ? yt.getDuration() : 0),
+        isPaused: () => (yt.getPlayerState ? yt.getPlayerState() !== 1 : true),
+        destroy: () => {
+          try {
+            yt.destroy();
+          } catch (_) {}
+        },
+      };
+    });
+  }
+  function ensureYTApi(cb) {
+    if (window.YT && window.YT.Player) {
+      cb();
       return;
     }
-    var ytId = extractYT(url);
-    isYT = !!ytId;
-    if (ytId) {
-      dom.videoWrap.innerHTML =
-        '<iframe src="https://www.youtube.com/embed/' +
-        ytId +
-        '?autoplay=0&rel=0" allow="autoplay;encrypted-media;fullscreen" allowfullscreen></iframe>';
-      dom.controls.style.display = "none";
-    } else {
-      dom.videoWrap.innerHTML =
-        '<video id="videoEl" preload="metadata"></video>';
-      videoEl = $("videoEl");
-      videoEl.src = url;
-      dom.controls.style.display = "";
-      wireVideoControls();
-    }
-    if (dom.placeholder && dom.placeholder.parentNode) dom.placeholder.remove();
-    $("urlInput").value = url;
-    videoLoaded = true;
-    // (video sync hooks come later)
+    ytCallbacks.push(cb);
+    if (ytApiLoading) return;
+    ytApiLoading = true;
+    var tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+    window.onYouTubeIframeAPIReady = function () {
+      var cbs = ytCallbacks;
+      ytCallbacks = [];
+      cbs.forEach((fn) => fn());
+    };
   }
+  // YouTube has no "seeked" event → detect jumps by polling
+  function startSeekWatcher() {
+    stopSeekWatcher();
+    lastWatchTime = player.getTime();
+    watchStamp = Date.now();
+    seekWatch = setInterval(() => {
+      if (!player) return;
+      var t = player.getTime(),
+        now = Date.now();
+      var expected =
+        lastWatchTime + (player.isPaused() ? 0 : (now - watchStamp) / 1000);
+      if (!suppress && Math.abs(t - expected) > 1.3) emitVideo("video-seek");
+      lastWatchTime = t;
+      watchStamp = now;
+    }, 500);
+  }
+  function stopSeekWatcher() {
+    if (seekWatch) {
+      clearInterval(seekWatch);
+      seekWatch = null;
+    }
+  }
+  /* ---- host heartbeat (drift correction) ---- */
+  function startHeartbeat() {
+    stopHeartbeat();
+    if (!isHost) return;
+    heartbeatTimer = setInterval(() => {
+      if (!player || !socket) return;
+      socket.emit("video-heartbeat", {
+        currentTime: player.getTime(),
+        isPlaying: !player.isPaused(),
+      });
+    }, 3000);
+  }
+  function stopHeartbeat() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  }
+  /* ---- custom controls (HTML5 only) ---- */
   function wireVideoControls() {
     if (!videoEl) return;
     var prog = $("progressBar"),
@@ -302,9 +505,9 @@
     };
   }
   function togglePlay() {
-    if (!videoEl) return;
-    if (videoEl.paused) videoEl.play().catch(() => {});
-    else videoEl.pause();
+    if (!player) return;
+    if (player.isPaused()) player.play();
+    else player.pause();
   }
   function extractYT(url) {
     var m = url.match(
@@ -312,6 +515,7 @@
     );
     return m ? m[1] : null;
   }
+  /* SVG button strings (unchanged) */
   var playSVG =
     '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
   var pauseSVG =
