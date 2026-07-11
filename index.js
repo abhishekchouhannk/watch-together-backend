@@ -28,6 +28,7 @@ app.set('trust proxy', true);
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/rooms', require('./routes/rooms'));
+app.use('/api/rooms', require('./routes/messageRoutes'));                     
 
 const path = require("path");
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -59,7 +60,6 @@ const server = http.createServer(app);
 // Attach Socket.IO to the server
 const io = new Server(server);
 require('./socket')(io); // Import the socket.io logic
-
 
 //  PORT CONFIGURATION
 const SERVER_PORT = process.env.SERVER_PORT || 5000;

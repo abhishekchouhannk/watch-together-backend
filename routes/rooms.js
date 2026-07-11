@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const Room = require('../models/Room');
+const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 
@@ -120,39 +121,42 @@ router.get('/:roomId', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch room' });
   }
 });
-// ── JOIN room (adds user to participants if not already in) ──
+// POST /api/rooms/:roomId/join
 router.post('/:roomId/join', authenticateToken, async (req, res) => {
   try {
-    const room = await Room.findOne({ roomId: req.params.roomId });
+    const { roomId } = req.params;
+    const userId   = (req.user.id || req.user._id).toString();
+    const username = req.user.username;
+    const room = await Room.findOne({ roomId });
     if (!room) return res.status(404).json({ error: 'Room not found' });
-    const already = room.participants.some(
-      p => String(p.userId) === String(req.user.id)
+    const alreadyIn = room.participants.some(
+      p => p.userId.toString() === userId
     );
-    if (!already) {
-      room.participants.push({
-        userId:   req.user.id,
-        username: req.user.username,
-        joinedAt: new Date(),
-      });
+    if (!alreadyIn) {
+      if (room.participants.length >= (room.maxParticipants || 10))
+        return res.status(400).json({ error: 'Room is full' });
+      room.participants.push({ userId, username, joinedAt: new Date() });
       await room.save();
+      await User.findByIdAndUpdate(userId, { $addToSet: { joinedRooms: roomId } });
     }
-    res.json({ room });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to join room' });
+    const populated = await Room.findOne({ roomId }).lean();
+    res.json({ room: populated });
+  } catch (err) {
+    console.error('Join room error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
-// ── LEAVE room (removes user from participants) ──
+// POST /api/rooms/:roomId/leave
 router.post('/:roomId/leave', authenticateToken, async (req, res) => {
   try {
-    const room = await Room.findOne({ roomId: req.params.roomId });
-    if (!room) return res.status(404).json({ error: 'Room not found' });
-    room.participants = room.participants.filter(
-      p => String(p.userId) !== String(req.user.id)
-    );
-    await room.save();
+    const { roomId } = req.params;
+    const userId = (req.user.id || req.user._id).toString();
+    await Room.findOneAndUpdate({ roomId }, { $pull: { participants: { userId } } });
+    await User.findByIdAndUpdate(userId, { $pull: { joinedRooms: roomId } });
     res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to leave room' });
+  } catch (err) {
+    console.error('Leave room error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

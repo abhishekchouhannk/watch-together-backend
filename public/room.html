@@ -48,7 +48,6 @@
             <p class="vp-sub">Paste a URL below to start watching</p>
           </div>
         </div>
-        <!-- custom controls (hidden until a direct video loads) -->
         <div class="vc" id="videoControls">
           <button class="vc-btn" id="playBtn" title="Play / Pause">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
@@ -91,6 +90,7 @@
 </div>
 <!-- ===== SCRIPTS ===== -->
 <script src="/js/helpers/timeOfDay.js"></script>
+<script src="/socket.io/socket.io.js"></script>   <!-- ← ADD THIS LINE -->
 <script src="/js/room.js"></script>
 </body>
 </html>
