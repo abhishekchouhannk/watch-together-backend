@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const Room = require('../models/Room');
+const Message = require('../models/Message');
 const { authenticateToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 
@@ -120,40 +121,77 @@ router.get('/:roomId', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch room' });
   }
 });
-// ── JOIN room (adds user to participants if not already in) ──
-router.post('/:roomId/join', authenticateToken, async (req, res) => {
+
+// GET /api/rooms/:roomId/messages?limit=20&before=<messageId>
+router.get("/:roomId/messages", authenticateToken, async (req, res) => {
   try {
-    const room = await Room.findOne({ roomId: req.params.roomId });
-    if (!room) return res.status(404).json({ error: 'Room not found' });
-    const already = room.participants.some(
-      p => String(p.userId) === String(req.user.id)
-    );
-    if (!already) {
-      room.participants.push({
-        userId:   req.user.id,
-        username: req.user.username,
-        joinedAt: new Date(),
-      });
-      await room.save();
-    }
-    res.json({ room });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to join room' });
-  }
-});
-// ── LEAVE room (removes user from participants) ──
-router.post('/:roomId/leave', authenticateToken, async (req, res) => {
-  try {
-    const room = await Room.findOne({ roomId: req.params.roomId });
-    if (!room) return res.status(404).json({ error: 'Room not found' });
-    room.participants = room.participants.filter(
-      p => String(p.userId) !== String(req.user.id)
-    );
-    await room.save();
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to leave room' });
+    const { roomId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const { before } = req.query;
+    const query = { roomId };
+    // _id is monotonically increasing → reliable cursor for pagination
+    if (before) query._id = { $lt: before };
+    // newest first, then reverse to chronological for rendering
+    const docs = await Message.find(query)
+      .sort({ _id: -1 })
+      .limit(limit + 1) // fetch one extra to detect "hasMore"
+      .lean();
+    const hasMore = docs.length > limit;
+    if (hasMore) docs.pop();
+    docs.reverse();
+    res.json({
+      hasMore,
+      messages: docs.map((m) => ({
+        id: m._id.toString(),
+        senderId: m.senderId,
+        username: m.senderName,
+        text: m.message,
+        timestamp: m.timestamp,
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to load messages" });
   }
 });
 
 module.exports = router;
+
+
+
+// STALE CODE (DELETE AFTER CONFIRMING SOCKET.IO WORKS):
+// // ── JOIN room (adds user to participants if not already in) ──
+// router.post('/:roomId/join', authenticateToken, async (req, res) => {
+//   try {
+//     const room = await Room.findOne({ roomId: req.params.roomId });
+//     if (!room) return res.status(404).json({ error: 'Room not found' });
+//     const already = room.participants.some(
+//       p => String(p.userId) === String(req.user.id)
+//     );
+//     if (!already) {
+//       room.participants.push({
+//         userId:   req.user.id,
+//         username: req.user.username,
+//         joinedAt: new Date(),
+//       });
+//       await room.save();
+//     }
+//     res.json({ room });
+//   } catch (error) {
+//     res.status(500).json({ error: 'Failed to join room' });
+//   }
+// });
+// // ── LEAVE room (removes user from participants) ──
+// router.post('/:roomId/leave', authenticateToken, async (req, res) => {
+//   try {
+//     const room = await Room.findOne({ roomId: req.params.roomId });
+//     if (!room) return res.status(404).json({ error: 'Room not found' });
+//     room.participants = room.participants.filter(
+//       p => String(p.userId) !== String(req.user.id)
+//     );
+//     await room.save();
+//     res.json({ success: true });
+//   } catch (error) {
+//     res.status(500).json({ error: 'Failed to leave room' });
+//   }
+// });

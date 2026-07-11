@@ -9,8 +9,14 @@
   };
   const AV_COLORS = ['#e11d48','#eab308','#22c55e','#3b82f6','#8b5cf6','#ec4899','#f97316','#06b6d4','#6366f1','#14b8a6'];
   /* ====== STATE ====== */
-  const S = { room:null, userId:null, username:'You', messages:[] };
+  const S = { room:null, userId:null, username:'You' };
   const roomId = location.pathname.replace(/.*\/room\//,'').replace(/\/$/,'');
+  let socket = null;
+  let videoLoaded = false;
+  // chat pagination state
+  let oldestMsgId = null;
+  let hasMoreMsgs = false;
+  let loadingOlder = false;
   /* ====== DOM ====== */
   const $ = id => document.getElementById(id);
   const dom = {
@@ -28,7 +34,7 @@
     dom.sky.style.backgroundImage = "url('/assets/"+tod+"/sky.png')";
     wireEvents();
     await fetchMe();
-    await joinRoom();
+    connectSocket();
   });
   function resolveTod(){
     try{if(typeof getTimeOfDay==='function')return getTimeOfDay()}catch(_){}
@@ -38,13 +44,13 @@
   }
   /* ====== EVENTS ====== */
   function wireEvents(){
-    $('backBtn').onclick = ()=> location.href='/dashboard';
+    $('backBtn').onclick = leaveRoom;
     $('leaveBtn').onclick = leaveRoom;
     $('loadUrlBtn').onclick = ()=> loadVideo($('urlInput').value.trim());
     $('urlInput').addEventListener('keydown', e=>{ if(e.key==='Enter') loadVideo($('urlInput').value.trim()); });
     $('sendBtn').onclick = sendMessage;
     dom.chatInput.addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} });
-    // touch: show controls briefly
+    dom.chatMsgs.addEventListener('scroll', onChatScroll);
     dom.container.addEventListener('touchstart',()=>{
       dom.controls.classList.add('show');
       clearTimeout(dom.controls._t);
@@ -57,36 +63,59 @@
       var r=await fetch('/api/auth/me',{credentials:'include'});
       if(!r.ok)return;
       var d=await r.json(), u=d.user||d;
-      S.userId=u.id||u._id||null; S.username=u.username||'You';
+      S.userId=(u.id||u._id||'').toString(); S.username=u.username||'You';
     }catch(_){}
   }
-  async function joinRoom(){
-    try{
-      var r=await fetch('/api/rooms/'+roomId+'/join',{method:'POST',credentials:'include'});
-      if(r.status===401){location.href='/';return;}
-      if(r.status===404){toast('Room not found','error');setTimeout(()=>location.href='/dashboard',1500);return;}
-      if(!r.ok)throw new Error();
-      var d=await r.json();
-      S.room=d.room;
-      renderRoom();
-    }catch(e){
-      toast('Failed to join room','error');
-    }
+  /* ====== SOCKET ====== */
+  function connectSocket(){
+    socket = io({ withCredentials:true });
+    socket.on('connect', ()=> socket.emit('join-room', { roomId }));
+    socket.on('connect_error', ()=>{
+      toast('Session expired — please log in','error');
+      setTimeout(()=>location.href='/', 1500);
+    });
+    socket.on('room-state', async ({ room })=>{
+      S.room = room;
+      renderHeader();
+      renderDetails();
+      addSystemMsg('You joined the room');
+      if(room.video && room.video.url && !videoLoaded){
+        $('urlInput').value = room.video.url;
+        loadVideo(room.video.url);
+      }
+      await loadInitialMessages();
+    });
+    socket.on('room-error', ({ message })=>{
+      toast(message || 'Room error','error');
+      setTimeout(()=>location.href='/dashboard', 1500);
+    });
+    socket.on('participants-update', ({ participants, count })=>{
+      if(!S.room) return;
+      S.room.participants = participants;
+      renderDetails();
+      dom.chatOnline.textContent = count + ' in room';
+    });
+    socket.on('user-joined', ({ username })=> addSystemMsg(username + ' joined'));
+    socket.on('user-left',   ({ username })=> addSystemMsg(username + ' left'));
+    socket.on('chat-message', msg => appendMessage(msg, true));
   }
-  async function leaveRoom(){
-    try{await fetch('/api/rooms/'+roomId+'/leave',{method:'POST',credentials:'include'});}catch(_){}
+  function leaveRoom(){
+    if(socket) socket.emit('leave-room');
     location.href='/dashboard';
   }
   /* ====== RENDER ROOM ====== */
-  function renderRoom(){
+  function renderHeader(){
     var r=S.room; if(!r)return;
     var cfg=MODES[r.mode]||{label:r.mode||'Room',icon:'📺'};
     var bc='badge-'+(MODES[r.mode]?r.mode:'casual');
-    // header
     dom.hdrName.textContent=r.roomName;
     dom.hdrBadge.className='mode-badge '+bc; dom.hdrBadge.textContent=cfg.icon+' '+cfg.label; dom.hdrBadge.style.display='';
     dom.hdrDot.className='status-dot status-'+(r.status||'active'); dom.hdrDot.style.display='';
-    // details
+  }
+  function renderDetails(){
+    var r=S.room; if(!r)return;
+    var cfg=MODES[r.mode]||{label:r.mode||'Room',icon:'📺'};
+    var bc='badge-'+(MODES[r.mode]?r.mode:'casual');
     var parts=r.participants||[];
     dom.details.innerHTML=
       '<h2 class="rd-name">'+esc(r.roomName)+'</h2>'
@@ -102,13 +131,6 @@
       +(r.tags&&r.tags.length?'<div class="rd-tags">'+r.tags.map(t=>'<span class="tag">#'+esc(t)+'</span>').join('')+'</div>':'')
       +renderAvatars(parts);
     dom.chatOnline.textContent=parts.length+' in room';
-    // system msg
-    addSystemMsg('You joined the room');
-    // auto-load video if room has one
-    if(r.video&&r.video.url){
-      $('urlInput').value=r.video.url;
-      loadVideo(r.video.url);
-    }
   }
   function renderAvatars(list){
     if(!list.length)return'';
@@ -137,10 +159,10 @@
       dom.controls.style.display='';
       wireVideoControls();
     }
-    dom.placeholder.remove();
+    if(dom.placeholder && dom.placeholder.parentNode) dom.placeholder.remove();
     $('urlInput').value=url;
-    // ===== SOCKET.IO HOOK — broadcast loaded URL to room =====
-    // socket.emit('video-load', { roomId, url });
+    videoLoaded = true;
+    // (video sync hooks come later)
   }
   function wireVideoControls(){
     if(!videoEl)return;
@@ -179,10 +201,6 @@
       if(document.fullscreenElement)document.exitFullscreen();
       else dom.container.requestFullscreen().catch(()=>{});
     };
-    // ===== SOCKET.IO HOOKS — sync play/pause/seek =====
-    // videoEl.addEventListener('play', ()=> socket.emit('video-play',{ roomId, currentTime:videoEl.currentTime }));
-    // videoEl.addEventListener('pause',()=> socket.emit('video-pause',{ roomId, currentTime:videoEl.currentTime }));
-    // videoEl.addEventListener('seeked',()=> socket.emit('video-seek',{ roomId, currentTime:videoEl.currentTime }));
   }
   function togglePlay(){
     if(!videoEl)return;
@@ -192,7 +210,6 @@
     var m=url.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
     return m?m[1]:null;
   }
-  /* SVG strings for player buttons */
   var playSVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
   var pauseSVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
   var volSVG='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
@@ -204,29 +221,65 @@
   /* ====== CHAT ====== */
   function sendMessage(){
     var text=dom.chatInput.value.trim();
-    if(!text)return;
-    addMessage({username:S.username,text:text,self:true});
+    if(!text || !socket)return;
+    socket.emit('chat-message', { text });   // server echoes back to all (incl. us)
     dom.chatInput.value='';
     dom.chatInput.focus();
-    // ===== SOCKET.IO HOOK — send message to room =====
-    // socket.emit('chat-message', { roomId, username: S.username, text });
   }
-  function addMessage(msg){
-    S.messages.push(msg);
+  // Initial load (latest page)
+  async function loadInitialMessages(){
+    try{
+      var r=await fetch('/api/rooms/'+roomId+'/messages?limit=20',{credentials:'include'});
+      if(!r.ok)return;
+      var d=await r.json();
+      hasMoreMsgs=d.hasMore;
+      oldestMsgId=d.messages.length?d.messages[0].id:null;
+      var frag=document.createDocumentFragment();
+      d.messages.forEach(m=> frag.appendChild(buildMsgEl(m)));
+      dom.chatMsgs.appendChild(frag);
+      dom.chatMsgs.scrollTop=dom.chatMsgs.scrollHeight;
+    }catch(_){}
+  }
+  // Infinite scroll upward
+  async function onChatScroll(){
+    if(dom.chatMsgs.scrollTop>40 || !hasMoreMsgs || loadingOlder || !oldestMsgId) return;
+    loadingOlder=true;
+    var prevHeight=dom.chatMsgs.scrollHeight;
+    try{
+      var r=await fetch('/api/rooms/'+roomId+'/messages?limit=20&before='+oldestMsgId,{credentials:'include'});
+      var d=await r.json();
+      hasMoreMsgs=d.hasMore;
+      if(d.messages.length){
+        oldestMsgId=d.messages[0].id;
+        var frag=document.createDocumentFragment();
+        d.messages.forEach(m=> frag.appendChild(buildMsgEl(m)));
+        dom.chatMsgs.insertBefore(frag, dom.chatMsgs.firstChild);
+        // keep viewport anchored after prepending
+        dom.chatMsgs.scrollTop=dom.chatMsgs.scrollHeight-prevHeight;
+      }
+    }catch(_){}
+    loadingOlder=false;
+  }
+  function buildMsgEl(msg){
+    var self = msg.senderId && S.userId && msg.senderId.toString()===S.userId;
     var c=avColor(msg.username), ini=(msg.username||'?')[0].toUpperCase();
     var div=document.createElement('div');
-    div.className='chat-msg';
+    div.className='chat-msg'+(self?' self':'');
     div.innerHTML=
       '<div class="msg-av" style="background:'+c+'">'+ini+'</div>'
       +'<div class="msg-body">'
         +'<div class="msg-head">'
-          +'<span class="msg-name'+(msg.self?' self':'')+'">'+esc(msg.username)+'</span>'
-          +'<span class="msg-ts">'+chatTs()+'</span>'
+          +'<span class="msg-name'+(self?' self':'')+'">'+esc(msg.username)+'</span>'
+          +'<span class="msg-ts">'+fmtMsgTs(msg.timestamp)+'</span>'
         +'</div>'
         +'<div class="msg-text">'+esc(msg.text)+'</div>'
       +'</div>';
-    dom.chatMsgs.appendChild(div);
-    dom.chatMsgs.scrollTop=dom.chatMsgs.scrollHeight;
+    return div;
+  }
+  function appendMessage(msg, autoscroll){
+    var nearBottom = dom.chatMsgs.scrollHeight - dom.chatMsgs.scrollTop - dom.chatMsgs.clientHeight < 120;
+    dom.chatMsgs.appendChild(buildMsgEl(msg));
+    if(autoscroll && nearBottom) dom.chatMsgs.scrollTop=dom.chatMsgs.scrollHeight;
   }
   function addSystemMsg(text){
     var div=document.createElement('div');
@@ -235,14 +288,10 @@
     dom.chatMsgs.appendChild(div);
     dom.chatMsgs.scrollTop=dom.chatMsgs.scrollHeight;
   }
-  // ===== SOCKET.IO HOOKS — receive messages =====
-  // socket.on('chat-message', msg => addMessage(msg));
-  // socket.on('user-joined', d => { addSystemMsg(d.username+' joined'); updateParticipants(d.participants); });
-  // socket.on('user-left',   d => { addSystemMsg(d.username+' left');   updateParticipants(d.participants); });
   /* ====== HELPERS ====== */
   function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
   function fmtTime(s){if(isNaN(s))return'0:00';var m=Math.floor(s/60),sec=Math.floor(s%60);return m+':'+(sec<10?'0':'')+sec}
-  function chatTs(){var d=new Date();return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')}
+  function fmtMsgTs(ts){var d=ts?new Date(ts):new Date();return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')}
   function avColor(name){if(!name)return AV_COLORS[0];var h=0;for(var i=0;i<name.length;i++)h=name.charCodeAt(i)+((h<<5)-h);return AV_COLORS[Math.abs(h)%AV_COLORS.length]}
   function toast(msg,type){
     var el=document.createElement('div');el.className='toast toast-'+(type||'success');el.textContent=msg;

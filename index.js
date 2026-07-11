@@ -9,7 +9,6 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 
 
-
 // app modules
 const connectDB = require("./db-init");
 connectDB();
@@ -36,6 +35,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 app.use(express.static(PUBLIC_DIR));
 const page = (file) => (req, res) =>
     res.sendFile(path.join(PUBLIC_DIR, file));
+
 // Pages
 app.get("/",       page("index.html"));
 app.get("/auth",   page("auth.html"));
@@ -50,38 +50,18 @@ app.get("/verify-email", page("verify-email.html"));
 app.get('/dashboard', /* requireAuth, */ (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
-
 app.get('/room/:roomId', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'room.html'));
 });
 
-const server = http.createServer(app);
+// Socket.IO setup
+const server = http.createServer(app);       // <-- wrap express
+const initSocket = require("./socket");       // our socket bootstrap
+initSocket(server);
+
 
 //  PORT CONFIGURATION
 const SERVER_PORT = process.env.SERVER_PORT || 5000;
 const FRONTEND_URL = process.env.FRONTEND_URL || `http://localhost:3000`;
-
-const io = new Server(server, {
-    cors: { origin: FRONTEND_URL },
-});
-
-io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
-
-    socket.on("join_room", (data) => {
-        socket.join(data.roomId);
-        console.log(`${socket.id} joined room ${data.roomId}`);
-    });
-
-    socket.on("send_message", (data) => {
-        io.to(data.roomId).emit("receive_message", data);
-    });
-
-    socket.on("disconnect", () => {
-        console.log("User disconnected:", socket.id);
-    });
-});
-
-app.use(express.static("public"));
 
 server.listen(SERVER_PORT, () => console.log(`Server running on port ${SERVER_PORT}`));
