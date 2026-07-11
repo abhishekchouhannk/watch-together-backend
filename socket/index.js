@@ -29,11 +29,12 @@ module.exports = function setupSocket(io) {
       if (!token) return next(new Error('Authentication required'));
       const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
       const userId  = decoded.userId;
-      const user    = await User.findById(userId).select('username');
+      const user    = await User.findById(userId).select('username isActive');
       if (!user || !user.isActive) return next(new Error('User not found'));
       socket.user = { id: user._id.toString(), username: user.username };
       next();
     } catch (err) {
+      console.log('[Socket] auth error:', err.message);
       next(new Error('Authentication failed'));
     }
   });

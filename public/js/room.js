@@ -103,6 +103,7 @@
       connectSocket();                          // ← real-time starts here
     } catch (e) {
       toast('Failed to join room', 'error');
+      console.log('joinRoom error:', e);
     }
   }
   function leaveRoom() {
