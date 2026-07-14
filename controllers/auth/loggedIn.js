@@ -10,8 +10,6 @@ const { accessTokenCookieOptions } = require('../../utils/cookieSettings');
 
 const loggedIn = async(req, res) => {
     try {
-
-        console.log(req.cookies);
         const { accessToken, refreshToken, sessionId } = req.cookies;
 
         // 1. No access or refresh token at all

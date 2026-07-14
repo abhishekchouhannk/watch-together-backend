@@ -23,10 +23,46 @@
       <span class="mode-badge badge-casual" id="hdrBadge" style="display:none"></span>
       <span class="status-dot status-active" id="hdrDot" style="display:none"></span>
     </div>
-    <button class="leave-btn" id="leaveBtn">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      Leave
-    </button>
+    <div class="rh-right">
+      <div class="theme-switcher" id="themeSwitcher">
+        <button class="theme-btn" id="themeBtn" type="button" aria-haspopup="true" aria-expanded="false" title="Change theme">
+          <span class="theme-btn-icon" id="themeBtnIcon">🌤️</span>
+        </button>
+        <div class="theme-menu" id="themeMenu" role="menu">
+          <button class="theme-opt" data-theme="auto" role="menuitem">
+            <span class="theme-opt-swatch sw-auto"></span>
+            <span class="theme-opt-icon">🧭</span>
+            <span class="theme-opt-label">Auto</span>
+            <span class="theme-opt-sub">Matches time of day</span>
+          </button>
+          <div class="theme-menu-sep"></div>
+          <button class="theme-opt" data-theme="morning" role="menuitem">
+            <span class="theme-opt-swatch sw-morning"></span>
+            <span class="theme-opt-icon">🌅</span>
+            <span class="theme-opt-label">Morning</span>
+          </button>
+          <button class="theme-opt" data-theme="afternoon" role="menuitem">
+            <span class="theme-opt-swatch sw-afternoon"></span>
+            <span class="theme-opt-icon">☀️</span>
+            <span class="theme-opt-label">Afternoon</span>
+          </button>
+          <button class="theme-opt" data-theme="evening" role="menuitem">
+            <span class="theme-opt-swatch sw-evening"></span>
+            <span class="theme-opt-icon">🌆</span>
+            <span class="theme-opt-label">Evening</span>
+          </button>
+          <button class="theme-opt" data-theme="night" role="menuitem">
+            <span class="theme-opt-swatch sw-night"></span>
+            <span class="theme-opt-icon">🌙</span>
+            <span class="theme-opt-label">Night</span>
+          </button>
+        </div>
+      </div>
+      <button class="leave-btn" id="leaveBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Leave
+      </button>
+    </div>
   </header>
   <!-- ===== ROOM DETAILS ===== -->
   <section class="room-details" id="roomDetails">
