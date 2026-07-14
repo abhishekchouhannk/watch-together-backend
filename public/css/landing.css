@@ -1,107 +1,10 @@
 /* ============================================
-   Watch Together — Landing Page Styles
+   Watch Together — Landing Page content
+   ============================================
+   Requires: page.css (reset + theme vars + .landing shell)
+             sky.css  (sky / clouds / stars / celestial bodies)
    ============================================ */
-/* ---- 1. Reset & Base ---- */
-*,
-*::before,
-*::after {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-html,
-body {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-}
-body {
-    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont,
-        "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-}
-img {
-    display: block;
-    max-width: none;
-}
-/* ---- 2. Theme Variables ---- */
-.landing[data-theme="morning"] {
-    --bg: linear-gradient(180deg, #fbcfe8 0%, #ffe4e6 50%, #bfdbfe 100%);
-    --text-color: #881337;
-    --text-shadow: 0 2px 20px rgba(136, 19, 55, 0.12);
-    --btn-pri-bg: #f43f5e;
-    --btn-pri-bg-hover: #e11d48;
-    --btn-pri-text: #ffffff;
-    --btn-pri-shadow: rgba(244, 63, 94, 0.35);
-    --btn-sec-bg: rgba(255, 228, 230, 0.8);
-    --btn-sec-bg-hover: rgba(254, 205, 211, 0.9);
-    --btn-sec-text: #881337;
-    --btn-sec-border: transparent;
-    --btn-sec-border-w: 0px;
-}
-.landing[data-theme="afternoon"] {
-    --bg: #7dd3fc;
-    --text-color: #0c4a6e;
-    --text-shadow: 0 2px 20px rgba(12, 74, 110, 0.1);
-    --btn-pri-bg: #facc15;
-    --btn-pri-bg-hover: #eab308;
-    --btn-pri-text: #0c4a6e;
-    --btn-pri-shadow: rgba(250, 204, 21, 0.35);
-    --btn-sec-bg: rgba(255, 255, 255, 0.7);
-    --btn-sec-bg-hover: rgba(255, 255, 255, 0.9);
-    --btn-sec-text: #0369a1;
-    --btn-sec-border: #93c5fd;
-    --btn-sec-border-w: 1px;
-}
-.landing[data-theme="evening"] {
-    --bg: linear-gradient(180deg, #c084fc 0%, #f9a8d4 50%, #fdba74 100%);
-    --text-color: #ec4899;
-    --text-shadow: 0 2px 20px rgba(236, 72, 153, 0.15);
-    --btn-pri-bg: #9333ea;
-    --btn-pri-bg-hover: #7e22ce;
-    --btn-pri-text: #ffffff;
-    --btn-pri-shadow: rgba(147, 51, 234, 0.35);
-    --btn-sec-bg: rgba(243, 232, 255, 0.8);
-    --btn-sec-bg-hover: rgba(233, 213, 255, 0.9);
-    --btn-sec-text: #581c87;
-    --btn-sec-border: transparent;
-    --btn-sec-border-w: 0px;
-}
-.landing[data-theme="night"] {
-    --bg: linear-gradient(180deg, #312e81 0%, #1e3a8a 100%);
-    --text-color: #ffffff;
-    --text-shadow: 0 2px 24px rgba(99, 102, 241, 0.3);
-    --btn-pri-bg: #6366f1;
-    --btn-pri-bg-hover: #4f46e5;
-    --btn-pri-text: #ffffff;
-    --btn-pri-shadow: rgba(99, 102, 241, 0.4);
-    --btn-sec-bg: rgba(255, 255, 255, 0.1);
-    --btn-sec-bg-hover: rgba(255, 255, 255, 0.2);
-    --btn-sec-text: #ffffff;
-    --btn-sec-border: rgba(255, 255, 255, 0.3);
-    --btn-sec-border-w: 2px;
-}
-/* ---- 3. Landing Container ---- */
-.landing {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    background: var(--bg);
-    overflow: hidden;
-}
-/* ---- 4. Layer Stack (z-index reference) ----
-   0  sky            — background image, sits above bg-color
-   1  element        — starry sky canvas + celestial body, behind clouds
-   2  far clouds     — distant parallax layer
-   3  near clouds    — closer parallax layer
-   4  content        — title / motto / buttons
------------------------------------------------- */
-/* ---- 5. Sky Layer ---- */
-
-/* ---- 6. Cloud Layers ---- */
-
-/* ---- 7. Content Overlay ---- */
+/* ---- Content Overlay ---- */
 .content {
     position: relative;
     z-index: 4;
@@ -140,7 +43,7 @@ img {
     max-width: 480px;
     line-height: 1.5;
 }
-/* ---- 8. Buttons ---- */
+/* ---- Buttons ---- */
 .button-group {
     display: flex;
     gap: 0.875rem;
@@ -194,13 +97,7 @@ img {
     background: var(--btn-sec-bg-hover);
     transform: translateY(-1px);
 }
-/* ---- 9. Element Layer (container for all dynamic sky elements) ---- */
-
-/* ---- 10. Element Sprites (pixel-art celestial bodies) ---- */
-
-/* ---- 11. Starry Sky Canvas ---- */
-
-/* ---- 12. Responsive ---- */
+/* ---- Responsive ---- */
 @media (max-width: 640px) {
     .button-group {
         flex-direction: column;
@@ -214,13 +111,11 @@ img {
         margin-bottom: 2rem;
     }
 }
-/* ---- 13. Accessibility — Reduced Motion ---- */
+/* ---- Reduced Motion ---- */
 @media (prefers-reduced-motion: reduce) {
-    /* content: instant visibility */
     .content {
         transition-duration: 0.01ms !important;
         opacity: 1 !important;
         transform: none !important;
     }
-
 }

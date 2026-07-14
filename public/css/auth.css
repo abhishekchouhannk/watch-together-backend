@@ -1,17 +1,22 @@
 /* ============================================
    Watch Together — Auth pages (card UI)
-   Sits on top of the shared sky background.
+   ============================================
+   Requires: page.css (reset + theme vars + .sky-page shell)
+             sky.css  (sky / clouds / stars / celestial bodies)
+   Sits on top of the shared sky background (z-index 4+).
    ============================================ */
 /* ── Page content wrapper (fades in after sky preload) ── */
 .page-content {
     position: relative;
     z-index: 4;
     display: flex;
-    align-items: center;
     justify-content: center;
+    align-items: flex-start;   /* + margin:auto on the card = safe centering */
     width: 100%;
-    min-height: 100%;
+    height: 100%;
     padding: 1rem;
+    overflow-y: auto;          /* tall cards / small screens can scroll */
+    -webkit-overflow-scrolling: touch;
     opacity: 0;
     transform: translateY(20px);
     transition:
@@ -47,6 +52,7 @@
 }
 /* ── Glass card ── */
 .auth-card {
+    margin: auto;              /* vertical centering that survives overflow */
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 16px;
@@ -124,14 +130,14 @@
     color: #fff;
 }
 /* ── Mode-based visibility ── */
-.auth-card[data-mode="forgotPassword"] .mode-toggle      { display: none; }
+.auth-card[data-mode="forgotPassword"] .mode-toggle         { display: none; }
 .auth-card:not([data-mode="forgotPassword"]) .forgot-header { display: none; }
-.auth-card:not([data-mode="login"])    .helper-login     { display: none; }
-.auth-card:not([data-mode="register"]) .helper-register  { display: none; }
+.auth-card:not([data-mode="login"])    .helper-login        { display: none; }
+.auth-card:not([data-mode="register"]) .helper-register     { display: none; }
 .auth-card:not([data-mode="forgotPassword"]) .helper-forgot { display: none; }
-.auth-card:not([data-mode="register"]) .field-username   { display: none; }
-.auth-card[data-mode="forgotPassword"] .field-password   { display: none; }
-.auth-card:not([data-mode="login"])    .extra-login      { display: none; }
+.auth-card:not([data-mode="register"]) .field-username      { display: none; }
+.auth-card[data-mode="forgotPassword"] .field-password      { display: none; }
+.auth-card:not([data-mode="login"])    .extra-login         { display: none; }
 .auth-card[data-mode="register"] .field-username {
     animation: slideDown 0.3s ease;
 }

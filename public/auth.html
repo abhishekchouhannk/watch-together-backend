@@ -10,12 +10,15 @@
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
         rel="stylesheet"
     />
-    <link rel="stylesheet" href="/css/landing.css" />
+    <!-- shell (reset + theme vars) → sky engine → page styles -->
+    <link rel="stylesheet" href="/css/page.css" />
+    <link rel="stylesheet" href="/css/sky.css" />
     <link rel="stylesheet" href="/css/auth.css" />
 </head>
 <body>
-    <main id="landing" class="landing">
-        <!-- ═══ Shared sky background (identical on every page) ═══ -->
+    <!-- id="landing" is sky.js's default root hook; class is now .sky-page -->
+    <main id="landing" class="sky-page">
+        <!-- ═══ Shared sky background (identical on every sky page) ═══ -->
         <img class="sky-layer" id="sky-image" draggable="false" alt="" />
         <div class="element-layer" id="element-layer"></div>
         <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
@@ -38,17 +41,14 @@
         </nav>
         <div class="page-content" id="page-content">
             <div class="auth-card" id="auth-card" data-mode="login">
-                <!-- Mode toggle pills (hidden in forgotPassword mode) -->
                 <div class="mode-toggle">
                     <button type="button" class="pill" data-set-mode="login">Login</button>
                     <button type="button" class="pill" data-set-mode="register">Register</button>
                 </div>
-                <!-- forgotPassword header -->
                 <div class="forgot-header">
                     <h2>Reset Password</h2>
                     <p>Enter your email to receive a password reset link</p>
                 </div>
-                <!-- Helper text (one per mode) -->
                 <p class="helper helper-login">
                     New User?
                     <button type="button" class="link-btn" data-set-mode="register">Register</button>
@@ -62,7 +62,6 @@
                     Remember your password?
                     <button type="button" class="link-btn" data-set-mode="login">Back to login</button>
                 </p>
-                <!-- Error / success message -->
                 <div class="form-message" id="form-message" hidden></div>
                 <form id="auth-form" class="auth-form">
                     <div class="field">
@@ -93,7 +92,7 @@
             </div>
         </div>
     </main>
-    <script type=module src="/js/sky.js"></script>
-    <script type=module src="/js/auth.js"></script>
+    <script type="module" src="/js/sky.js"></script>
+    <script type="module" src="/js/auth.js"></script>
 </body>
 </html>

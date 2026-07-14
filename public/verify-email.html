@@ -10,11 +10,12 @@
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
         rel="stylesheet"
     />
-    <link rel="stylesheet" href="/css/landing.css" />
+    <link rel="stylesheet" href="/css/page.css" />
+    <link rel="stylesheet" href="/css/sky.css" />
     <link rel="stylesheet" href="/css/auth.css" />
 </head>
 <body>
-    <main id="landing" class="landing">
+    <main id="landing" class="sky-page">
         <img class="sky-layer" id="sky-image" draggable="false" alt="" />
         <div class="element-layer" id="element-layer"></div>
         <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
@@ -33,18 +34,15 @@
         </div>
         <div class="page-content" id="page-content">
             <div class="auth-card" style="text-align: center;">
-                <!-- Loading -->
                 <div id="state-loading">
                     <span class="spinner light" style="margin: 0 auto 1rem; display: block;"></span>
                     <h1 class="status-heading" id="loading-msg">Verifying your email...</h1>
                 </div>
-                <!-- Success -->
                 <div id="state-success" hidden>
                     <h1 class="status-heading success">✅ Verified!</h1>
                     <p class="status-text" id="success-msg"></p>
                     <a href="/auth?mode=login" class="center-btn green">Go to Login</a>
                 </div>
-                <!-- Error -->
                 <div id="state-error" hidden>
                     <h1 class="status-heading error">❌ Verification Failed</h1>
                     <p class="status-text" id="error-msg"></p>
@@ -63,7 +61,7 @@
             </div>
         </div>
     </main>
-    <script src="/js/sky.js"></script>
-    <script src="/js/verify-email.js"></script>
+    <script type="module" src="/js/sky.js"></script>
+    <script type="module" src="/js/verify-email.js"></script>
 </body>
 </html>
