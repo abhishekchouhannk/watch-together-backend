@@ -89,6 +89,20 @@ import { getTimeOfDay } from "./helpers/timeOfDay.js";
             starrySky: { baseCount: 80, density: "dense", starProfile: "night", showShootingStars: true, starRegion: 0.65 },
         },
     };
+    // ─── Root / scoped DOM lookups ──────────────────────────────────
+    // The engine no longer assumes #landing. Any container works as long
+    // as it holds .sky-layer, .element-layer and the two .cloud-layer's.
+    let rootEl  = null;  // container of the sky layers
+    let themeEl = null;  // element that receives data-theme
+    function resolveEl(target) {
+        if (!target) return null;
+        return typeof target === "string" ? document.querySelector(target) : target;
+    }
+    function skyImage()      { return rootEl && rootEl.querySelector(".sky-layer"); }
+    function elementLayer()  { return rootEl && rootEl.querySelector(".element-layer"); }
+    function cloudLayer(key) {
+        return rootEl && rootEl.querySelector(`.cloud-layer[data-layer="${key}"]`);
+    }
     // ─── Asset helpers ──────────────────────────────────────────────
     function themeAssets(themeName) {
         const base = `/assets/${themeName}`;
@@ -403,21 +417,16 @@ import { getTimeOfDay } from "./helpers/timeOfDay.js";
         const config = THEME_ELEMENTS[themeName];
         if (!config) return;
         destroyStarrySky();
-        const container = document.getElementById("element-layer");
+        const container = elementLayer();
+        if (!container) return;
         container.innerHTML = "";
-        if (config.starrySky) {
-            initStarrySky(container, config.starrySky);
-        }
+        if (config.starrySky) initStarrySky(container, config.starrySky);
         const wrapper = document.createElement("div");
         wrapper.className = `element-sprite ${config.body.className}`;
         const bodyCanvas = document.createElement("canvas");
         bodyCanvas.width  = config.body.canvasSize;
         bodyCanvas.height = config.body.canvasSize;
-        config.body.draw(
-            bodyCanvas.getContext("2d"),
-            config.body.canvasSize,
-            config.body.pixelSize,
-        );
+        config.body.draw(bodyCanvas.getContext("2d"), config.body.canvasSize, config.body.pixelSize);
         wrapper.appendChild(bodyCanvas);
         container.appendChild(wrapper);
         const glowDelay = config.body.glowDelay;
@@ -431,27 +440,29 @@ import { getTimeOfDay } from "./helpers/timeOfDay.js";
     }
     function clearThemeElements() {
         destroyStarrySky();
-        const container = document.getElementById("element-layer");
+        const container = elementLayer();
         if (container) container.innerHTML = "";
         activeThemeElement = null;
     }
     // ─── DOM setup ──────────────────────────────────────────────────
     function applyTheme(themeName) {
-        document.getElementById("landing").setAttribute("data-theme", themeName);
+        (themeEl || rootEl).setAttribute("data-theme", themeName);
     }
-    function setCloudSources(layerId, assets) {
-        const layer = document.getElementById(layerId);
+    function setCloudSources(layerKey, assets) {
+        const layer = cloudLayer(layerKey);
+        if (!layer) return;
         layer.querySelector(".cloud-half.left").src  = assets.left;
         layer.querySelector(".cloud-half.right").src = assets.right;
-        layer.querySelector(".cloud-scroll").style.backgroundImage =
-            `url("${assets.full}")`;
+        layer.querySelector(".cloud-scroll").style.backgroundImage = `url("${assets.full}")`;
     }
     function setSkySource(themeName) {
-        document.getElementById("sky-image").src = themeAssets(themeName).sky;
+        const img = skyImage();
+        if (img) img.src = themeAssets(themeName).sky;
     }
-    function updateTileMetrics(layerId, layerKey) {
-        const layerEl = document.getElementById(layerId);
-        const scroll  = layerEl.querySelector(".cloud-scroll");
+    function updateTileMetrics(layerKey) {
+        const layerEl = cloudLayer(layerKey);
+        if (!layerEl) return;
+        const scroll = layerEl.querySelector(".cloud-scroll");
         const { width: naturalW, height: naturalH } = layerNaturalSize[layerKey];
         if (!naturalW || !naturalH) return;
         const cW = layerEl.clientWidth  || window.innerWidth;
@@ -470,26 +481,36 @@ import { getTimeOfDay } from "./helpers/timeOfDay.js";
             el.style.top    = "auto";
             el.style.right  = "auto";
             el.style.bottom = "0";
-            if (el.classList.contains("left")) {
-                el.style.setProperty("--off-x", `${-cW}px`);
-            } else {
-                el.style.setProperty("--off-x", `${cW}px`);
-            }
+            el.style.setProperty("--off-x", el.classList.contains("left") ? `${-cW}px` : `${cW}px`);
         });
     }
     function updateAllTileMetrics() {
-        updateTileMetrics("far-cloud-layer",  "far");
-        updateTileMetrics("near-cloud-layer", "near");
+        if (!rootEl) return;
+        updateTileMetrics("far");
+        updateTileMetrics("near");
     }
     // ─── Intro orchestration ────────────────────────────────────────
     let activeOptions = {};
     async function runIntro(themeName) {
-        const sky     = document.getElementById("sky-image");
-        const farLyr  = document.getElementById("far-cloud-layer");
-        const nearLyr = document.getElementById("near-cloud-layer");
+        const sky     = skyImage();
+        const farLyr  = cloudLayer("far");
+        const nearLyr = cloudLayer("near");
+        if (!sky || !farLyr || !nearLyr) return;
         await Promise.all([preloadAllAssets(themeName), delay(150)]);
         updateAllTileMetrics();
         if (typeof activeOptions.onReady === "function") activeOptions.onReady();
+        /* Fast path for app pages (dashboard / room): skip the cinematic
+           cloud reveal, go straight to the drifting loops. */
+        if (activeOptions.intro === false) {
+            sky.classList.add("visible");
+            activateLoop(farLyr);
+            activateLoop(nearLyr);
+            if (activeThemeElement) activeThemeElement.animate();
+            if (typeof activeOptions.onCloudsSettled === "function") {
+                activeOptions.onCloudsSettled();
+            }
+            return;
+        }
         setTimeout(() => sky.classList.add("visible"), TIMING.skyFadeDelay);
         const farStart  = TIMING.farSlideDelay;
         const nearStart = farStart + TIMING.nearStaggerGap;
@@ -508,25 +529,32 @@ import { getTimeOfDay } from "./helpers/timeOfDay.js";
         }, bothDone + TIMING.elementAnimateGap);
     }
     function slideIn(layerEl) {
+        if (!layerEl) return;
         layerEl.querySelectorAll(".cloud-half").forEach((el) =>
             el.classList.add("slide-in"),
         );
     }
     function activateLoop(layerEl) {
-        layerEl.querySelector(".cloud-intro").style.display = "none";
+        if (!layerEl) return;
+        const intro  = layerEl.querySelector(".cloud-intro");
         const scroll = layerEl.querySelector(".cloud-scroll");
-        scroll.classList.add("active", "scrolling");
+        if (intro)  intro.style.display = "none";
+        if (scroll) scroll.classList.add("active", "scrolling");
     }
     function resetAnimations() {
-        document.getElementById("sky-image").classList.remove("visible");
+        if (!rootEl) return;
+        const sky = skyImage();
+        if (sky) sky.classList.remove("visible");
         clearThemeElements();
-        document.querySelectorAll(".cloud-layer").forEach((layer) => {
+        rootEl.querySelectorAll(".cloud-layer").forEach((layer) => {
             const intro = layer.querySelector(".cloud-intro");
-            intro.style.display = "";
-            intro.querySelectorAll(".cloud-half").forEach((h) => {
-                h.classList.remove("slide-in");
-                h.removeAttribute("style");
-            });
+            if (intro) {
+                intro.style.display = "";
+                intro.querySelectorAll(".cloud-half").forEach((h) => {
+                    h.classList.remove("slide-in");
+                    h.removeAttribute("style");
+                });
+            }
             const scroll = layer.querySelector(".cloud-scroll");
             scroll.classList.remove("active", "scrolling");
             scroll.style.removeProperty("--initial-x");
@@ -543,17 +571,37 @@ import { getTimeOfDay } from "./helpers/timeOfDay.js";
         }, 150);
     }
     // ─── Public API ─────────────────────────────────────────────────
+    /**
+     * start({
+     *   root:        "#landing" | "#sky-root" | HTMLElement,  // default "#landing"
+     *   themeTarget: document.documentElement | selector,     // default = root
+     *   theme:       "night",        // optional override, else time-of-day
+     *   intro:       true | false,   // false = skip reveal, straight to loops
+     *   onThemeApplied(theme) {},
+     *   onReady() {},
+     *   onCloudsSettled() {},
+     *   onReset() {},
+     * })
+     */
     function start(options = {}) {
         activeOptions = options || {};
-        const theme = getTimeOfDay();
+        rootEl = resolveEl(activeOptions.root) || document.getElementById("landing");
+        if (!rootEl) {
+            console.warn("[SkyBackground] root element not found — sky disabled.");
+            return null;
+        }
+        themeEl = resolveEl(activeOptions.themeTarget) || rootEl;
+        const theme = VALID_THEMES.indexOf(activeOptions.theme) !== -1
+            ? activeOptions.theme
+            : getTimeOfDay();
         applyTheme(theme);
         if (typeof activeOptions.onThemeApplied === "function") {
             activeOptions.onThemeApplied(theme);
         }
         setSkySource(theme);
         const assets = themeAssets(theme);
-        setCloudSources("far-cloud-layer",  assets.far);
-        setCloudSources("near-cloud-layer", assets.near);
+        setCloudSources("far",  assets.far);
+        setCloudSources("near", assets.near);
         createThemeElements(theme);
         runIntro(theme);
         return theme;
@@ -561,7 +609,7 @@ import { getTimeOfDay } from "./helpers/timeOfDay.js";
     window.SkyBackground = { start, getTimeOfDay, TIMING };
     window.addEventListener("resize", onWindowResize);
     window.addEventListener("pageshow", (e) => {
-        if (e.persisted) {
+        if (e.persisted && rootEl) {
             resetAnimations();
             if (typeof activeOptions.onReset === "function") activeOptions.onReset();
             start(activeOptions);

@@ -1,12 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="morning">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — Watch Together</title>
+  <!-- Theme BEFORE first paint (sky.js re-applies the canonical theme on start) -->
+  <script>
+    (function () {
+      var h = new Date().getHours(), t = 'night';
+      if (h >= 6 && h < 12)       t = 'morning';
+      else if (h >= 12 && h < 17) t = 'afternoon';
+      else if (h >= 17 && h < 21) t = 'evening';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Shared sky background engine styles -->
+  <link rel="stylesheet" href="/css/sky.css">
   <style>
     /* ============================================
        0. Reset & Base
@@ -18,11 +30,12 @@
       font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
       -webkit-font-smoothing:antialiased;
       overflow-x:hidden;
+      background-color:var(--sky-fb);   /* no white flash on overscroll */
     }
     button{font-family:inherit;cursor:pointer;border:none;outline:none}
     input,textarea,select{font-family:inherit;outline:none}
     /* ============================================
-       1. Theme Variables
+       1. Theme Variables  (now on <html data-theme>)
        ============================================ */
     /* ---- Morning  (sky ≈ #b5b6ee) ---- */
     [data-theme="morning"]{
@@ -50,6 +63,7 @@
       --tag-bg:rgba(251,207,232,.45);--tag-t:#9f1239;
       --scr-th:rgba(225,29,72,.25);--scr-tr:transparent;
       --toast-ok:rgba(5,150,105,.92);--toast-err:rgba(225,29,72,.92);--toast-t:#fff;
+      color-scheme:light;
     }
     /* ---- Afternoon  (sky ≈ #229df2) ---- */
     [data-theme="afternoon"]{
@@ -77,6 +91,7 @@
       --tag-bg:rgba(186,230,253,.45);--tag-t:#075985;
       --scr-th:rgba(234,179,8,.3);--scr-tr:transparent;
       --toast-ok:rgba(5,150,105,.92);--toast-err:rgba(220,38,38,.92);--toast-t:#fff;
+      color-scheme:light;
     }
     /* ---- Evening  (sky ≈ #a47cab → #6dadc8) ---- */
     [data-theme="evening"]{
@@ -104,6 +119,7 @@
       --tag-bg:rgba(168,85,247,.16);--tag-t:#d8b4fe;
       --scr-th:rgba(147,51,234,.3);--scr-tr:transparent;
       --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
+      color-scheme:dark;
     }
     /* ---- Night  (sky ≈ #171f43) ---- */
     [data-theme="night"]{
@@ -131,6 +147,7 @@
       --tag-bg:rgba(99,102,241,.15);--tag-t:#a5b4fc;
       --scr-th:rgba(99,102,241,.25);--scr-tr:transparent;
       --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
+      color-scheme:dark;
     }
     /* ---- Room-type badge colours (light themes) ---- */
     [data-theme="morning"] .badge-study,
@@ -159,17 +176,21 @@
     [data-theme="evening"] .owner-badge,
     [data-theme="night"] .owner-badge{background:rgba(251,191,36,.16);color:#fcd34d}
     /* ============================================
-       2. Sky Background
+       2. Layer stack
+       ----------------------------------------------
+       #sky-root   → fixed, z-index 0  (sky / stars / clouds — see sky.css)
+       #dashboard  → relative, z-index 1 (all UI; its own header/modal/toast
+                     z-indexes stay local to this context)
        ============================================ */
-    .sky-bg{
-      position:fixed;inset:0;z-index:0;
-      background-color:var(--sky-fb);
-      background-size:cover;background-position:center;background-repeat:no-repeat;
+    #dashboard{
+      position:relative;
+      z-index:1;
+      min-height:100vh;
+      min-height:100dvh;
     }
     /* ============================================
        3. Layout
        ============================================ */
-    #dashboard{position:relative;min-height:100vh}
     .header{
       position:sticky;top:0;z-index:40;
       background:var(--hdr);
@@ -184,7 +205,7 @@
     .header-title{font-size:1.5rem;font-weight:700;color:var(--t1)}
     .header-actions{display:flex;align-items:center;gap:.75rem}
     .main{
-      position:relative;z-index:1;
+      position:relative;
       max-width:80rem;margin:0 auto;
       padding:1.5rem 1.5rem 3rem;
       animation:fadeUp .4s ease;
@@ -295,15 +316,9 @@
       transform:translateY(-3px);
       box-shadow:var(--card-sh-h);
     }
-    /* optional thumbnail banner (bleeds to card edges) */
-    .card-thumb{
-      margin:-1.1rem -1.1rem .35rem;
-      height:8rem;overflow:hidden;
-    }
+    .card-thumb{margin:-1.1rem -1.1rem .35rem;height:8rem;overflow:hidden}
     .card-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-    .card-top{
-      display:flex;align-items:center;justify-content:space-between;gap:.5rem;
-    }
+    .card-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
     .card-badges{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
     .mode-badge,.owner-badge{
       padding:.2rem .6rem;border-radius:6px;
@@ -314,9 +329,7 @@
       font-size:.78rem;font-weight:500;color:var(--t3);
       display:flex;align-items:center;gap:.35rem;white-space:nowrap;
     }
-    .status-dot{
-      width:.5rem;height:.5rem;border-radius:50%;display:inline-block;flex-shrink:0;
-    }
+    .status-dot{width:.5rem;height:.5rem;border-radius:50%;display:inline-block;flex-shrink:0}
     .status-active{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.6)}
     .status-idle{background:#eab308}
     .status-ended{background:#94a3b8}
@@ -446,7 +459,6 @@
       background-repeat:no-repeat;background-position:right .75rem center;
     }
     .form-select option{background:var(--modal);color:var(--t1)}
-    /* privacy segmented toggle */
     .seg-toggle{display:flex;gap:.4rem}
     .seg-btn{
       flex:1;padding:.55rem .8rem;border-radius:10px;
@@ -459,7 +471,6 @@
       background:var(--acc);color:var(--acc-t);border-color:var(--acc);
       box-shadow:0 2px 8px var(--acc-glow);
     }
-    /* tag add row + chips */
     .tag-add-row{display:flex;gap:.5rem}
     .tag-add-row .form-input{flex:1}
     .tag-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.55rem}
@@ -519,11 +530,39 @@
       .main{padding:1rem 1rem 2rem}
       .form-row{flex-direction:column;gap:0}
     }
+    @media(prefers-reduced-motion:reduce){
+      .main{animation:none}
+    }
   </style>
 </head>
 <body>
-<div id="dashboard" data-theme="morning">
-  <div class="sky-bg" id="skyBg"></div>
+<!-- ============================================
+     SKY BACKGROUND  (styled by /css/sky.css,
+     driven by /js/sky.js — identical markup to
+     the landing page, minus the .content layer)
+     ============================================ -->
+<div id="sky-root" class="sky-root" aria-hidden="true">
+  <img class="sky-layer" id="sky-image" draggable="false" alt="">
+  <div class="element-layer" id="element-layer"></div>
+  <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
+    <div class="cloud-intro">
+      <img class="cloud-half left"  draggable="false" alt="">
+      <img class="cloud-half right" draggable="false" alt="">
+    </div>
+    <div class="cloud-scroll"></div>
+  </div>
+  <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
+    <div class="cloud-intro">
+      <img class="cloud-half left"  draggable="false" alt="">
+      <img class="cloud-half right" draggable="false" alt="">
+    </div>
+    <div class="cloud-scroll"></div>
+  </div>
+</div>
+<!-- ============================================
+     DASHBOARD CONTENT  (own stacking context)
+     ============================================ -->
+<div id="dashboard">
   <!-- ========== HEADER ========== -->
   <header class="header">
     <div class="header-inner">
@@ -559,7 +598,6 @@
                placeholder="Search rooms by name, description, or tags…" autocomplete="off">
       </div>
     </div>
-    <!-- Room Type filters (matches Room model enum) -->
     <div class="filters-section" id="filters">
       <button class="filter-btn active" data-mode="all">All</button>
       <button class="filter-btn" data-mode="study">📚 Study</button>
@@ -612,8 +650,7 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="f_max">Max Participants</label>
-              <input class="form-input" id="f_max" type="number"
-                     min="2" max="50" value="10">
+              <input class="form-input" id="f_max" type="number" min="2" max="50" value="10">
             </div>
           </div>
           <div class="form-group">
@@ -644,8 +681,11 @@
 </div>
 <!-- ============================================
      Scripts
+     sky.js is an ES module → deferred → it runs
+     BEFORE DOMContentLoaded, so window.SkyBackground
+     is ready inside the init handler below.
      ============================================ -->
-<script src="/js/helpers/timeOfDay.js"></script>
+<script type="module" src="/js/sky.js"></script>
 <script>
 (function () {
   'use strict';
@@ -669,11 +709,11 @@
     username: null,
     draftTags: [],
     draftPublic: true,
+    theme: null,
   };
   /* ---------- DOM refs ---------- */
   const $ = id => document.getElementById(id);
   const dom = {
-    root: $('dashboard'),   sky: $('skyBg'),
     search: $('searchInput'), grid: $('roomsGrid'),
     title: $('sectionTitle'), count: $('roomCount'),
     overlay: $('createModal'), form: $('createForm'),
@@ -683,13 +723,29 @@
   };
   /* ---------- init ---------- */
   document.addEventListener('DOMContentLoaded', async () => {
-    const tod = resolveTime();
-    dom.root.dataset.theme = tod;
-    dom.sky.style.backgroundImage = "url('/assets/" + tod + "/sky.png')";
+    initSky();
     wireEvents();
     await fetchMe();     // need identity before rendering owner badges
     fetchRooms();
   });
+  /* ---------- sky background ----------
+     Theme lands on <html> so the sky AND the dashboard CSS vars
+     share one source of truth. intro:false = skip the cinematic
+     cloud reveal (flip to true for the full landing-style entrance). */
+  function initSky() {
+    if (window.SkyBackground && $('sky-root')) {
+      S.theme = window.SkyBackground.start({
+        root: '#sky-root',
+        themeTarget: document.documentElement,
+        intro: false,
+        onThemeApplied(theme) { S.theme = theme; },
+      });
+      return;
+    }
+    // sky.js unavailable → keep the flat --sky-fb colour, still theme the UI
+    S.theme = resolveTime();
+    document.documentElement.setAttribute('data-theme', S.theme);
+  }
   function resolveTime() {
     try { if (typeof getTimeOfDay === 'function') return getTimeOfDay(); } catch(_){}
     var h = new Date().getHours();
@@ -795,8 +851,6 @@
     if (res.status === 401) { window.location.href = '/'; throw new Error('auth'); }
     return res;
   }
-  // current user — needed to show the 👑 Owner badge in "My Rooms"
-  // (adjust the endpoint if your auth route differs — see notes below)
   async function fetchMe() {
     try {
       var res = await fetch('/api/auth/me', { credentials: 'include' });
@@ -838,7 +892,7 @@
     var body = {
       roomName:        $('f_name').value.trim(),
       description:     $('f_desc').value.trim(),
-      mode:            $('f_mode').value,          // study|gaming|entertainment|casual
+      mode:            $('f_mode').value,
       maxParticipants: maxP,
       isPublic:        S.draftPublic,
       tags:            S.draftTags.slice(),
@@ -857,8 +911,6 @@
       toast('Room created!', 'success');
       closeModal(); resetForm();
       await fetchRooms();
-      // — or auto-enter the room instead: —
-      // const data = await res.json(); go(data.room.roomId);
     } catch (err) {
       if (err.message !== 'auth') toast(err.message || 'Could not create room', 'error');
     } finally {
