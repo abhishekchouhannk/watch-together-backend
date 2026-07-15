@@ -19,7 +19,7 @@ function serializeRoom(room) {
     maxParticipants: room.maxParticipants,
     tags: room.tags,
     admin: room.admin
-      ? { userId: room.admin.userId, username: room.admin.username }  // <-- expose userId
+      ? { userId: room.admin.userId, username: room.admin.username } // <-- expose userId
       : null,
     video: { url: v.url || null, currentTime, isPlaying: !!v.isPlaying },
     participants: room.participants.map((p) => ({
@@ -37,7 +37,7 @@ async function handleLeave(io, socket) {
   // connections in the same room (e.g. another browser tab).
   const socketsInRoom = await io.in(roomId).fetchSockets();
   const stillConnectedElsewhere = socketsInRoom.some(
-    (s) => s.id !== socket.id && s.data.user && s.data.user.id === user.id
+    (s) => s.id !== socket.id && s.data.user && s.data.user.id === user.id,
   );
   socket.leave(roomId);
   socket.data.roomId = null;
@@ -45,7 +45,7 @@ async function handleLeave(io, socket) {
   const room = await Room.findOne({ roomId });
   if (!room) return;
   room.participants = room.participants.filter(
-    (p) => !(p.userId && p.userId.toString() === user.id)
+    (p) => !(p.userId && p.userId.toString() === user.id),
   );
   // optional: mark idle when empty
   if (room.participants.length === 0 && room.status === "active") {
@@ -73,7 +73,7 @@ module.exports = function registerRoomHandlers(io, socket) {
       socket.join(roomId);
       socket.data.roomId = roomId;
       const alreadyIn = room.participants.some(
-        (p) => p.userId && p.userId.toString() === user.id
+        (p) => p.userId && p.userId.toString() === user.id,
       );
       let isNewParticipant = false;
       if (!alreadyIn) {
@@ -92,7 +92,7 @@ module.exports = function registerRoomHandlers(io, socket) {
         await room.save();
         await User.updateOne(
           { _id: user.id },
-          { $addToSet: { joinedRooms: roomId } }
+          { $addToSet: { joinedRooms: roomId } },
         );
         isNewParticipant = true;
       }
@@ -139,13 +139,22 @@ module.exports = function registerRoomHandlers(io, socket) {
       console.error("chat-message error:", err);
     }
   });
-   // ===== VIDEO SYNC =====
+  // ===== VIDEO SYNC =====
   socket.on("video-load", async ({ url }) => {
     const roomId = socket.data.roomId;
     if (!roomId || !url) return;
     await Room.updateOne(
       { roomId },
-      { $set: { video: { url, currentTime: 0, isPlaying: false, updatedAt: new Date() } } }
+      {
+        $set: {
+          video: {
+            url,
+            currentTime: 0,
+            isPlaying: false,
+            updatedAt: new Date(),
+          },
+        },
+      },
     );
     // to EVERYONE (incl. sender) so all load via the same path
     io.to(roomId).emit("video-load", { url, by: user.username });
@@ -153,25 +162,45 @@ module.exports = function registerRoomHandlers(io, socket) {
   socket.on("video-play", async ({ currentTime }) => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
-    await Room.updateOne({ roomId }, {
-      $set: { "video.isPlaying": true, "video.currentTime": currentTime, "video.updatedAt": new Date() },
-    });
+    await Room.updateOne(
+      { roomId },
+      {
+        $set: {
+          "video.isPlaying": true,
+          "video.currentTime": currentTime,
+          "video.updatedAt": new Date(),
+        },
+      },
+    );
     socket.to(roomId).emit("video-play", { currentTime }); // everyone except sender
   });
   socket.on("video-pause", async ({ currentTime }) => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
-    await Room.updateOne({ roomId }, {
-      $set: { "video.isPlaying": false, "video.currentTime": currentTime, "video.updatedAt": new Date() },
-    });
+    await Room.updateOne(
+      { roomId },
+      {
+        $set: {
+          "video.isPlaying": false,
+          "video.currentTime": currentTime,
+          "video.updatedAt": new Date(),
+        },
+      },
+    );
     socket.to(roomId).emit("video-pause", { currentTime });
   });
   socket.on("video-seek", async ({ currentTime }) => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
-    await Room.updateOne({ roomId }, {
-      $set: { "video.currentTime": currentTime, "video.updatedAt": new Date() },
-    });
+    await Room.updateOne(
+      { roomId },
+      {
+        $set: {
+          "video.currentTime": currentTime,
+          "video.updatedAt": new Date(),
+        },
+      },
+    );
     socket.to(roomId).emit("video-seek", { currentTime });
   });
   // host's periodic clock → keeps everyone drift-free
@@ -180,6 +209,35 @@ module.exports = function registerRoomHandlers(io, socket) {
     if (!roomId) return;
     socket.to(roomId).emit("video-heartbeat", { currentTime, isPlaying });
   });
+
+  // reaction handler
+  const ALLOWED_REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👏", "💀"];
+  const REACT_LIMIT = 8; // max reactions
+  const REACT_WINDOW = 4000; // per 4 seconds, per socket
+  socket.on("video-reaction", (payload = {}) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    const emoji = typeof payload.emoji === "string" ? payload.emoji : "";
+    if (!ALLOWED_REACTIONS.includes(emoji)) return; // whitelist only
+    // token-bucket rate limit
+    const now = Date.now();
+    const rl =
+      socket.data.reactRL ||
+      (socket.data.reactRL = { n: 0, reset: now + REACT_WINDOW });
+    if (now > rl.reset) {
+      rl.n = 0;
+      rl.reset = now + REACT_WINDOW;
+    }
+    if (++rl.n > REACT_LIMIT) return; // silently drop spam
+    // everyone EXCEPT the sender (sender rendered it optimistically)
+    socket.to(roomId).emit("video-reaction", {
+      emoji,
+      userId: user.id, // ← your existing user refs
+      username: user.username,
+      at: now,
+    });
+  });
+
   socket.on("leave-room", () => handleLeave(io, socket));
   socket.on("disconnecting", () => handleLeave(io, socket));
 };
