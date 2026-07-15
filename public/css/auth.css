@@ -316,3 +316,8 @@
         animation: none !important;
     }
 }
+
+/* to fix hidden form on reset-password page */
+.auth-form[hidden] {
+    display: none;
+}

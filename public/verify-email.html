@@ -1,67 +1,90 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Verify Email — Watch Together</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-        rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
     />
     <link rel="stylesheet" href="/css/page.css" />
     <link rel="stylesheet" href="/css/sky.css" />
     <link rel="stylesheet" href="/css/auth.css" />
-</head>
-<body>
+  </head>
+  <body>
     <main id="landing" class="sky-page">
-        <img class="sky-layer" id="sky-image" draggable="false" alt="" />
-        <div class="element-layer" id="element-layer"></div>
-        <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
-            <div class="cloud-intro">
-                <img class="cloud-half left" draggable="false" alt="" />
-                <img class="cloud-half right" draggable="false" alt="" />
-            </div>
-            <div class="cloud-scroll"></div>
+      <img class="sky-layer" id="sky-image" draggable="false" alt="" />
+      <div class="element-layer" id="element-layer"></div>
+      <div class="cloud-layer" id="far-cloud-layer" data-layer="far">
+        <div class="cloud-intro">
+          <img class="cloud-half left" draggable="false" alt="" />
+          <img class="cloud-half right" draggable="false" alt="" />
         </div>
-        <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
-            <div class="cloud-intro">
-                <img class="cloud-half left" draggable="false" alt="" />
-                <img class="cloud-half right" draggable="false" alt="" />
-            </div>
-            <div class="cloud-scroll"></div>
+        <div class="cloud-scroll"></div>
+      </div>
+      <div class="cloud-layer" id="near-cloud-layer" data-layer="near">
+        <div class="cloud-intro">
+          <img class="cloud-half left" draggable="false" alt="" />
+          <img class="cloud-half right" draggable="false" alt="" />
         </div>
-        <div class="page-content" id="page-content">
-            <div class="auth-card" style="text-align: center;">
-                <div id="state-loading">
-                    <span class="spinner light" style="margin: 0 auto 1rem; display: block;"></span>
-                    <h1 class="status-heading" id="loading-msg">Verifying your email...</h1>
-                </div>
-                <div id="state-success" hidden>
-                    <h1 class="status-heading success">✅ Verified!</h1>
-                    <p class="status-text" id="success-msg"></p>
-                    <a href="/auth?mode=login" class="center-btn green">Go to Login</a>
-                </div>
-                <div id="state-error" hidden>
-                    <h1 class="status-heading error">❌ Verification Failed</h1>
-                    <p class="status-text" id="error-msg"></p>
-                    <form id="resend-form" class="auth-form">
-                        <div class="field">
-                            <input type="email" id="resend-email" required
-                                   placeholder="Enter your email to resend"
-                                   autocomplete="email" />
-                        </div>
-                        <button type="submit" class="center-btn red">
-                            Resend Verification Email
-                        </button>
-                        <p class="status-text" id="resend-status" hidden></p>
-                    </form>
-                </div>
+        <div class="cloud-scroll"></div>
+      </div>
+      <div class="page-content" id="page-content">
+        <div class="auth-card" style="text-align: center">
+          <div id="state-loading">
+            <span
+              class="spinner light"
+              style="margin: 0 auto 1rem; display: block"
+            ></span>
+            <h1 class="status-heading" id="loading-msg">
+              Verifying your email...
+            </h1>
+          </div>
+          <div id="state-success" hidden>
+            <div class="status-icon success">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M5 13l4 4L19 7"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
             </div>
+            <h1 class="status-heading success">Verified!</h1>
+            <p class="status-text" id="success-msg"></p>
+            <a href="/auth?mode=login" class="center-btn green">Go to Login</a>
+          </div>
+          <div id="state-error" hidden>
+            <p class="status-text" id="error-msg"></p>
+            <form id="resend-form" class="auth-form">
+              <div class="field">
+                <input
+                  type="email"
+                  id="resend-email"
+                  required
+                  placeholder="Enter your email to resend"
+                  autocomplete="email"
+                />
+              </div>
+              <button type="submit" class="center-btn green">
+                Resend Verification Email
+              </button>
+              <p class="status-text" id="resend-status" hidden></p>
+            </form>
+          </div>
         </div>
+      </div>
     </main>
     <script type="module" src="/js/sky.js"></script>
     <script type="module" src="/js/verify-email.js"></script>
-</body>
+  </body>
 </html>

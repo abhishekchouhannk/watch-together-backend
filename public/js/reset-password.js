@@ -21,11 +21,12 @@
     });
     // Token comes from the path: /reset-password/<token>
     // (Express serves this same HTML for both /reset-password and
-    //  /reset-password/:token — we detect which one we're on here.)
+    //  /reset-password/:token — need to detect if the token is present and show the appropriate message)
     const segments = window.location.pathname.split("/").filter(Boolean);
     const token = segments.length >= 2 ? decodeURIComponent(segments[1]) : null;
     if (!token) {
         noTokenMsg.hidden = false;        // "Please use the link from your email."
+        console.log("No token found in URL path; showing message to user.");
     } else {
         resetForm.hidden = false;
     }
