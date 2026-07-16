@@ -54,6 +54,7 @@
     themeSwitcher: $("themeSwitcher"), themeBtn: $("themeBtn"), themeBtnIcon: $("themeBtnIcon"), themeMenu: $("themeMenu"),
     fxLayer: $("fxLayer"), playerBar: $("playerBar"),
     reactRail: $("reactRail"), reactToggle: $("reactToggle"), reactStrip: $("reactStrip"),
+    reactHub: $("reactHub"), ytFsBtn: $("ytFsBtn"),
   };
   /* ═══════════════════════════════════════════
      PLAYER ABSTRACTION  (direct <video> + YT)
@@ -251,10 +252,14 @@
       if (!dom.themeSwitcher.contains(e.target)) closeThemeMenu();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeThemeMenu(); closeRail();
+      if (e.key !== "Escape") return;
+      closeThemeMenu();
+      closeRail();
+      if (dom.container.classList.contains("pseudo-fs")) setPseudoFs(false);
     });
     wireReactions();
     document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
   }
   /* ═══════ FETCH ME ═══════ */
   async function fetchMe() {
@@ -413,16 +418,30 @@
       /* ── YouTube ── */
       P.type = "youtube";
       dom.controls.style.display = "none";
+      dom.container.classList.add("is-yt");      // reveals OUR fullscreen button in the rail
       await loadYTAPI();
-      dom.videoWrap.innerHTML = '<div id="ytPlayerDiv"></div>';
+      /* Create the <iframe> ourselves instead of letting YT.Player do it, because:
+         • no `allowfullscreen` attribute + no `fullscreen` in `allow`
+           → the browser REFUSES any fullscreen request coming from inside the iframe,
+             so YouTube can never fullscreen itself and orphan the app's overlays (app's own fullscreen button for example).
+         • fs=0           → YouTube hides its own fullscreen button
+         • playsinline=1  → iOS won't hijack the video into native fullscreen
+         • enablejsapi=1  → required when handing an existing iframe to YT.Player   */
+      const qs = new URLSearchParams({
+        enablejsapi: "1", fs: "0", rel: "0", modestbranding: "1",
+        playsinline: "1", autoplay: "0", origin: location.origin,
+      }).toString();
+      dom.videoWrap.innerHTML =
+        '<iframe id="ytPlayerDiv" title="YouTube player" frameborder="0"' +
+        ' allow="autoplay; encrypted-media; picture-in-picture"' +
+        ' src="https://www.youtube.com/embed/' + ytId + '?' + qs + '"></iframe>';
       P.yt = new YT.Player("ytPlayerDiv", {
-        width: "100%", height: "100%", videoId: ytId,
-        playerVars: { autoplay: 0, rel: 0, modestbranding: 1 },
         events: { onReady: onPlayerReady, onStateChange: onYTState },
       });
     } else {
       /* ── direct <video> ── */
       P.type = "direct";
+      dom.container.classList.remove("is-yt");
       dom.videoWrap.innerHTML = '<video id="videoEl" preload="metadata"></video>';
       P.el = $("videoEl");
       P.el.src = url;
@@ -523,10 +542,7 @@
       muteBtn.innerHTML = v.muted ? mutedSVG : volSVG;
       fillSlider(volBar, volBar.value, 100);
     });
-    fsBtn.onclick = () => {
-      if (document.fullscreenElement) document.exitFullscreen();
-      else dom.container.requestFullscreen().catch(() => {});
-    };
+    fsBtn.onclick = toggleFullscreen; // let toglleFullscreen() handle the YT case too
   }
   function togglePlay() {
     if (!P.el) return;
@@ -550,6 +566,7 @@
      LIVE REACTIONS
      ══════════════════════════════════════ */
   function wireReactions() {
+    dom.ytFsBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleFullscreen(); });
     dom.reactToggle.addEventListener("click", (e) => {
       e.stopPropagation();
       dom.reactRail.classList.contains("open") ? closeRail() : openRail();
@@ -569,6 +586,7 @@
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key === "f" || e.key === "F") { toggleFullscreen(); return; }
       const i = parseInt(e.key, 10);
       if (!i || i < 1 || i > REACTIONS.length) return;
       sendReaction(REACTIONS[i - 1]);
@@ -635,17 +653,53 @@
     // timeout (not animationend) so reduced-motion users also get cleanup
     setTimeout(() => el.remove(), dur * 1000 + 400);
   }
-  /* fullscreen → move the rail inside the player (top-right, away from YT controls) */
+
+   /* ═══════ FULLSCREEN (always on the dom container, never the YT iframe) ═══════ */
+  function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function exitFs() { (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document); }
+  function toggleFullscreen() {
+    const el = dom.container;
+    if (fsEl()) { exitFs(); return; }
+    if (el.classList.contains("pseudo-fs")) { setPseudoFs(false); return; }
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) { setPseudoFs(true); return; }                      // iOS Safari etc.
+    try {
+      const p = req.call(el);
+      if (p && p.catch) p.catch(() => setPseudoFs(true));
+    } catch (_) { setPseudoFs(true); }
+  }
+  /* CSS-only fullscreen fallback for browsers without element fullscreen */
+  function setPseudoFs(on) {
+    dom.container.classList.toggle("pseudo-fs", on);
+    dom.container.classList.toggle("is-fs", on);
+    document.body.style.overflow = on ? "hidden" : "";
+    setFsIcon(on);
+    if (!on) closeRail();
+  }
   function onFullscreenChange() {
-    const rail = dom.reactRail;
-    if (document.fullscreenElement === dom.container) {
-      closeRail();
-      rail.classList.add("fs");
-      dom.container.appendChild(rail);
-    } else if (rail.classList.contains("fs")) {
-      rail.classList.remove("fs");
-      dom.playerBar.appendChild(rail);   // put it back in the URL row
+    const cur = fsEl();
+    /* Safety net: if anything INSIDE the player (e.g. a YT iframe that somehow still
+       has permission) grabbed fullscreen for itself, bounce it onto our container so
+       the reaction rail / float layer survive. */
+    if (cur && cur !== dom.container && dom.container.contains(cur)) {
+      try {
+        const p = exitFs();
+        Promise.resolve(p).then(() => dom.container.requestFullscreen()).catch(() => {});
+      } catch (_) {}
+      return;
     }
+    const isFs = cur === dom.container;
+    dom.container.classList.toggle("is-fs", isFs);
+    setFsIcon(isFs);
+    if (!isFs) closeRail();
+  }
+  const fsExpandSVG  = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+  const fsCollapseSVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+  function setFsIcon(isFs) {
+    const svg = isFs ? fsCollapseSVG : fsExpandSVG;
+    if (dom.ytFsBtn) dom.ytFsBtn.innerHTML = svg;
+    const vcFs = $("fsBtn");
+    if (vcFs) vcFs.innerHTML = svg;
   }
 
   /* ═══════ CHAT ═══════ */

@@ -131,6 +131,27 @@
             <!-- ===== LIVE REACTIONS FLOAT LAYER ===== -->
             <div class="fx-layer" id="fxLayer" aria-hidden="true"></div>
 
+            <!-- ===== REACTION RAIL — right border, vertically centred ===== -->
+            <div class="react-rail" id="reactRail">
+              <div class="react-hub" id="reactHub">
+                <button class="react-toggle" id="reactToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Send a reaction">😀</button>
+                <div class="react-strip" id="reactStrip" role="group" aria-label="Reactions">
+                  <button class="react-btn" type="button" data-emoji="❤️" title="Love (1)">❤️</button>
+                  <button class="react-btn" type="button" data-emoji="😂" title="Funny (2)">😂</button>
+                  <button class="react-btn" type="button" data-emoji="😮" title="Wow (3)">😮</button>
+                  <button class="react-btn" type="button" data-emoji="😢" title="Sad (4)">😢</button>
+                  <button class="react-btn" type="button" data-emoji="🔥" title="Fire (5)">🔥</button>
+                  <button class="react-btn" type="button" data-emoji="👏" title="Clap (6)">👏</button>
+                  <button class="react-btn" type="button" data-emoji="💀" title="Dead (7)">💀</button>
+                </div>
+              </div>
+              <span class="rail-sep" aria-hidden="true"></span>
+              <!-- our own FS button: only shown when a YouTube video is loaded -->
+              <button class="rail-fs" id="ytFsBtn" type="button" title="Fullscreen" aria-label="Fullscreen">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              </button>
+            </div>
+
             <!-- custom controls (hidden until a direct video loads) -->
             <div class="vc" id="videoControls">
               <button class="vc-btn" id="playBtn" title="Play / Pause">
@@ -209,82 +230,6 @@
                 autocomplete="off"
               />
               <button class="btn-sm" id="loadUrlBtn">Load</button>
-            </div>
-            <!-- ===== REACTION RAIL ===== -->
-            <div class="react-rail" id="reactRail">
-              <button
-                class="react-toggle"
-                id="reactToggle"
-                type="button"
-                aria-haspopup="true"
-                aria-expanded="false"
-                aria-label="Send a reaction"
-              >
-                😀
-              </button>
-              <div
-                class="react-strip"
-                id="reactStrip"
-                role="group"
-                aria-label="Reactions"
-              >
-                <button
-                  class="react-btn"
-                  type="button"
-                  data-emoji="❤️"
-                  title="Love (1)"
-                >
-                  ❤️
-                </button>
-                <button
-                  class="react-btn"
-                  type="button"
-                  data-emoji="😂"
-                  title="Funny (2)"
-                >
-                  😂
-                </button>
-                <button
-                  class="react-btn"
-                  type="button"
-                  data-emoji="😮"
-                  title="Wow (3)"
-                >
-                  😮
-                </button>
-                <button
-                  class="react-btn"
-                  type="button"
-                  data-emoji="😢"
-                  title="Sad (4)"
-                >
-                  😢
-                </button>
-                <button
-                  class="react-btn"
-                  type="button"
-                  data-emoji="🔥"
-                  title="Fire (5)"
-                >
-                  🔥
-                </button>
-                <button
-                  class="react-btn"
-                  type="button"
-                  data-emoji="👏"
-                  title="Clap (6)"
-                >
-                  👏
-                </button>
-                <button
-                  class="react-btn"
-                  type="button"
-                  data-emoji="💀"
-                  title="Dead (7)"
-                >
-                  💀
-                </button>
-              </div>
             </div>
           </div>
         </div>
