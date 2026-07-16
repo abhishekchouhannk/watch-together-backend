@@ -103,12 +103,12 @@
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
-            Leave
+            <span class="leave-label">Leave</span>
           </button>
         </div>
       </header>
       <!-- ===== ROOM DETAILS ===== -->
-      <section class="room-details" id="roomDetails">
+      <section class="room-details collapsed" id="roomDetails">
         <div style="display: flex; flex-direction: column; gap: 0.55rem">
           <div class="sk" style="width: 55%; height: 1.15rem"></div>
           <div class="sk" style="width: 90%; height: 0.85rem"></div>
@@ -134,21 +134,102 @@
             <!-- ===== REACTION RAIL — right border, vertically centred ===== -->
             <div class="react-rail" id="reactRail">
               <div class="react-hub" id="reactHub">
-                <button class="react-toggle" id="reactToggle" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Send a reaction">😀</button>
-                <div class="react-strip" id="reactStrip" role="group" aria-label="Reactions">
-                  <button class="react-btn" type="button" data-emoji="❤️" title="Love (1)">❤️</button>
-                  <button class="react-btn" type="button" data-emoji="😂" title="Funny (2)">😂</button>
-                  <button class="react-btn" type="button" data-emoji="😮" title="Wow (3)">😮</button>
-                  <button class="react-btn" type="button" data-emoji="😢" title="Sad (4)">😢</button>
-                  <button class="react-btn" type="button" data-emoji="🔥" title="Fire (5)">🔥</button>
-                  <button class="react-btn" type="button" data-emoji="👏" title="Clap (6)">👏</button>
-                  <button class="react-btn" type="button" data-emoji="💀" title="Dead (7)">💀</button>
+                <button
+                  class="react-toggle"
+                  id="reactToggle"
+                  type="button"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  aria-label="Send a reaction"
+                >
+                  😀
+                </button>
+                <div
+                  class="react-strip"
+                  id="reactStrip"
+                  role="group"
+                  aria-label="Reactions"
+                >
+                  <button
+                    class="react-btn"
+                    type="button"
+                    data-emoji="❤️"
+                    title="Love (1)"
+                  >
+                    ❤️
+                  </button>
+                  <button
+                    class="react-btn"
+                    type="button"
+                    data-emoji="😂"
+                    title="Funny (2)"
+                  >
+                    😂
+                  </button>
+                  <button
+                    class="react-btn"
+                    type="button"
+                    data-emoji="😮"
+                    title="Wow (3)"
+                  >
+                    😮
+                  </button>
+                  <button
+                    class="react-btn"
+                    type="button"
+                    data-emoji="😢"
+                    title="Sad (4)"
+                  >
+                    😢
+                  </button>
+                  <button
+                    class="react-btn"
+                    type="button"
+                    data-emoji="🔥"
+                    title="Fire (5)"
+                  >
+                    🔥
+                  </button>
+                  <button
+                    class="react-btn"
+                    type="button"
+                    data-emoji="👏"
+                    title="Clap (6)"
+                  >
+                    👏
+                  </button>
+                  <button
+                    class="react-btn"
+                    type="button"
+                    data-emoji="💀"
+                    title="Dead (7)"
+                  >
+                    💀
+                  </button>
                 </div>
               </div>
               <span class="rail-sep" aria-hidden="true"></span>
               <!-- our own FS button: only shown when a YouTube video is loaded -->
-              <button class="rail-fs" id="ytFsBtn" type="button" title="Fullscreen" aria-label="Fullscreen">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              <button
+                class="rail-fs"
+                id="ytFsBtn"
+                type="button"
+                title="Fullscreen"
+                aria-label="Fullscreen"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
               </button>
             </div>
 

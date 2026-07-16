@@ -156,16 +156,38 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .leave-btn:hover{background:rgba(248,113,113,.12);border-color:#f87171}
 
 /* ======== 3b. Theme Switcher ======== */
-.theme-switcher{position:relative}
-.theme-btn{
-  width:32px;height:32px;border-radius:8px;
-  display:flex;align-items:center;justify-content:center;
-  background:var(--surf);border:1px solid var(--card-bdr);
-  font-size:.95rem;line-height:1;transition:all .2s;
+.theme-switcher {
+  position: relative;
 }
-.theme-btn:hover{background:var(--surf-h);transform:translateY(-1px)}
-.theme-switcher.open .theme-btn{
-  background:var(--acc);box-shadow:0 0 0 3px var(--acc-glow);
+
+.theme-btn {
+  width: 46px; height: 34px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  gap: .22rem;
+  background: var(--surf); border: 1px solid var(--card-bdr);
+  font-size: .95rem; line-height: 1;
+  color: var(--t2);
+  transition: all .2s;
+}
+.theme-btn:hover {
+  background: var(--surf-h);
+  transform: translateY(-1px);
+}
+.theme-btn::after {
+  content: ''; width: 0; height: 0; flex-shrink: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: .6;
+  transition: transform .2s ease;
+}
+.theme-switcher.open .theme-btn {
+  color: var(--acc-t);
+  background: var(--acc);
+  box-shadow: 0 0 0 3px var(--acc-glow);
+}
+.theme-switcher.open .theme-btn::after {
+  transform: rotate(180deg);
 }
 .theme-menu{
   position:absolute;top:calc(100% + 10px);right:0;z-index:60;
@@ -207,16 +229,47 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .sw-night{background:#171f43}
 .theme-menu-sep{height:1px;background:var(--card-bdr);margin:.3rem .2rem}
 
-/* ======== 4. Room Details ======== */
+/* ======== 4. Room Details (collapsible) ======== */
 .room-details{
   position:relative;z-index:1;
   background:var(--card);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
   border:1px solid var(--card-bdr);border-radius:14px;
-  padding:1rem 1.25rem;margin:1rem;
+  padding:.75rem .9rem;margin:1rem;
   box-shadow:var(--card-sh);
   animation:fadeInUp .5s cubic-bezier(.16,1,.3,1) both;
+  transition:background .18s ease;
 }
-.rd-name{font-size:1.15rem;font-weight:700;color:var(--t1);margin-bottom:.3rem;letter-spacing:-.01em}
+.room-details.rd-loaded{cursor:pointer}
+.room-details.rd-loaded:hover{background:var(--card-h)}
+/* --- summary row: always visible (name · mode · count · chevron) --- */
+.rd-head{display:flex;align-items:center;gap:.6rem;min-width:0}
+.rd-head:focus-visible{outline:2px solid var(--acc);outline-offset:3px;border-radius:8px}
+.rd-head-main{flex:1;min-width:0;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.rd-name{
+  font-size:1.05rem;font-weight:700;color:var(--t1);letter-spacing:-.01em;margin:0;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.rd-count{
+  display:inline-flex;align-items:center;gap:.25rem;
+  font-size:.78rem;font-weight:600;color:var(--t2);white-space:nowrap;
+}
+.rd-chev{
+  flex-shrink:0;width:26px;height:26px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t3);background:var(--surf);
+  transition:transform .3s cubic-bezier(.16,1,.3,1),background .15s,color .15s;
+}
+.room-details.rd-loaded:hover .rd-chev{background:var(--surf-h);color:var(--t1)}
+.room-details.expanded .rd-chev{transform:rotate(180deg)}
+/* --- collapsible body (0fr → 1fr animates height with zero JS measuring) --- */
+.rd-body-wrap{
+  display:grid;grid-template-rows:0fr;
+  transition:grid-template-rows .32s cubic-bezier(.16,1,.3,1);
+}
+.room-details.expanded .rd-body-wrap{grid-template-rows:1fr}
+.rd-body{overflow:hidden;min-height:0;opacity:0;transition:opacity .22s ease}
+.room-details.expanded .rd-body{opacity:1}
+.rd-body-inner{padding-top:.7rem}
 .rd-desc{font-size:.88rem;color:var(--t3);line-height:1.5;margin-bottom:.6rem}
 .rd-meta{display:flex;align-items:center;flex-wrap:wrap;gap:.6rem;font-size:.82rem;color:var(--t2);margin-bottom:.5rem}
 .rd-meta-sep{color:var(--t3);opacity:.4}
@@ -234,11 +287,9 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .avatar-sm:hover{transform:translateY(-3px);z-index:2}
 .avatar-sm+.avatar-sm{margin-left:-.35rem}
 .avatar-more{background:var(--glass);color:var(--t2);font-size:.6rem;border-color:var(--glass-border)}
-
 /* skeleton inside details */
 .sk{border-radius:6px;background:linear-gradient(90deg,var(--card-bdr) 25%,var(--glass) 50%,var(--card-bdr) 75%);background-size:200% 100%;animation:shimmer 1.8s ease infinite}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-
 @keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 
 /* ======== 5. Room Content wrapper ======== */
@@ -421,7 +472,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   html,body{height:100%;overflow:hidden}
   #roomPage{height:100%;display:flex;flex-direction:column;overflow:hidden}
   .room-header{flex-shrink:0}
-  .room-details{flex-shrink:0;max-height:180px;overflow-y:auto;margin:.75rem 1rem 0}
+  .room-details{flex-shrink:0;max-height:220px;overflow-y:auto;margin:.75rem 1rem 0}
   .room-content{
     flex:1;display:flex;gap:.75rem;
     padding:.75rem 1rem 1rem;min-height:0;overflow:hidden;
@@ -430,16 +481,25 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   .video-container{
     flex:1;min-height:0;aspect-ratio:auto;border-radius:12px;
   }
-  .chat-section{width:340px;flex-shrink:0}
+  .chat-section{width:clamp(340px,28vw,460px);flex-shrink:0}
 }
 
 /* ======== 11. MOBILE layout (≤768px) ======== */
 @media(max-width:768px){
   html,body{height:auto;overflow-y:auto}
-  .room-details{margin:.65rem .65rem 0;border-radius:12px}
-  .room-content{
-    display:flex;flex-direction:column;padding:0;
+
+  .room-details{
+    margin:.65rem .65rem 0;
+    border-radius:12px;
+    padding:.65rem .75rem;   /* new padding */
   }
+
+  .room-content{
+    display:flex;
+    flex-direction:column;
+    padding:0;
+  }
+
   .video-section{
     position:sticky;top:52px;z-index:10;
     background:var(--sky-fb) var(--sky-img,none) center/cover no-repeat;
@@ -448,19 +508,29 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   }
   .video-section::after{
     content:'';position:absolute;bottom:-6px;left:0;right:0;height:6px;
-    background:linear-gradient(rgba(0,0,0,.08),transparent);pointer-events:none;
+    background:linear-gradient(rgba(0,0,0,.08),transparent);
+    pointer-events:none;
   }
+
   .video-container{border-radius:10px}
+
   .chat-section{
     margin:.65rem;border-radius:12px;
     height:calc(100vh - 52px - 56.25vw - 80px);
     min-height:300px;
   }
-  .rh-center{justify-content:flex-start}
+
+  /* replaced + new rules */
+  .rh-center{justify-content:center;gap:.4rem}
+  .rh-name{display:none}
+  .back-label{display:none}
+  .leave-label{display:none}
+  .leave-btn{padding:.38rem .55rem}
+  .theme-btn{width:42px;height:32px}
+  .rd-name{font-size:.95rem}
+
   .vc-volume,.vc .vol-wrap{display:none}
   .theme-opt-sub{display:none}
-  .back-label{display:none}
-  .leave-btn{padding:.38rem .55rem}
 }
 
 /* 12 chat history loader + start marker */

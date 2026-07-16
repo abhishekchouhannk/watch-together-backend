@@ -42,6 +42,14 @@
   let needsSync = false;
   let initialVideoState = { currentTime: 0, isPlaying: false };
   let syncFallbackTimer = null;
+
+  /* ═══════ Collapsible Room Details Div ═══════ */
+  const DETAILS_KEY = "wt-details-open";
+  let detailsOpen = true;
+  const chevSVG =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
   /* ═══════ DOM ═══════ */
   const $ = (id) => document.getElementById(id);
   const dom = {
@@ -162,10 +170,17 @@
   /* ═══════ INIT ═══════ */
   document.addEventListener("DOMContentLoaded", async () => {
     initTheme();
+    initDetailsState();
     wireEvents();
     await fetchMe();
     connectSocket();
   });
+  function initDetailsState() {
+    let saved = null;
+    try { saved = localStorage.getItem(DETAILS_KEY); } catch (_) {}
+    // no stored preference → collapsed on mobile, expanded on desktop
+    detailsOpen = saved === null ? window.innerWidth > 768 : saved === "1";
+  }
   function resolveTod() {
     try { if (typeof getTimeOfDay === "function") return getTimeOfDay(); } catch (_) {}
     const h = new Date().getHours();
@@ -237,6 +252,17 @@
       dom.controls.classList.add("show");
       clearTimeout(dom.controls._t);
       dom.controls._t = setTimeout(() => dom.controls.classList.remove("show"), 3000);
+    });
+    /* room details: click anywhere to expand / collapse */
+    dom.details.addEventListener("click", () => {
+      if (!dom.details.classList.contains("rd-loaded")) return;   // still skeleton
+      const sel = window.getSelection && window.getSelection();
+      if (sel && sel.type === "Range" && sel.toString().trim()) return; // user is selecting text
+      toggleDetails();
+    });
+    dom.details.addEventListener("keydown", (e) => {
+      if (!e.target.classList || !e.target.classList.contains("rd-head")) return;
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleDetails(); }
     });
     /* theme dropdown */
     dom.themeBtn.addEventListener("click", (e) => {
@@ -374,25 +400,44 @@
     const cfg   = MODES[r.mode] || { label: r.mode || "Room", icon: "📺" };
     const bc    = "badge-" + (MODES[r.mode] ? r.mode : "casual");
     const parts = r.participants || [];
+    const max   = r.maxParticipants || 10;
     dom.details.innerHTML =
-      '<h2 class="rd-name">' + esc(r.roomName) + "</h2>" +
-      (r.description ? '<p class="rd-desc">' + esc(r.description) + "</p>" : "") +
-      '<div class="rd-meta">' +
-        '<span class="mode-badge ' + bc + '">' + cfg.icon + " " + cfg.label + "</span>" +
-        '<span style="display:flex;align-items:center;gap:.3rem">' +
-          '<span class="status-dot status-' + (r.status || "active") + '"></span>' +
-          esc(r.status || "active") + "</span>" +
-        '<span class="rd-meta-sep">·</span>' +
-        "<span>Hosted by <strong>" + esc(r.admin ? r.admin.username : "—") + "</strong></span>" +
-        '<span class="rd-meta-sep">·</span>' +
-        "<span>👥 " + parts.length + "/" + (r.maxParticipants || 10) + "</span>" +
+      /* ── always-visible summary ── */
+      '<div class="rd-head" role="button" tabindex="0" aria-controls="rdBody" aria-expanded="' + (detailsOpen ? "true" : "false") + '">' +
+        '<div class="rd-head-main">' +
+          '<h2 class="rd-name">' + esc(r.roomName) + "</h2>" +
+          '<span class="mode-badge ' + bc + '">' + cfg.icon + " " + cfg.label + "</span>" +
+          '<span class="rd-count">👥 ' + parts.length + "/" + max + "</span>" +
+        "</div>" +
+        '<span class="rd-chev" aria-hidden="true">' + chevSVG + "</span>" +
       "</div>" +
-      (r.tags && r.tags.length
-        ? '<div class="rd-tags">' + r.tags.map((t) => '<span class="tag">#' + esc(t) + "</span>").join("") + "</div>"
-        : "") +
-      renderAvatars(parts);
+      /* ── collapsible body ── */
+      '<div class="rd-body-wrap"><div class="rd-body" id="rdBody"><div class="rd-body-inner">' +
+        (r.description ? '<p class="rd-desc">' + esc(r.description) + "</p>" : "") +
+        '<div class="rd-meta">' +
+          '<span style="display:flex;align-items:center;gap:.3rem">' +
+            '<span class="status-dot status-' + (r.status || "active") + '"></span>' +
+            esc(r.status || "active") + "</span>" +
+          '<span class="rd-meta-sep">·</span>' +
+          "<span>Hosted by <strong>" + esc(r.admin ? r.admin.username : "—") + "</strong></span>" +
+          '<span class="rd-meta-sep">·</span>' +
+          "<span>👥 " + parts.length + "/" + max + " participants</span>" +
+        "</div>" +
+        (r.tags && r.tags.length
+          ? '<div class="rd-tags">' + r.tags.map((t) => '<span class="tag">#' + esc(t) + "</span>").join("") + "</div>"
+          : "") +
+        renderAvatars(parts) +
+      "</div></div></div>";
     dom.details.classList.add("rd-loaded");
+    dom.details.classList.toggle("expanded", detailsOpen);   // applied same frame → no open/close flicker on re-render
     dom.chatOnline.textContent = parts.length + " in room";
+  }
+  function toggleDetails() {
+    detailsOpen = !detailsOpen;
+    try { localStorage.setItem(DETAILS_KEY, detailsOpen ? "1" : "0"); } catch (_) {}
+    dom.details.classList.toggle("expanded", detailsOpen);
+    const head = dom.details.querySelector(".rd-head");
+    if (head) head.setAttribute("aria-expanded", detailsOpen ? "true" : "false");
   }
   function renderAvatars(list) {
     if (!list.length) return "";
