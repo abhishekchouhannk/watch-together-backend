@@ -47,6 +47,10 @@
           ></span>
         </div>
         <div class="rh-right">
+          <button class="icon-btn" id="configBtn" type="button" title="Room settings" aria-label="Room settings">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.36.38.68.69.9"/></svg>
+            <span class="gear-badge" id="gearBadge" hidden>0</span>
+          </button>
           <div class="theme-switcher" id="themeSwitcher">
             <button
               class="theme-btn"
@@ -127,6 +131,9 @@
                 <p class="vp-sub">Paste a URL below to start watching</p>
               </div>
             </div>
+
+            <!-- Click-shield before #fxLayer -->
+            <div class="player-shield" id="playerShield"></div>
 
             <!-- ===== LIVE REACTIONS FLOAT LAYER ===== -->
             <div class="fx-layer" id="fxLayer" aria-hidden="true"></div>
@@ -245,6 +252,11 @@
                   <polygon points="6 3 20 12 6 21 6 3" />
                 </svg>
               </button>
+              <!-- Lock chip -->
+              <button class="vc-lock" id="vcLock" type="button" style="display:none" title="Playback is host-controlled">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>Host controls</span>
+              </button>
               <span class="vc-time" id="curTime">0:00</span>
               <input
                 type="range"
@@ -348,6 +360,14 @@
           </div>
         </div>
       </div>
+      <div class="cfg-backdrop" id="cfgBackdrop" hidden></div>
+      <aside class="cfg-sheet" id="cfgSheet" hidden role="dialog" aria-modal="true" aria-labelledby="cfgTitle">
+        <header class="cfg-head">
+          <h3 id="cfgTitle">Room settings</h3>
+          <button class="cfg-x" id="cfgClose" type="button" aria-label="Close">✕</button>
+        </header>
+        <div class="cfg-body" id="cfgBody"></div>
+      </aside>
       <div class="toast-wrap" id="toastWrap"></div>
     </div>
     <!-- ===== SCRIPTS ===== -->

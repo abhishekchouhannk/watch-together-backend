@@ -33,7 +33,13 @@
   const REMOTE_COOLDOWN = 1000;  // ms
   const SEEK_DEBOUNCE   = 300;   // ms
   /* ═══════ STATE ═══════ */
-  const S = { room: null, userId: null, username: "You", themeMode: "auto", detailsOpen: null };
+  const S = {
+    room: null, userId: null, username: "You", themeMode: "auto", detailsOpen: null,
+    perms: { isAdmin:false, role:"member", syncMode:"host", canSync:false,
+             canChangeVideo:false, canEditRoom:false, canManage:false, requestState:"none" },
+    members: [], requests: [],
+    video: { currentTime: 0, isPlaying: false, at: 0 },   // authoritative mirror
+  };
   const roomId = location.pathname.replace(/.*\/room\//, "").replace(/\/$/, "");
   let socket = null;
   let videoLoaded = false;
@@ -55,6 +61,9 @@
     fxLayer: $("fxLayer"), playerBar: $("playerBar"),
     reactRail: $("reactRail"), reactToggle: $("reactToggle"), reactStrip: $("reactStrip"),
     reactHub: $("reactHub"), ytFsBtn: $("ytFsBtn"),
+    shield: $("playerShield"), vcLock: $("vcLock"),
+    configBtn: $("configBtn"), gearBadge: $("gearBadge"),
+    cfgSheet: $("cfgSheet"), cfgBackdrop: $("cfgBackdrop"), cfgBody: $("cfgBody"),
   };
   /* ═══════════════════════════════════════════
      PLAYER ABSTRACTION  (direct <video> + YT)
@@ -114,12 +123,26 @@
       setTimeout(() => (this._rc = Math.max(0, this._rc - 1)), REMOTE_COOLDOWN);
     },
     isRemote() { return this._rc > 0; },
+    /* -- volume/toggle helpers, */
+    setVol(v) {  // 0..1
+      if (this.type === "youtube" && this.yt) { try { this.yt.setVolume(Math.round(v*100)); if (v > 0) this.yt.unMute(); } catch(_){} }
+      else if (this.el) this.el.volume = v;
+    },
+    setMuted(m) {
+      if (this.type === "youtube" && this.yt) { try { m ? this.yt.mute() : this.yt.unMute(); } catch(_){} }
+      else if (this.el) this.el.muted = m;
+    },
+    isMuted() {
+      if (this.type === "youtube" && this.yt) { try { return this.yt.isMuted(); } catch(_) { return false; } }
+      return this.el ? this.el.muted : false;
+    },
+    toggle() { this.paused() ? this.play() : this.pause(); },
     /* ── sync leader: broadcasts time every SYNC_INTERVAL ── */
     startLeader() {
       clearInterval(this._syncInt);
       this._syncInt = setInterval(() => {
-        if (!this.paused() && socket)
-          socket.emit("video-time-sync", { currentTime: this.time() });
+        if (!S.perms.canSync) return;                       // only controllers drive the clock
+        if (!this.paused() && socket) socket.emit("video-time-sync", { currentTime: this.time() });
       }, SYNC_INTERVAL);
     },
     stopLeader() { clearInterval(this._syncInt); },
@@ -262,11 +285,16 @@
       if (e.key !== "Escape") return;
       closeThemeMenu();
       closeRail();
+      closeConfig();
       if (dom.container.classList.contains("pseudo-fs")) setPseudoFs(false);
     });
     wireReactions();
     document.addEventListener("fullscreenchange", onFullscreenChange);
     document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    wirePlayerControls();
+    dom.configBtn.onclick = openConfig;
+    $("cfgClose").onclick = closeConfig;
+    dom.cfgBackdrop.onclick = closeConfig;
   }
   /* ═══════ FETCH ME ═══════ */
   async function fetchMe() {
@@ -289,26 +317,42 @@
       setTimeout(() => (location.href = "/"), 1500);
     });
     /* ── presence ── */
-    socket.on("room-state", async ({ room }) => {
+    socket.on("room-state", async ({ room, perms }) => {
       S.room = room;
-      renderHeader();
-      renderDetails();
+      if (perms) S.perms = perms;
+      applyPerms();
+      renderHeader(); renderDetails();
       addSystemMsg("You joined the room");
       await loadInitialMessages();
       if (room.video && room.video.url && !videoLoaded) {
         $("urlInput").value = room.video.url;
-        initialVideoState = {
-          currentTime: room.video.currentTime || 0,
-          isPlaying:   room.video.isPlaying   || false,
-        };
+        initialVideoState = { currentTime: room.video.currentTime || 0, isPlaying: room.video.isPlaying || false };
+        markLocal(initialVideoState.currentTime, initialVideoState.isPlaying);
         needsSync = true;
-        await loadVideo(room.video.url, true);          // true = don't re-emit
+        await loadVideo(room.video.url, true);
       }
     });
     socket.on("room-error", ({ message }) => {
       toast(message || "Error", "error");
       setTimeout(() => (location.href = "/dashboard"), 1500);
     });
+
+        /* ── permissions ── */
+    socket.on("room-permissions", ({ perms, members, requests }) => {
+      S.perms = perms || S.perms;
+      S.members = members || [];
+      S.requests = requests || [];
+      applyPerms();
+      if (isConfigOpen()) renderConfig();
+    });
+    socket.on("perm-denied", ({ message, video }) => {
+      toast(message || "Not allowed", "error");
+      if (video) { markLocal(video.currentTime, video.isPlaying); revertToRoomState(video); }
+    });
+    socket.on("perm-toast", ({ message, type }) => toast(message, type));
+    socket.on("perm-notice", ({ text }) => addSystemMsg(text));
+    socket.on("perm-request", ({ userId, username }) => showRequestPrompt(userId, username));
+
     socket.on("participants-update", ({ participants, count }) => {
       if (!S.room) return;
       S.room.participants = participants;
@@ -324,21 +368,13 @@
       loadVideo(url, true);
       addSystemMsg(username + " loaded a new video");
     });
-    socket.on("video-play", ({ currentTime }) => {
-      P.remote(() => P.play(currentTime));
-      P.stopLeader();                                   // remote user is leader now
-    });
-    socket.on("video-pause", ({ currentTime }) => {
-      P.remote(() => P.pause(currentTime));
-      P.stopLeader();
-    });
-    socket.on("video-seek", ({ currentTime }) => {
-      P.remote(() => P.seek(currentTime));
-    });
+    socket.on("video-play",  ({ currentTime }) => { markLocal(currentTime, true);  P.remote(() => P.play(currentTime));  P.stopLeader(); });
+    socket.on("video-pause", ({ currentTime }) => { markLocal(currentTime, false); P.remote(() => P.pause(currentTime)); P.stopLeader(); });
+    socket.on("video-seek",  ({ currentTime }) => { markLocal(currentTime, !P.paused()); P.remote(() => P.seek(currentTime)); });
     socket.on("video-time-sync", ({ currentTime }) => {
+      markLocal(currentTime, true);
       if (P.paused() || P.isRemote()) return;
-      if (Math.abs(P.time() - currentTime) > DRIFT_THRESHOLD)
-        P.remote(() => P.seek(currentTime));
+      if (Math.abs(P.time() - currentTime) > DRIFT_THRESHOLD) P.remote(() => P.seek(currentTime));
     });
     /* late-joiner peer sync */
     socket.on("video-sync-request", ({ requesterId }) => {
@@ -351,6 +387,7 @@
     });
     socket.on("video-sync-state", ({ currentTime, isPlaying }) => {
       clearTimeout(syncFallbackTimer);
+      markLocal(currentTime, isPlaying);
       if (!P.ready) return;
       P.remote(() => { P.seek(currentTime); if (isPlaying) P.play(currentTime); });
     });
@@ -432,25 +469,18 @@
      ══════════════════════════════════ */
   async function loadVideo(url, fromRemote) {
     if (!url) { toast("Enter a URL", "error"); return; }
+    if (!fromRemote && !S.perms.canChangeVideo) { toast("Only the host can change the video", "error"); return; }
     P.destroy();
-    // clear any existing FX (e.g., bubble emojis) so it doesn't linger when a new video is loaded
     if (dom.fxLayer) dom.fxLayer.innerHTML = "";
     const ytId = extractYT(url);
     if (ytId) {
-      /* ── YouTube ── */
       P.type = "youtube";
-      dom.controls.style.display = "none";
-      dom.container.classList.add("is-yt");      // reveals OUR fullscreen button in the rail
+      /* controls=0 + disablekb=1 + click-shield → YouTube's chrome can no longer be used to
+         pause/seek, so permissions are actually enforceable. We drive it from our own .vc bar. */
       await loadYTAPI();
-      /* Create the <iframe> ourselves instead of letting YT.Player do it, because:
-         • no `allowfullscreen` attribute + no `fullscreen` in `allow`
-           → the browser REFUSES any fullscreen request coming from inside the iframe,
-             so YouTube can never fullscreen itself and orphan the app's overlays (app's own fullscreen button for example).
-         • fs=0           → YouTube hides its own fullscreen button
-         • playsinline=1  → iOS won't hijack the video into native fullscreen
-         • enablejsapi=1  → required when handing an existing iframe to YT.Player   */
       const qs = new URLSearchParams({
-        enablejsapi: "1", fs: "0", rel: "0", modestbranding: "1",
+        enablejsapi: "1", fs: "0", controls: "0", disablekb: "1",
+        rel: "0", modestbranding: "1", iv_load_policy: "3",
         playsinline: "1", autoplay: "0", origin: location.origin,
       }).toString();
       dom.videoWrap.innerHTML =
@@ -461,26 +491,24 @@
         events: { onReady: onPlayerReady, onStateChange: onYTState },
       });
     } else {
-      /* ── direct <video> ── */
       P.type = "direct";
-      dom.container.classList.remove("is-yt");
       dom.videoWrap.innerHTML = '<video id="videoEl" preload="metadata"></video>';
       P.el = $("videoEl");
       P.el.src = url;
-      dom.controls.style.display = "";
-      wireVideoControls();
+      wireDirectVideoEvents();                               // element-level listeners only
       P.el.addEventListener("canplay", onPlayerReady, { once: true });
     }
+    dom.controls.style.display = "";                         // our bar now serves BOTH players
+    startUITicker();
     if (dom.placeholder && dom.placeholder.parentNode) dom.placeholder.remove();
     $("urlInput").value = url;
     videoLoaded = true;
-    // only the person who pasted the URL emits → server saves + broadcasts
     if (!fromRemote && socket) socket.emit("video-load", { url });
   }
+
   /* Called once when the player is ready to accept commands */
   function onPlayerReady() {
     P.ready = true;
-    if (P.type === "youtube") P.startYTPoll();
     if (!needsSync) return;
     needsSync = false;
     // 1) immediately apply the DB snapshot (best guess)
@@ -495,81 +523,115 @@
   /* YouTube state-change → emit play / pause */
   function onYTState(e) {
     if (P.isRemote()) return;
-    if (e.data === 1) {                              // PLAYING
-      socket && socket.emit("video-play",  { currentTime: P.time() });
-      P.startLeader();
-    } else if (e.data === 2) {                       // PAUSED
-      socket && socket.emit("video-pause", { currentTime: P.time() });
-      P.stopLeader();
-    }
-    // BUFFERING (3) / ENDED (0) / UNSTARTED (-1) / CUED (5) → ignored
+    if (e.data !== 1 && e.data !== 2) return;
+    if (!S.perms.canSync) return revertToRoomState();        // defensive (chrome is off)
+    if (e.data === 1) { socket && socket.emit("video-play",  { currentTime: P.time() }); markLocal(P.time(), true);  P.startLeader(); }
+    else              { socket && socket.emit("video-pause", { currentTime: P.time() }); markLocal(P.time(), false); P.stopLeader(); }
   }
-  /* ── Direct-video custom controls + sync hooks ── */
-  let seekTimer = null;
-  function wireVideoControls() {
-    if (!P.el) return;
-    const v       = P.el;
-    const prog    = $("progressBar");
-    const cur     = $("curTime");
-    const dur     = $("durTime");
-    const playBtn = $("playBtn");
-    const muteBtn = $("muteBtn");
-    const volBar  = $("volBar");
-    const fsBtn   = $("fsBtn");
-    v.addEventListener("loadedmetadata", () => {
-      dur.textContent = fmtTime(v.duration);
-      prog.max = Math.floor(v.duration * 100) || 1000;
-      fillSlider(volBar, 100, 100);
-    });
-    v.addEventListener("timeupdate", () => {
-      cur.textContent = fmtTime(v.currentTime);
-      prog.value = Math.floor(v.currentTime * 100);
+
+  /* ═══════ PLAYER CONTROLS (both player types, permission-gated) ═══════ */
+  let uiTick = null, progDragging = false, seekTimer = null;
+  function startUITicker() { clearInterval(uiTick); uiTick = setInterval(updateProgressUI, 250); }
+  function updateProgressUI() {
+    if (!P.ready) return;
+    const prog = $("progressBar"), t = P.time() || 0, d = P.dur() || 0;
+    if (!progDragging) {
+      prog.max = Math.max(1, Math.floor(d * 100));
+      prog.value = Math.floor(t * 100);
       fillSlider(prog, prog.value, prog.max);
+      $("curTime").textContent = fmtTime(t);
+    }
+    $("durTime").textContent = fmtTime(d);
+    $("playBtn").innerHTML = P.paused() ? playSVG : pauseSVG;
+  }
+  function wirePlayerControls() {
+    const prog = $("progressBar"), volBar = $("volBar");
+    $("playBtn").onclick = () => { if (guardSync()) P.toggle(); };
+    dom.shield.addEventListener("click", () => { if (guardSync()) P.toggle(); });
+    dom.vcLock.onclick = (e) => { e.stopPropagation(); openConfig(); };
+    prog.addEventListener("input", () => {
+      if (!S.perms.canSync) return;
+      progDragging = true;
+      const t = prog.value / 100;
+      $("curTime").textContent = fmtTime(t);
+      fillSlider(prog, prog.value, prog.max);
+      if (P.type === "direct") P.seek(t);                   // live scrub
     });
-    /* play / pause — always update the button icon; only emit if local */
+    prog.addEventListener("change", () => {
+      progDragging = false;
+      if (!S.perms.canSync) { updateProgressUI(); return; }
+      const t = prog.value / 100;
+      P.seek(t);
+      if (P.type === "youtube") emitSeek(t);                // direct emits via its "seeked" event
+    });
+    $("muteBtn").onclick = () => { const m = !P.isMuted(); P.setMuted(m); $("muteBtn").innerHTML = m ? mutedSVG : volSVG; };
+    volBar.addEventListener("input", () => {
+      const v = volBar.value / 100;
+      P.setVol(v); P.setMuted(v === 0);
+      $("muteBtn").innerHTML = v === 0 ? mutedSVG : volSVG;
+      fillSlider(volBar, volBar.value, 100);
+    });
+    fillSlider(volBar, 100, 100);
+    $("fsBtn").onclick = toggleFullscreen;
+    /* keyboard */
+    document.addEventListener("keydown", (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || !P.ready) return;
+      const k = e.key.toLowerCase();
+      if (k === " " || k === "k")       { e.preventDefault(); if (guardSync()) P.toggle(); }
+      else if (k === "arrowright")      { if (guardSync()) { const t2 = P.time() + 5; P.seek(t2); emitSeek(t2); } }
+      else if (k === "arrowleft")       { if (guardSync()) { const t2 = Math.max(0, P.time() - 5); P.seek(t2); emitSeek(t2); } }
+      else if (k === "m")               { const m = !P.isMuted(); P.setMuted(m); $("muteBtn").innerHTML = m ? mutedSVG : volSVG; }
+    });
+  }
+  /* element-level listeners for the direct <video> (fresh element each load) */
+  function wireDirectVideoEvents() {
+    const v = P.el;
     v.addEventListener("play", () => {
-      playBtn.innerHTML = pauseSVG;
       if (P.isRemote()) return;
+      if (!S.perms.canSync) return revertToRoomState();     // media keys / PiP / extensions
       socket && socket.emit("video-play", { currentTime: P.time() });
+      markLocal(P.time(), true);
       P.startLeader();
     });
     v.addEventListener("pause", () => {
-      playBtn.innerHTML = playSVG;
       if (P.isRemote()) return;
+      if (!S.perms.canSync) return revertToRoomState();
       socket && socket.emit("video-pause", { currentTime: P.time() });
+      markLocal(P.time(), false);
       P.stopLeader();
     });
-    v.addEventListener("ended", () => { playBtn.innerHTML = playSVG; });
-    /* seek — debounced so scrubbing sends only the final position */
     v.addEventListener("seeked", () => {
-      if (P.isRemote()) return;
+      if (P.isRemote() || !S.perms.canSync) return;
       clearTimeout(seekTimer);
-      seekTimer = setTimeout(() => {
-        socket && socket.emit("video-seek", { currentTime: P.time() });
-      }, SEEK_DEBOUNCE);
+      seekTimer = setTimeout(() => emitSeek(P.time()), SEEK_DEBOUNCE);
     });
-    playBtn.onclick = togglePlay;
-    v.onclick       = togglePlay;
-    prog.addEventListener("input", () => {
-      v.currentTime = prog.value / 100;
-      fillSlider(prog, prog.value, prog.max);
-    });
-    muteBtn.onclick = () => {
-      v.muted = !v.muted;
-      muteBtn.innerHTML = v.muted ? mutedSVG : volSVG;
-    };
-    volBar.addEventListener("input", () => {
-      v.volume = volBar.value / 100;
-      v.muted  = v.volume === 0;
-      muteBtn.innerHTML = v.muted ? mutedSVG : volSVG;
-      fillSlider(volBar, volBar.value, 100);
-    });
-    fsBtn.onclick = toggleFullscreen; // let toglleFullscreen() handle the YT case too
   }
-  function togglePlay() {
-    if (!P.el) return;
-    if (P.el.paused) P.el.play().catch(() => {}); else P.el.pause();
+  function emitSeek(t) {
+    if (!S.perms.canSync || !socket) return;
+    socket.emit("video-seek", { currentTime: t });
+    markLocal(t, !P.paused());
   }
+  /* returns true if allowed; otherwise nudges the user */
+  function guardSync() {
+    if (S.perms.canSync) return true;
+    toast("Playback is host-controlled — ask for access", "error");
+    return false;
+  }
+  function markLocal(currentTime, isPlaying) { S.video = { currentTime, isPlaying, at: Date.now() }; }
+  function expectedVideoState() {
+    const v = S.video;
+    let t = v.currentTime || 0;
+    if (v.isPlaying && v.at) t += (Date.now() - v.at) / 1000;
+    return { currentTime: t, isPlaying: !!v.isPlaying };
+  }
+  /* snap a rule-breaker back to the room's authoritative state */
+  function revertToRoomState(state) {
+    const v = state || expectedVideoState();
+    P.remote(() => { P.seek(v.currentTime); v.isPlaying ? P.play(v.currentTime) : P.pause(v.currentTime); });
+  }
+ 
   function extractYT(url) {
     const m = url.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
     return m ? m[1] : null;
@@ -824,4 +886,146 @@
     dom.toasts.appendChild(el);
     setTimeout(() => { el.classList.add("hiding"); setTimeout(() => el.remove(), 300); }, 3200);
   }
+
+  /* ══════════════════════════════════════
+     PERMISSIONS UI + ROOM CONFIG SHEET
+     ══════════════════════════════════════ */
+  function applyPerms() {
+    const p = S.perms;
+    dom.container.classList.toggle("locked", !p.canSync);
+    $("playBtn").disabled     = !p.canSync;
+    $("progressBar").disabled = !p.canSync;
+    dom.vcLock.style.display  = p.canSync ? "none" : "";
+    const ui = $("urlInput"), lb = $("loadUrlBtn");
+    ui.disabled = lb.disabled = !p.canChangeVideo;
+    ui.placeholder = p.canChangeVideo ? "Paste video URL (.mp4, YouTube, etc.)" : "Only the host can change the video";
+    const n = p.canManage ? S.requests.length : 0;
+    dom.gearBadge.hidden = n === 0;
+    dom.gearBadge.textContent = n;
+    if (!p.canSync) P.stopLeader();
+  }
+  const isConfigOpen = () => !dom.cfgSheet.hidden;
+  function openConfig()  { renderConfig(); dom.cfgSheet.hidden = false; dom.cfgBackdrop.hidden = false;
+                           requestAnimationFrame(() => dom.cfgSheet.classList.add("open")); }
+  function closeConfig() { dom.cfgSheet.classList.remove("open");
+                           setTimeout(() => { dom.cfgSheet.hidden = true; dom.cfgBackdrop.hidden = true; }, 180); }
+  const ROLE_LABEL = { admin: "Host", mod: "Mod", member: "Member" };
+  function renderConfig() {
+    const p = S.perms, r = S.room || {};
+    const online = new Set((r.participants || []).map((x) => (x.userId || "").toString()));
+    let h = "";
+    /* ── my access (non-hosts) ── */
+    if (!p.canManage) {
+      const st = p.canSync ? "granted" : p.requestState;
+      h += '<section class="cfg-sec"><h4>Your access</h4>' +
+           '<div class="cfg-row"><span>Playback control</span>' +
+             '<span class="pill ' + (p.canSync ? "pill-ok" : "pill-no") + '">' +
+             (p.canSync ? "Allowed" : "Host-controlled") + "</span></div>";
+      if (!p.canSync) {
+        if (st === "pending")      h += '<p class="cfg-note">⏳ Request sent — waiting for the host.</p>';
+        else if (st === "denied")  h += '<p class="cfg-note">🚫 The host declined. They can still grant it from their settings.</p>';
+        else                       h += '<button class="cfg-btn primary" data-act="request">Request playback control</button>';
+      }
+      h += "</section>";
+    }
+    /* ── sync mode (host only) ── */
+    if (p.canManage) {
+      h += '<section class="cfg-sec"><h4>Who can play / pause / seek</h4>' +
+           '<div class="seg">' +
+             '<button class="seg-btn' + (p.syncMode === "host" ? " on" : "") + '" data-act="mode" data-mode="host">🔒 Host only</button>' +
+             '<button class="seg-btn' + (p.syncMode === "everyone" ? " on" : "") + '" data-act="mode" data-mode="everyone">👥 Everyone</button>' +
+           "</div>" +
+           '<p class="cfg-note">Only you can change the video, regardless of this setting.</p></section>';
+      /* ── pending requests ── */
+      if (S.requests.length) {
+        h += '<section class="cfg-sec"><h4>Requests <span class="cnt">' + S.requests.length + "</span></h4>";
+        S.requests.forEach((m) => {
+          h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) + esc(m.username) + "</span>" +
+               '<span class="cfg-acts">' +
+                 '<button class="cfg-mini ok"  data-act="respond" data-approve="1" data-id="' + m.userId + '">Approve</button>' +
+                 '<button class="cfg-mini no" data-act="respond" data-approve="0" data-id="' + m.userId + '">Deny</button>' +
+               "</span></div>";
+        });
+        h += "</section>";
+      }
+      /* ── people ── */
+      h += '<section class="cfg-sec"><h4>People</h4>';
+      S.members.forEach((m) => {
+        const isHost = m.role === "admin";
+        const locked = isHost || p.syncMode === "everyone" || m.role === "mod";   // implicit control
+        h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
+               '<span class="cfg-uname">' + esc(m.username) +
+                 (online.has(m.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
+               "</span>" +
+               '<span class="role-tag role-' + m.role + '">' + ROLE_LABEL[m.role] + "</span>" +
+             "</span>" +
+             '<span class="cfg-acts">' +
+               (isHost ? "" :
+                 '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
+                   '<option value="member"' + (m.role === "member" ? " selected" : "") + ">Member</option>" +
+                   '<option value="mod"' + (m.role === "mod" ? " selected" : "") + ">Mod</option>" +
+                 "</select>") +
+               '<label class="sw' + (locked ? " sw-lock" : "") + '" title="Can control playback">' +
+                 '<input type="checkbox" data-act="sync" data-id="' + m.userId + '"' +
+                   (m.canSync ? " checked" : "") + (locked ? " disabled" : "") + ">" +
+                 '<span class="sw-track"><span class="sw-knob"></span></span>' +
+               "</label>" +
+             "</span></div>";
+      });
+      h += '<p class="cfg-note">Mods get playback control automatically. Room-editing powers for mods are coming soon.</p></section>';
+      /* ── room details (UI only for now) ── */
+      h += '<section class="cfg-sec cfg-soon"><h4>Room details <span class="soon">Coming soon</span></h4>' +
+           '<label class="cfg-field"><span>Name</span><input type="text" value="' + esc(r.roomName || "") + '" disabled></label>' +
+           '<label class="cfg-field"><span>Description</span><textarea rows="2" disabled>' + esc(r.description || "") + "</textarea></label>" +
+           '<label class="cfg-field"><span>Mode</span><select disabled>' +
+             Object.keys(MODES).map((k) => '<option' + (r.mode === k ? " selected" : "") + ">" + MODES[k].icon + " " + MODES[k].label + "</option>").join("") +
+           "</select></label>" +
+           '<label class="cfg-field"><span>Tags</span><input type="text" value="' + esc((r.tags || []).join(", ")) + '" disabled></label>' +
+           '<label class="cfg-field"><span>Visibility</span><select disabled><option>' + (r.isPublic === false ? "Private" : "Public") + "</option></select></label>" +
+           '<label class="cfg-field"><span>Max participants</span><input type="number" value="' + (r.maxParticipants || 10) + '" disabled></label>' +
+           '<button class="cfg-btn" disabled>Save changes</button></section>';
+    }
+    dom.cfgBody.innerHTML = h;
+  }
+  function avatarHTML(name) {
+    return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
+  }
+  /* delegated actions inside the sheet */
+  dom_cfgDelegate();
+  function dom_cfgDelegate() {
+    document.addEventListener("DOMContentLoaded", () => {
+      dom.cfgBody.addEventListener("click", (e) => {
+        const el = e.target.closest("[data-act]");
+        if (!el || el.tagName === "SELECT" || el.tagName === "INPUT") return;
+        const act = el.dataset.act;
+        if (act === "request")  socket && socket.emit("perm-request");
+        if (act === "mode")     socket && socket.emit("perm-set-mode", { mode: el.dataset.mode });
+        if (act === "respond")  socket && socket.emit("perm-respond", { userId: el.dataset.id, approve: el.dataset.approve === "1" });
+      });
+      dom.cfgBody.addEventListener("change", (e) => {
+        const el = e.target.closest("[data-act]");
+        if (!el) return;
+        if (el.dataset.act === "sync") socket && socket.emit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id });
+        if (el.dataset.act === "role") socket && socket.emit("perm-set-role", { userId: el.dataset.id, role: el.value });
+      });
+    });
+  }
+  /* host-side approve/deny prompt */
+  function showRequestPrompt(userId, username) {
+    if (dom.toasts.querySelector('[data-req="' + userId + '"]')) return;
+    const el = document.createElement("div");
+    el.className = "perm-prompt";
+    el.dataset.req = userId;
+    el.innerHTML =
+      '<div class="pp-txt"><strong>' + esc(username) + "</strong> wants playback control</div>" +
+      '<div class="pp-acts"><button class="cfg-mini ok">Approve</button><button class="cfg-mini no">Deny</button></div>';
+    const [ok, no] = el.querySelectorAll("button");
+    ok.onclick = () => { socket.emit("perm-respond", { userId, approve: true  }); el.remove(); };
+    no.onclick = () => { socket.emit("perm-respond", { userId, approve: false }); el.remove(); };
+    dom.toasts.appendChild(el);
+    setTimeout(() => el.remove(), 30000);   // falls back to the pending list in settings
+  }
+
 })();
+
+
