@@ -653,6 +653,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   border-radius:8px;background:var(--acc);color:var(--acc-t);
   font-size:.6rem;font-weight:800;display:flex;align-items:center;justify-content:center;
 }
+.gear-badge.is-hidden{ display:none; }
 /* click shield — makes YT chromeless + lets us intercept every click */
 .player-shield{position:absolute;inset:0;z-index:3;cursor:pointer}
 .video-container.locked .player-shield{cursor:default}
@@ -668,15 +669,36 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .vc-lock:hover{background:rgba(255,255,255,.26)}
 .url-input:disabled,.btn-sm:disabled{opacity:.55;cursor:not-allowed}
 /* sheet */
-.cfg-backdrop{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.45);backdrop-filter:blur(2px)}
+.cfg-backdrop{
+  position:fixed;inset:0;z-index:300;
+  background:rgba(0,0,0,.45);backdrop-filter:blur(2px);
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .18s, visibility 0s linear .18s;
+}
+.cfg-backdrop.open{
+  opacity:1;visibility:visible;pointer-events:auto;
+  transition:opacity .18s, visibility 0s;
+}
 .cfg-sheet{
   position:fixed;z-index:301;right:1rem;top:64px;width:380px;max-height:calc(100vh - 88px);
   display:flex;flex-direction:column;overflow:hidden;
   background:var(--menu-bg);border:1px solid var(--menu-bdr);border-radius:14px;
   box-shadow:0 20px 50px rgba(0,0,0,.3);
-  opacity:0;transform:translateY(-8px) scale(.98);transition:opacity .18s,transform .18s;
+  /* closed state */
+  opacity:0;
+  transform:translateY(-8px) scale(.98);
+  visibility:hidden;
+  pointer-events:none;
+  transition:opacity .18s, transform .18s, visibility 0s linear .18s;
 }
-.cfg-sheet.open{opacity:1;transform:none}
+.cfg-sheet.open{
+  opacity:1;
+  transform:none;
+  visibility:visible;
+  pointer-events:auto;
+  transition:opacity .18s, transform .18s, visibility 0s;
+}
+
 .cfg-head{display:flex;align-items:center;justify-content:space-between;padding:.85rem 1rem;border-bottom:1px solid var(--card-bdr)}
 .cfg-head h3{font-size:.95rem;font-weight:800;color:var(--t1)}
 .cfg-x{background:transparent;color:var(--t3);font-size:.9rem;width:26px;height:26px;border-radius:6px}

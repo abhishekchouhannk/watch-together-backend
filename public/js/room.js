@@ -900,15 +900,23 @@
     ui.disabled = lb.disabled = !p.canChangeVideo;
     ui.placeholder = p.canChangeVideo ? "Paste video URL (.mp4, YouTube, etc.)" : "Only the host can change the video";
     const n = p.canManage ? S.requests.length : 0;
-    dom.gearBadge.hidden = n === 0;
-    dom.gearBadge.textContent = n;
+    dom.gearBadge.classList.toggle("is-hidden", n === 0);
+    dom.gearBadge.textContent = n;  
     if (!p.canSync) P.stopLeader();
   }
-  const isConfigOpen = () => !dom.cfgSheet.hidden;
-  function openConfig()  { renderConfig(); dom.cfgSheet.hidden = false; dom.cfgBackdrop.hidden = false;
-                           requestAnimationFrame(() => dom.cfgSheet.classList.add("open")); }
-  function closeConfig() { dom.cfgSheet.classList.remove("open");
-                           setTimeout(() => { dom.cfgSheet.hidden = true; dom.cfgBackdrop.hidden = true; }, 180); }
+  // Check if the config sheet is open
+  const isConfigOpen = () => dom.cfgSheet.classList.contains("open");
+  function openConfig() {
+    renderConfig();
+    dom.cfgSheet.classList.add("open");
+    dom.cfgBackdrop.classList.add("open");
+    dom.cfgSheet.setAttribute("aria-hidden", "false");
+  }
+  function closeConfig() {
+    dom.cfgSheet.classList.remove("open");
+    dom.cfgBackdrop.classList.remove("open");
+    dom.cfgSheet.setAttribute("aria-hidden", "true");
+  }
   const ROLE_LABEL = { admin: "Host", mod: "Mod", member: "Member" };
   function renderConfig() {
     const p = S.perms, r = S.room || {};
@@ -991,24 +999,28 @@
     return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
   }
   /* delegated actions inside the sheet */
-  dom_cfgDelegate();
+  function onCfgClick(e) {
+    const el = e.target.closest("[data-act]");
+    if (!el || el.tagName === "SELECT" || el.tagName === "INPUT") return;
+    const act = el.dataset.act;
+    if (act === "request")  socket && socket.emit("perm-request");
+    if (act === "mode")     socket && socket.emit("perm-set-mode", { mode: el.dataset.mode });
+    if (act === "respond")  socket && socket.emit("perm-respond", { userId: el.dataset.id, approve: el.dataset.approve === "1" });
+  }
+  function onCfgChange(e) {
+    const el = e.target.closest("[data-act]");
+    if (!el) return;
+    if (el.dataset.act === "sync") socket && socket.emit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id });
+    if (el.dataset.act === "role") socket && socket.emit("perm-set-role", { userId: el.dataset.id, role: el.value });
+  }
   function dom_cfgDelegate() {
-    document.addEventListener("DOMContentLoaded", () => {
-      dom.cfgBody.addEventListener("click", (e) => {
-        const el = e.target.closest("[data-act]");
-        if (!el || el.tagName === "SELECT" || el.tagName === "INPUT") return;
-        const act = el.dataset.act;
-        if (act === "request")  socket && socket.emit("perm-request");
-        if (act === "mode")     socket && socket.emit("perm-set-mode", { mode: el.dataset.mode });
-        if (act === "respond")  socket && socket.emit("perm-respond", { userId: el.dataset.id, approve: el.dataset.approve === "1" });
-      });
-      dom.cfgBody.addEventListener("change", (e) => {
-        const el = e.target.closest("[data-act]");
-        if (!el) return;
-        if (el.dataset.act === "sync") socket && socket.emit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id });
-        if (el.dataset.act === "role") socket && socket.emit("perm-set-role", { userId: el.dataset.id, role: el.value });
-      });
-    });
+    dom.cfgBody.addEventListener("click", onCfgClick);
+    dom.cfgBody.addEventListener("change", onCfgChange);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", dom_cfgDelegate, { once: true });
+  } else {
+    dom_cfgDelegate();
   }
   /* host-side approve/deny prompt */
   function showRequestPrompt(userId, username) {
