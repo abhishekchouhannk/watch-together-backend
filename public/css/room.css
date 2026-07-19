@@ -215,6 +215,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   padding:1rem 1.25rem;margin:1rem;
   box-shadow:var(--card-sh);
   animation:fadeInUp .5s cubic-bezier(.16,1,.3,1) both;
+  isolation:isolate;
 }
 .rd-name{font-size:1.15rem;font-weight:700;color:var(--t1);margin-bottom:.3rem;letter-spacing:-.01em}
 .rd-desc{font-size:.88rem;color:var(--t3);line-height:1.5;margin-bottom:.6rem}
@@ -242,7 +243,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 @keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 
 /* ======== 5. Room Content wrapper ======== */
-.room-content{position:relative;z-index:1;padding:0 1rem 1rem}
+.room-content{position:relative;z-index:0;padding:0 1rem 1rem}
 
 /* ======== 6. Video Section ======== */
 .video-section{
@@ -268,13 +269,21 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 
 /* video controls overlay */
 .vc{
+  display:flex;align-items:center;gap:.55rem;
+  flex-wrap:nowrap;
+  min-width:0;
   position:absolute;bottom:0;left:0;right:0;z-index:5;
   padding:.55rem .7rem;
   background:linear-gradient(transparent,rgba(0,0,0,.75));
-  display:flex;align-items:center;gap:.55rem;
   opacity:0;transition:opacity .3s ease;
 }
+
 .video-container:hover .vc,.vc.show{opacity:1}
+
+.vc-btn,
+.vc-lock,
+.vc-time{ flex:0 0 auto; }
+
 .vc-btn{
   background:transparent;color:#fff;display:flex;align-items:center;justify-content:center;
   width:28px;height:28px;border-radius:6px;flex-shrink:0;transition:background .15s,transform .1s;
@@ -285,6 +294,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 
 /* styled range inputs inside controls */
 .vc-range{
+  min-width:0;
   -webkit-appearance:none;appearance:none;
   height:4px;border-radius:2px;outline:none;cursor:pointer;
   background:rgba(255,255,255,.25);
@@ -292,8 +302,16 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .vc-range::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 0 4px rgba(0,0,0,.4);transition:transform .1s}
 .vc-range::-webkit-slider-thumb:hover{transform:scale(1.15)}
 .vc-range::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#fff;cursor:pointer;border:none}
-.vc-progress{flex:1}
-.vc-volume{width:70px}
+.vc-progress{
+  flex:1 1 40px;      /* grows, and is allowed to shrink to 40px */
+  min-width:40px;
+}
+.vol-wrap{ flex:0 1 auto; min-width:0; }
+.vc-volume{
+  flex:0 1 80px;
+  width:80px;
+  min-width:0;
+}
 
 /* URL bar */
 .url-bar{display:flex;gap:.5rem}
@@ -468,6 +486,22 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   .rh-center .mode-badge{display:none}
 }
 
+/* ~520px: the duration label is redundant, the slider already implies it */
+@media (max-width:520px){
+  .vc{ gap:.35rem; padding-inline:.5rem; }
+  .vc-time#durTime{ display:none; }
+  .vc-volume{ flex-basis:60px; width:60px; }
+}
+/* ~420px: drop the volume slider, keep the mute toggle */
+@media (max-width:460px){
+  .vc-volume{ display:none; }
+  .vc-time{ font-size:.68rem; }
+}
+/* ~360px: current-time label goes too */
+@media (max-width:360px){
+  .vc-time{ display:none; }
+}
+
 /* 12 chat history loader + start marker */
 .chat-loader{
   display:flex;align-items:center;justify-content:center;gap:.5rem;
@@ -532,8 +566,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .react-rail:focus-within,
 .react-rail.open{opacity:1}                          /* …until you go near it */
 @media(hover:none){.react-rail{opacity:.88}}         /* touch devices: no hover → keep visible */
-.react-hub{position:relative;display:flex;align-items:center;justify-content:center}
-.rail-sep{display:none}                              /* shown only in YT mode (below) */
+.react-hub{position:relative;display:flex;align-items:center;justify-content:center} */
 /* shared look: dark + frosted, sits on top of video → theme-independent */
 .react-strip{
   display:flex;flex-direction:column;align-items:center;gap:.08rem;
@@ -563,25 +596,10 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 }
 .react-toggle:active{transform:scale(.9)}
 .react-rail.open .react-toggle{background:var(--acc);border-color:var(--acc)}
-/* OUR fullscreen button — only needed for YouTube (direct video has one in .vc) */
-.rail-fs{
-  display:none;width:30px;height:30px;border-radius:50%;
-  align-items:center;justify-content:center;color:#fff;
-  background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18);
-  box-shadow:0 4px 14px rgba(0,0,0,.3);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-  transition:background .2s,transform .12s;
-}
-.rail-fs:hover{background:rgba(255,255,255,.2)}
-.rail-fs:active{transform:scale(.9)}
-.video-container.is-yt .rail-fs{display:flex}
-.video-container.is-yt .rail-sep{
-  display:block;width:18px;height:1px;background:rgba(255,255,255,.22);
-}
+
 /* --- 13d. fullscreen (real or pseudo) --- */
 .video-container.is-fs .react-rail{right:1.1rem;gap:.5rem;opacity:.55}
 .video-container.is-fs .react-btn,
-.video-container.is-fs .rail-fs,
 .video-container.is-fs .react-toggle{width:36px;height:36px;font-size:1.2rem}
 /* iOS / browsers without element-fullscreen → CSS fullscreen fallback */
 .video-container.pseudo-fs{
@@ -661,10 +679,21 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .vc-btn:disabled,.vc-range:disabled{opacity:.4;cursor:not-allowed}
 .vc-range:disabled::-webkit-slider-thumb{opacity:0}
 .vc-lock{
-  display:flex;align-items:center;gap:.3rem;flex-shrink:0;
-  padding:.22rem .5rem;border-radius:999px;font-size:.68rem;font-weight:700;
+  display:flex;align-items:center;gap:.3rem;
+  flex:0 0 auto;
+  max-width:40%;
+  overflow:hidden;
+  padding:.22rem .5rem;border-radius:999px;
+  font-size:.68rem;font-weight:700;white-space:nowrap;
   background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.2);
   backdrop-filter:blur(6px);transition:background .2s;
+}
+.vc-lock span{
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+@container (max-width:560px){
+  .vc-lock span{ display:none }
+  .vc-lock{ padding:.22rem .3rem }   /* becomes a bare padlock icon */
 }
 .vc-lock:hover{background:rgba(255,255,255,.26)}
 .url-input:disabled,.btn-sm:disabled{opacity:.55;cursor:not-allowed}
