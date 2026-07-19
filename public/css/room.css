@@ -566,7 +566,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .react-rail:focus-within,
 .react-rail.open{opacity:1}                          /* …until you go near it */
 @media(hover:none){.react-rail{opacity:.88}}         /* touch devices: no hover → keep visible */
-.react-hub{position:relative;display:flex;align-items:center;justify-content:center} */
+.react-hub{position:relative;display:flex;align-items:center;justify-content:center}
 /* shared look: dark + frosted, sits on top of video → theme-independent */
 .react-strip{
   display:flex;flex-direction:column;align-items:center;gap:.08rem;
