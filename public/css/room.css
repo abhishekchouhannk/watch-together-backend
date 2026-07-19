@@ -269,7 +269,9 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 
 /* video controls overlay */
 .vc{
-  display:flex;align-items:center;gap:.55rem;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
   flex-wrap:nowrap;
   min-width:0;
   position:absolute;bottom:0;left:0;right:0;z-index:5;
@@ -306,11 +308,62 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   flex:1 1 40px;      /* grows, and is allowed to shrink to 40px */
   min-width:40px;
 }
-.vol-wrap{ flex:0 1 auto; min-width:0; }
+.vol-wrap{ display:flex; align-items:center; gap:.3rem;flex:0 1 auto; min-width:0; }
 .vc-volume{
   flex:0 1 80px;
   width:80px;
   min-width:0;
+}
+
+/* ── ≤1000px: progress bar on its own full-width row ── */
+@media (max-width:1000px){
+  .vc{
+    flex-wrap:wrap;
+    row-gap:.35rem;
+    padding-block:.45rem;
+  }
+  /* row 1 — full-width seek bar */
+  .vc-progress{
+    order:-1;
+    flex:1 1 100%;
+    width:100%;
+    min-width:0;
+  }
+  /* row 2 — times sit together now that progress has moved out */
+  #curTime{ order:1 }
+  #durTime{ order:2 }
+  #durTime::before{ content:'/ '; opacity:.6 }
+  /* push volume + fullscreen hard right */
+  .vol-wrap{ margin-left:auto; order:3 }
+  #fsBtn{ order:4 }
+  /* vertical volume pop-up */
+  .vol-wrap{ position:relative; flex:0 0 auto }
+  .vc-volume{
+    position:absolute;
+    bottom:calc(100% + .5rem);
+    left:50%;
+    transform:translateX(-50%) scale(.9);
+    transform-origin:bottom center;
+    writing-mode:vertical-lr;
+    direction:rtl;
+    -webkit-appearance:slider-vertical;
+    width:22px;
+    height:84px;
+    flex:0 0 auto;
+    padding:.4rem .25rem;
+    border-radius:999px;
+    background:rgba(0,0,0,.55);
+    border:1px solid rgba(255,255,255,.16);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    opacity:0;visibility:hidden;pointer-events:none;
+    transition:opacity .15s ease,transform .15s ease,visibility 0s linear .15s;
+  }
+  .vol-wrap:hover .vc-volume,
+  .vol-wrap:focus-within .vc-volume{
+    opacity:1;visibility:visible;pointer-events:auto;
+    transform:translateX(-50%) scale(1);
+    transition:opacity .15s ease,transform .15s ease;
+  }
 }
 
 /* URL bar */
@@ -475,7 +528,6 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
     min-height:300px;
   }
   .rh-center{justify-content:flex-start}
-  .vc-volume,.vc .vol-wrap{display:none}
   .theme-opt-sub{display:none}
   .back-label{display:none}
   .leave-btn{padding:.38rem .55rem}
@@ -484,22 +536,6 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   .leave-btn{padding:.42rem .6rem}
   .theme-btn{width:52px;height:34px;border-radius:10px}
   .rh-center .mode-badge{display:none}
-}
-
-/* ~520px: the duration label is redundant, the slider already implies it */
-@media (max-width:520px){
-  .vc{ gap:.35rem; padding-inline:.5rem; }
-  .vc-time#durTime{ display:none; }
-  .vc-volume{ flex-basis:60px; width:60px; }
-}
-/* ~420px: drop the volume slider, keep the mute toggle */
-@media (max-width:460px){
-  .vc-volume{ display:none; }
-  .vc-time{ font-size:.68rem; }
-}
-/* ~360px: current-time label goes too */
-@media (max-width:360px){
-  .vc-time{ display:none; }
 }
 
 /* 12 chat history loader + start marker */
@@ -679,10 +715,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .vc-btn:disabled,.vc-range:disabled{opacity:.4;cursor:not-allowed}
 .vc-range:disabled::-webkit-slider-thumb{opacity:0}
 .vc-lock{
-  display:flex;align-items:center;gap:.3rem;
-  flex:0 0 auto;
-  max-width:40%;
-  overflow:hidden;
+  display:flex;align-items:center;gap:.3rem;flex:0 0 auto;
   padding:.22rem .5rem;border-radius:999px;
   font-size:.68rem;font-weight:700;white-space:nowrap;
   background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.2);
@@ -690,10 +723,6 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 }
 .vc-lock span{
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-@container (max-width:560px){
-  .vc-lock span{ display:none }
-  .vc-lock{ padding:.22rem .3rem }   /* becomes a bare padlock icon */
 }
 .vc-lock:hover{background:rgba(255,255,255,.26)}
 .url-input:disabled,.btn-sm:disabled{opacity:.55;cursor:not-allowed}
@@ -790,5 +819,4 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
     border-radius:16px 16px 0 0;transform:translateY(100%);
   }
   .cfg-sheet.open{transform:none}
-  .vc-lock span{display:none}
 }
