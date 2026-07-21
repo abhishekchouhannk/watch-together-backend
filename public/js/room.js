@@ -338,13 +338,21 @@
       setTimeout(() => (location.href = "/dashboard"), 1500);
     });
 
-        /* ── permissions ── */
+    /* ── permissions ── */
     socket.on("room-permissions", ({ perms, members, requests }) => {
-      S.perms = perms || S.perms;
-      S.members = members || [];
+      S.perms    = perms;
+      S.members  = members || [];
       S.requests = requests || [];
       applyPerms();
-      if (isConfigOpen()) renderConfig();
+      refreshConfig();            // ← live swap member ⇄ mod UI
+    });
+    // new room-details broadcast
+    socket.on("room-updated", ({ room }) => {
+      S.room = Object.assign({}, S.room, room);
+      S.roomDraft = null;                       // server copy wins after a successful save
+      renderHeader();
+      renderDetails();
+      refreshConfig();
     });
     socket.on("perm-denied", ({ message, video }) => {
       toast(message || "Not allowed", "error");
@@ -917,7 +925,7 @@
     const ui = $("urlInput"), lb = $("loadUrlBtn");
     ui.disabled = lb.disabled = !p.canChangeVideo;
     ui.placeholder = p.canChangeVideo ? "Paste video URL (.mp4, YouTube, etc.)" : "Only the host can change the video";
-    const n = p.canManage ? S.requests.length : 0;
+    const n = p.canGrantSync ? S.requests.length : 0;      // host + mods get the badge
     dom.gearBadge.classList.toggle("is-hidden", n === 0);
     dom.gearBadge.textContent = n;  
     if (!p.canSync) P.stopLeader();
@@ -931,6 +939,7 @@
     dom.cfgSheet.setAttribute("aria-hidden", "false");
   }
   function closeConfig() {
+    S.roomDraft = null;
     dom.cfgSheet.classList.remove("open");
     dom.cfgBackdrop.classList.remove("open");
     dom.cfgSheet.setAttribute("aria-hidden", "true");
@@ -939,46 +948,63 @@
   function renderConfig() {
     const p = S.perms, r = S.room || {};
     const online = new Set((r.participants || []).map((x) => (x.userId || "").toString()));
+    const host = !!p.isAdmin, mod = !!p.isMod;
     let h = "";
-    /* ── my access (non-hosts) ── */
-    if (!p.canManage) {
-      const st = p.canSync ? "granted" : p.requestState;
-      h += '<section class="cfg-sec"><h4>Your access</h4>' +
-           '<div class="cfg-row"><span>Playback control</span>' +
-             '<span class="pill ' + (p.canSync ? "pill-ok" : "pill-no") + '">' +
-             (p.canSync ? "Allowed" : "Host-controlled") + "</span></div>";
-      if (!p.canSync) {
-        if (st === "pending")      h += '<p class="cfg-note">⏳ Request sent — waiting for the host.</p>';
-        else if (st === "denied")  h += '<p class="cfg-note">🚫 The host declined. They can still grant it from their settings.</p>';
-        else                       h += '<button class="cfg-btn primary" data-act="request">Request playback control</button>';
+    /* ── your access / role (anyone who isn't the host) ── */
+    if (!host) {
+      h += '<section class="cfg-sec"><h4>Your access</h4>';
+      if (mod) {
+        h += '<div class="cfg-banner"><span class="role-tag role-mod">🛡️ MOD</span>' +
+             "<span>You're a moderator of this room</span></div>" +
+             '<div class="cfg-row"><span>Playback control</span><span class="pill pill-ok">Allowed</span></div>' +
+             '<p class="cfg-note">You can edit the room details and grant playback control to others. ' +
+             "Only the host can change roles or the video.</p>";
+      } else {
+        const st = p.canSync ? "granted" : p.requestState;
+        h += '<div class="cfg-row"><span>Playback control</span>' +
+               '<span class="pill ' + (p.canSync ? "pill-ok" : "pill-no") + '">' +
+               (p.canSync ? "Allowed" : "Host-controlled") + "</span></div>";
+        if (!p.canSync) {
+          if (st === "pending")     h += '<p class="cfg-note">⏳ Request sent — waiting for the host.</p>';
+          else if (st === "denied") h += '<p class="cfg-note">🚫 Your request was declined. A host or mod can still grant it from their settings.</p>';
+          else                      h += '<button class="cfg-btn primary" data-act="request">Request playback control</button>';
+        }
       }
       h += "</section>";
     }
-    /* ── sync mode (host only) ── */
-    if (p.canManage) {
+    /* ── sync mode (host + mods) ── */
+    if (p.canGrantSync) {
       h += '<section class="cfg-sec"><h4>Who can play / pause / seek</h4>' +
            '<div class="seg">' +
              '<button class="seg-btn' + (p.syncMode === "host" ? " on" : "") + '" data-act="mode" data-mode="host">🔒 Host only</button>' +
              '<button class="seg-btn' + (p.syncMode === "everyone" ? " on" : "") + '" data-act="mode" data-mode="everyone">👥 Everyone</button>' +
            "</div>" +
-           '<p class="cfg-note">Only you can change the video, regardless of this setting.</p></section>';
+           '<p class="cfg-note">' +
+             (host ? "Only you can change the video, regardless of this setting."
+                   : "Only the host can change the video, regardless of this setting.") +
+           "</p></section>";
       /* ── pending requests ── */
       if (S.requests.length) {
         h += '<section class="cfg-sec"><h4>Requests <span class="cnt">' + S.requests.length + "</span></h4>";
         S.requests.forEach((m) => {
           h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) + esc(m.username) + "</span>" +
                '<span class="cfg-acts">' +
-                 '<button class="cfg-mini ok"  data-act="respond" data-approve="1" data-id="' + m.userId + '">Approve</button>' +
+                 '<button class="cfg-mini ok" data-act="respond" data-approve="1" data-id="' + m.userId + '">Approve</button>' +
                  '<button class="cfg-mini no" data-act="respond" data-approve="0" data-id="' + m.userId + '">Deny</button>' +
                "</span></div>";
         });
         h += "</section>";
       }
-      /* ── people ── */
+    }
+    /* ── people (host + mods) ── */
+    if (p.canManage) {
       h += '<section class="cfg-sec"><h4>People</h4>';
       S.members.forEach((m) => {
-        const isHost = m.role === "admin";
-        const locked = isHost || p.syncMode === "everyone" || m.role === "mod";   // implicit control
+        const isHostRow = m.role === "admin";
+        const isModRow  = m.role === "mod";
+        // implicit control → toggle is meaningless; mods also can't touch host/mod rows
+        const locked = isHostRow || isModRow || p.syncMode === "everyone" || !p.canGrantSync;
+        const showRoleSelect = p.canSetRoles && !isHostRow;
         h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
                '<span class="cfg-uname">' + esc(m.username) +
                  (online.has(m.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
@@ -986,33 +1012,82 @@
                '<span class="role-tag role-' + m.role + '">' + ROLE_LABEL[m.role] + "</span>" +
              "</span>" +
              '<span class="cfg-acts">' +
-               (isHost ? "" :
-                 '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
-                   '<option value="member"' + (m.role === "member" ? " selected" : "") + ">Member</option>" +
-                   '<option value="mod"' + (m.role === "mod" ? " selected" : "") + ">Mod</option>" +
-                 "</select>") +
-               '<label class="sw' + (locked ? " sw-lock" : "") + '" title="Can control playback">' +
+               (showRoleSelect
+                 ? '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
+                     '<option value="member"' + (m.role === "member" ? " selected" : "") + ">Member</option>" +
+                     '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
+                   "</select>"
+                 : "") +
+               '<label class="sw' + (locked ? " sw-lock" : "") + '" title="' +
+                 (isHostRow || isModRow ? "Has playback control automatically" : "Can control playback") + '">' +
                  '<input type="checkbox" data-act="sync" data-id="' + m.userId + '"' +
                    (m.canSync ? " checked" : "") + (locked ? " disabled" : "") + ">" +
                  '<span class="sw-track"><span class="sw-knob"></span></span>' +
                "</label>" +
              "</span></div>";
       });
-      h += '<p class="cfg-note">Mods get playback control automatically. Room-editing powers for mods are coming soon.</p></section>';
-      /* ── room details (UI only for now) ── */
-      h += '<section class="cfg-sec cfg-soon"><h4>Room details <span class="soon">Coming soon</span></h4>' +
-           '<label class="cfg-field"><span>Name</span><input type="text" value="' + esc(r.roomName || "") + '" disabled></label>' +
-           '<label class="cfg-field"><span>Description</span><textarea rows="2" disabled>' + esc(r.description || "") + "</textarea></label>" +
-           '<label class="cfg-field"><span>Mode</span><select disabled>' +
-             Object.keys(MODES).map((k) => '<option' + (r.mode === k ? " selected" : "") + ">" + MODES[k].icon + " " + MODES[k].label + "</option>").join("") +
+      h += '<p class="cfg-note">Hosts and mods get playback control automatically.' +
+           (p.canSetRoles ? " Mods can edit room details and grant playback control, but can't change roles."
+                          : " Only the host can change roles.") +
+           "</p></section>";
+    }
+    /* ── room details (host + mods → editable) ── */
+    if (p.canEditRoom) {
+      const f = roomFormValues();
+      const dirty = !!S.roomDraft;
+      h += '<section class="cfg-sec"><h4>Room details</h4>' +
+           '<label class="cfg-field"><span>Name</span>' +
+             '<input id="cfgName" data-room-field type="text" maxlength="60" value="' + esc(f.roomName) + '"></label>' +
+           '<label class="cfg-field"><span>Description</span>' +
+             '<textarea id="cfgDesc" data-room-field rows="2" maxlength="200">' + esc(f.description) + "</textarea></label>" +
+           '<label class="cfg-field"><span>Mode</span><select id="cfgMode" data-room-field>' +
+             Object.keys(MODES).map((k) =>
+               '<option value="' + k + '"' + (f.mode === k ? " selected" : "") + ">" +
+               MODES[k].icon + " " + MODES[k].label + "</option>").join("") +
            "</select></label>" +
-           '<label class="cfg-field"><span>Tags</span><input type="text" value="' + esc((r.tags || []).join(", ")) + '" disabled></label>' +
-           '<label class="cfg-field"><span>Visibility</span><select disabled><option>' + (r.isPublic === false ? "Private" : "Public") + "</option></select></label>" +
-           '<label class="cfg-field"><span>Max participants</span><input type="number" value="' + (r.maxParticipants || 10) + '" disabled></label>' +
-           '<button class="cfg-btn" disabled>Save changes</button></section>';
+           '<label class="cfg-field"><span>Tags <span class="cfg-note" style="margin:0">(comma separated, max 8)</span></span>' +
+             '<input id="cfgTags" data-room-field type="text" value="' + esc(f.tags) + '"></label>' +
+           '<label class="cfg-field"><span>Visibility</span><select id="cfgVis" data-room-field>' +
+             '<option value="public"'  + (f.isPublic ? " selected" : "") + ">Public</option>" +
+             '<option value="private"' + (!f.isPublic ? " selected" : "") + ">Private</option>" +
+           "</select></label>" +
+           '<label class="cfg-field"><span>Max participants</span>' +
+             '<input id="cfgMax" data-room-field type="number" min="2" max="50" value="' + f.maxParticipants + '"></label>' +
+           '<div class="cfg-actions">' +
+             '<button class="cfg-btn primary" data-act="save-room">Save changes</button>' +
+             '<button class="cfg-btn" data-act="reset-room"' + (dirty ? "" : " disabled") + ">Reset</button>" +
+           "</div>" +
+           (dirty ? '<p class="cfg-dirty">Unsaved changes</p>' : "") +
+           (host ? "" : '<p class="cfg-note">Changes are visible to everyone in the room.</p>') +
+           "</section>";
     }
     dom.cfgBody.innerHTML = h;
   }
+   /* keeps in-progress edits alive across re-renders (perm broadcasts re-render the sheet) */
+  S.roomDraft = null;
+  function roomFormValues() {
+    const r = S.room || {}, d = S.roomDraft || {};
+    const pick = (k, fb) => (d[k] !== undefined ? d[k] : fb);
+    return {
+      roomName:        pick("roomName", r.roomName || ""),
+      description:     pick("description", r.description || ""),
+      mode:            pick("mode", r.mode || "casual"),
+      tags:            pick("tags", (r.tags || []).join(", ")),
+      isPublic:        pick("isPublic", r.isPublic !== false),
+      maxParticipants: pick("maxParticipants", r.maxParticipants || 10),
+    };
+  }
+  function readRoomForm() {
+    return {
+      roomName:        $("cfgName").value,
+      description:     $("cfgDesc").value,
+      mode:            $("cfgMode").value,
+      tags:            $("cfgTags").value,
+      isPublic:        $("cfgVis").value === "public",
+      maxParticipants: $("cfgMax").value,
+    };
+  }
+  const refreshConfig = () => { if (isConfigOpen()) renderConfig(); };
   function avatarHTML(name) {
     return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
   }
@@ -1024,6 +1099,15 @@
     if (act === "request")  socket && socket.emit("perm-request");
     if (act === "mode")     socket && socket.emit("perm-set-mode", { mode: el.dataset.mode });
     if (act === "respond")  socket && socket.emit("perm-respond", { userId: el.dataset.id, approve: el.dataset.approve === "1" });
+    if (act === "save-room") {
+      if (!socket) return;
+      const payload = readRoomForm();
+      S.roomDraft = payload;
+      el.disabled = true;
+      socket.emit("room-update", payload);
+      setTimeout(() => { el.disabled = false; }, 1200);   // re-enabled anyway on next render
+    }
+    if (act === "reset-room") { S.roomDraft = null; renderConfig(); }
   }
   function onCfgChange(e) {
     const el = e.target.closest("[data-act]");
@@ -1031,9 +1115,16 @@
     if (el.dataset.act === "sync") socket && socket.emit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id });
     if (el.dataset.act === "role") socket && socket.emit("perm-set-role", { userId: el.dataset.id, role: el.value });
   }
+  /* remember room-detail edits so a perms broadcast doesn't wipe the form */
+  function onCfgRoomInput(e) {
+    if (!e.target.closest("[data-room-field]")) return;
+    S.roomDraft = readRoomForm();
+  }
   function dom_cfgDelegate() {
     dom.cfgBody.addEventListener("click", onCfgClick);
     dom.cfgBody.addEventListener("change", onCfgChange);
+    dom.cfgBody.addEventListener("input",  onCfgRoomInput);
+    dom.cfgBody.addEventListener("change", onCfgRoomInput);   // selects
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", dom_cfgDelegate, { once: true });

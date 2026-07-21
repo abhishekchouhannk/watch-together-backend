@@ -738,6 +738,18 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   transition:opacity .18s, transform .18s, visibility 0s;
 }
 
+/* mod role tag + banner */
+.role-mod{background:rgba(59,130,246,.18);color:#3b82f6}
+.cfg-banner{
+  display:flex;align-items:center;gap:.5rem;padding:.5rem .6rem;border-radius:10px;
+  font-size:.78rem;font-weight:600;color:var(--t1);
+  background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.28);
+}
+.cfg-banner .role-tag{flex-shrink:0}
+.cfg-actions{display:flex;gap:.4rem;margin-top:.6rem}
+.cfg-actions .cfg-btn{margin-top:0}
+.cfg-dirty{font-size:.7rem;color:var(--acc);margin-top:.35rem}
+
 .cfg-head{display:flex;align-items:center;justify-content:space-between;padding:.85rem 1rem;border-bottom:1px solid var(--card-bdr)}
 .cfg-head h3{font-size:.95rem;font-weight:800;color:var(--t1)}
 .cfg-x{background:transparent;color:var(--t3);font-size:.9rem;width:26px;height:26px;border-radius:6px}

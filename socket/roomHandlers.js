@@ -3,9 +3,10 @@ const Room = require("../models/Room");
 const Message = require("../models/Message");
 const User = require("../models/User");
 const {
-  sameId, isAdmin, getMember, ensureMember,
-  canSync, canChangeVideo, resolvePerms, serializeMembers,
-} = require("../utils/roomPermissions");
+  sameId, isAdmin, isMod, getMember, ensureMember,
+  canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles,
+  resolvePerms, serializeMembers, MODE_VALUES, sanitizeRoomPatch, sameValue,
+} = require("../utils/roomConfigAndPermissions");
 function serializeRoom(room) {
   const v = room.video || {};
   let currentTime = v.currentTime || 0;
@@ -36,8 +37,9 @@ function permPayload(room, uid) {
   return {
     perms,
     members: serializeMembers(room, perms.canManage),
-    requests: perms.canManage
-      ? (room.members || []).filter((m) => m.syncRequest === "pending")
+    requests: perms.canGrantSync
+      ? (room.members || [])
+          .filter((m) => m.syncRequest === "pending")
           .map((m) => ({ userId: m.userId.toString(), username: m.username }))
       : [],
   };
@@ -57,6 +59,12 @@ async function socketsOfUser(io, roomId, userId) {
   const sockets = await io.in(roomId).fetchSockets();
   return sockets.filter((s) => s.data.user && sameId(s.data.user.id, userId));
 }
+
+async function moderatorSockets(io, roomId, room) {
+  const sockets = await io.in(roomId).fetchSockets();
+  return sockets.filter((s) => s.data.user && canModerate(room, s.data.user.id));
+}
+
 async function toUser(io, roomId, userId, event, payload) {
   (await socketsOfUser(io, roomId, userId)).forEach((s) => s.emit(event, payload));
 }
@@ -209,111 +217,134 @@ module.exports = function registerRoomHandlers(io, socket) {
     io.to(requesterId).emit("video-sync-state", { currentTime, isPlaying });
   });
   /* ═══════════════ PERMISSIONS ═══════════════ */
-  async function adminAction(fn) {
-    const roomId = socket.data.roomId;
-    if (!roomId) return;
-    const room = await Room.findOne({ roomId });
-    if (!room || !isAdmin(room, user.id)) {
-      return socket.emit("perm-toast", { message: "Only the host can do that", type: "error" });
-    }
-    await fn(room, roomId);
+  /* generic gate: `check(room, uid)` decides, `msg` is the rejection toast */
+  function guarded(check, msg, fn) {
+    return async (...args) => {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      const room = await Room.findOne({ roomId });
+      if (!room) return;
+      if (!check(room, user.id)) {
+        return socket.emit("perm-toast", { message: msg, type: "error" });
+      }
+      try {
+        await fn(room, roomId, ...args);
+      } catch (err) {
+        console.error("privileged action failed:", err);
+        socket.emit("perm-toast", { message: "Something went wrong — try again", type: "error" });
+      }
+    };
   }
-  socket.on("perm-set-mode", ({ mode }) =>
-    adminAction(async (room, roomId) => {
-      if (!["host", "everyone"].includes(mode)) return;
-      room.settings.syncMode = mode;
-      await room.save();
-      await broadcastPermissions(io, roomId, room);
-      io.to(roomId).emit("perm-notice", {
-        text: mode === "everyone"
-          ? "Everyone can now control playback"
-          : "Playback control is now host-only",
-      });
-    }));
-  socket.on("perm-grant", ({ userId }) =>
-    adminAction(async (room, roomId) => {
-      const m = getMember(room, userId);
-      if (!m) return;
-      m.canSync = true; m.syncRequest = "none"; m.updatedAt = new Date();
-      await room.save();
-      await broadcastPermissions(io, roomId, room);
-      await toUser(io, roomId, userId, "perm-toast", { message: "You can now control playback 🎉", type: "success" });
-      io.to(roomId).emit("perm-notice", { text: `${m.username} can now control playback` });
-    }));
-  socket.on("perm-revoke", ({ userId }) =>
-    adminAction(async (room, roomId) => {
-      const m = getMember(room, userId);
-      if (!m || isAdmin(room, userId)) return;
-      m.canSync = false;
-      m.syncRequest = "denied";          // can't re-request; host must re-grant from settings
-      m.updatedAt = new Date();
-      await room.save();
-      await broadcastPermissions(io, roomId, room);
-      await toUser(io, roomId, userId, "perm-toast", { message: "Your playback control was removed", type: "error" });
-    }));
-  /* role stub — stores the role now, room-editing features get wired later */
-  socket.on("perm-set-role", ({ userId, role }) =>
-    adminAction(async (room, roomId) => {
-      if (!["mod", "member"].includes(role)) return;
-      const m = getMember(room, userId);
-      if (!m || isAdmin(room, userId)) return;
-      m.role = role;
-      if (role === "mod") m.syncRequest = "none";
-      m.updatedAt = new Date();
-      await room.save();
-      await broadcastPermissions(io, roomId, room);
-      await toUser(io, roomId, userId, "perm-toast", {
-        message: role === "mod" ? "You're now a moderator" : "You're no longer a moderator",
-        type: role === "mod" ? "success" : "error",
-      });
-    }));
-  /* participant asks the host for playback control */
+  
+  const adminAction = (fn) => guarded(isAdmin, "Only the host can do that", fn);
+  const modAction   = (fn) => guarded(canModerate, "Only the host and moderators can do that", fn);
+  
+  socket.on("perm-set-mode", modAction(async (room, roomId, { mode } = {}) => {
+    if (!["host", "everyone"].includes(mode)) return;
+    if (room.settings.syncMode === mode) return;
+    room.settings.syncMode = mode;
+    await room.save();
+    await broadcastPermissions(io, roomId, room);
+    io.to(roomId).emit("perm-notice", {
+      text: mode === "everyone"
+        ? "Everyone can now control playback"
+        : "Playback control is now host-only",
+    });
+  }));
+  socket.on("perm-grant", modAction(async (room, roomId, { userId } = {}) => {
+    const m = getMember(room, userId);
+    if (!m || isAdmin(room, userId) || m.role === "mod") return;   // both already implicit
+    m.canSync = true; m.syncRequest = "none"; m.updatedAt = new Date();
+    await room.save();
+    await broadcastPermissions(io, roomId, room);
+    await toUser(io, roomId, userId, "perm-toast", { message: "You can now control playback 🎉", type: "success" });
+    io.to(roomId).emit("perm-notice", { text: `${m.username} can now control playback` });
+  }));
+  socket.on("perm-revoke", modAction(async (room, roomId, { userId } = {}) => {
+    const m = getMember(room, userId);
+    if (!m || isAdmin(room, userId) || m.role === "mod") return;   // can't strip host/mods here
+    m.canSync = false;
+    m.syncRequest = "denied";
+    m.updatedAt = new Date();
+    await room.save();
+    await broadcastPermissions(io, roomId, room);
+    await toUser(io, roomId, userId, "perm-toast", { message: "Your playback control was removed", type: "error" });
+  }));
+  /* role changes: HOST ONLY */
+  socket.on("perm-set-role", adminAction(async (room, roomId, { userId, role } = {}) => {
+    if (!["mod", "member"].includes(role)) return;
+    const m = getMember(room, userId);
+    if (!m || isAdmin(room, userId) || m.role === role) return;
+    m.role = role;
+    if (role === "mod") { m.syncRequest = "none"; m.canSync = true; } // implicit anyway; keeps it true on demote-back
+    m.updatedAt = new Date();
+    await room.save();
+    await broadcastPermissions(io, roomId, room);                    // ← this is what flips their UI live
+    await toUser(io, roomId, userId, "perm-toast", {
+      message: role === "mod"
+        ? "You're now a moderator — you can edit the room and grant playback control"
+        : "You're no longer a moderator",
+      type: role === "mod" ? "success" : "error",
+    });
+    io.to(roomId).emit("perm-notice", {
+      text: role === "mod" ? `${m.username} is now a moderator` : `${m.username} is no longer a moderator`,
+    });
+  }));
+  /* ═══════════════ ROOM DETAILS ═══════════════ */
+  socket.on("room-update", modAction(async (room, roomId, payload = {}) => {
+    if (!canEditRoom(room, user.id)) return;   // belt & braces
+    const { patch, errors } = sanitizeRoomPatch(room, payload);
+    if (errors.length) return socket.emit("perm-toast", { message: errors[0], type: "error" });
+    const changed = Object.keys(patch).filter((k) => !sameValue(room[k], patch[k]));
+    if (!changed.length) return socket.emit("perm-toast", { message: "Nothing to save", type: "info" });
+    changed.forEach((k) => { room[k] = patch[k]; });
+    await room.save();   // schema validators (enum/maxlength) run here; guarded() catches throws
+    io.to(roomId).emit("room-updated", { room: serializeRoom(room), by: user.username, changed });
+    socket.emit("perm-toast", { message: "Room details saved ✅", type: "success" });
+    socket.to(roomId).emit("perm-notice", { text: `${user.username} updated the room details` });
+  }));
+  /* participant asks the host/mod for playback control */
   socket.on("perm-request", async () => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
     const now = Date.now();
-    if (socket.data.lastPermReq && now - socket.data.lastPermReq < 15000) return;   // anti-spam
+    if (socket.data.lastPermReq && now - socket.data.lastPermReq < 15000) return;
     socket.data.lastPermReq = now;
     const room = await Room.findOne({ roomId });
     if (!room) return;
-    if (isAdmin(room, user.id) || canSync(room, user.id)) {
+    if (canSync(room, user.id)) {
       return socket.emit("perm-toast", { message: "You already have playback control", type: "success" });
     }
     const m = ensureMember(room, user);
     if (m.syncRequest === "denied") {
       return socket.emit("perm-toast", {
-        message: "The host declined — they'll have to grant it from room settings",
+        message: "Your request was declined — a host or mod has to grant it from room settings",
         type: "error",
       });
     }
-    const adminSockets = await socketsOfUser(io, roomId, room.admin.userId);
-    if (!adminSockets.length) {
-      return socket.emit("perm-toast", { message: "The host isn't in the room right now", type: "error" });
+    const targets = await moderatorSockets(io, roomId, room);
+    if (!targets.length) {
+      return socket.emit("perm-toast", { message: "No host or moderator is in the room right now", type: "error" });
     }
-    if (m.syncRequest !== "pending") {
-      m.syncRequest = "pending";
-      m.updatedAt = new Date();
-      await room.save();
-    }
-    adminSockets.forEach((s) => s.emit("perm-request", { userId: user.id, username: user.username }));
-    socket.emit("perm-toast", { message: "Request sent to the host ✌️", type: "success" });
-    await broadcastPermissions(io, roomId, room);     // updates the host's pending badge
+    if (m.syncRequest !== "pending") { m.syncRequest = "pending"; m.updatedAt = new Date(); await room.save(); }
+    targets.forEach((s) => s.emit("perm-request", { userId: user.id, username: user.username }));
+    socket.emit("perm-toast", { message: "Request sent ✌️", type: "success" });
+    await broadcastPermissions(io, roomId, room);
   });
-  socket.on("perm-respond", ({ userId, approve }) =>
-    adminAction(async (room, roomId) => {
-      const m = getMember(room, userId);
-      if (!m || m.syncRequest !== "pending") return;
-      if (approve) { m.canSync = true;  m.syncRequest = "none"; }
-      else         { m.canSync = false; m.syncRequest = "denied"; }
-      m.updatedAt = new Date();
-      await room.save();
-      await broadcastPermissions(io, roomId, room);
-      await toUser(io, roomId, userId, "perm-toast", {
-        message: approve ? "The host gave you playback control 🎉" : "The host declined your request",
-        type: approve ? "success" : "error",
-      });
-      if (approve) io.to(roomId).emit("perm-notice", { text: `${m.username} can now control playback` });
-    }));
+  socket.on("perm-respond", modAction(async (room, roomId, { userId, approve } = {}) => {
+    const m = getMember(room, userId);
+    if (!m || m.syncRequest !== "pending") return;
+    if (approve) { m.canSync = true;  m.syncRequest = "none"; }
+    else         { m.canSync = false; m.syncRequest = "denied"; }
+    m.updatedAt = new Date();
+    await room.save();
+    await broadcastPermissions(io, roomId, room);
+    await toUser(io, roomId, userId, "perm-toast", {
+      message: approve ? `${user.username} gave you playback control 🎉` : "Your request was declined",
+      type: approve ? "success" : "error",
+    });
+    if (approve) io.to(roomId).emit("perm-notice", { text: `${m.username} can now control playback` });
+  }));
   /* ═══════════════ REACTIONS (unchanged) ═══════════════ */
   const ALLOWED_REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👏", "💀"];
   const REACT_LIMIT = 8, REACT_WINDOW = 4000;

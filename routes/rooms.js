@@ -5,6 +5,7 @@ const Room = require('../models/Room');
 const Message = require('../models/Message');
 const { authenticateToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
+const { sanitizeRoomPatch, canModerate } = require('../utils/roomConfigAndPermissions');
 
 // Get user's joined rooms
 router.get('/joined', authenticateToken, async (req, res) => {
@@ -111,6 +112,20 @@ router.post('/create', authenticateToken, async (req, res) => {
   }
 });
 
+// PATCH /api/rooms/:roomId  (host or mod)
+router.patch('/:roomId', authenticateToken, async (req, res) => {
+  try {
+    const room = await Room.findOne({ roomId: req.params.roomId });
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    if (!canModerate(room, req.user.id)) return res.status(403).json({ error: 'Not allowed' });
+    const { patch, errors } = sanitizeRoomPatch(room, req.body);
+    if (errors.length) return res.status(400).json({ error: errors[0] });
+    Object.assign(room, patch);
+    await room.save();
+    res.json({ room });
+  } catch (e) { res.status(500).json({ error: 'Failed to update room' }); }
+});
+
 // ── GET single room ──────────────────────────────
 router.get('/:roomId', authenticateToken, async (req, res) => {
   try {
@@ -156,42 +171,3 @@ router.get("/:roomId/messages", authenticateToken, async (req, res) => {
 });
 
 module.exports = router;
-
-
-
-// STALE CODE (DELETE AFTER CONFIRMING SOCKET.IO WORKS):
-// // ── JOIN room (adds user to participants if not already in) ──
-// router.post('/:roomId/join', authenticateToken, async (req, res) => {
-//   try {
-//     const room = await Room.findOne({ roomId: req.params.roomId });
-//     if (!room) return res.status(404).json({ error: 'Room not found' });
-//     const already = room.participants.some(
-//       p => String(p.userId) === String(req.user.id)
-//     );
-//     if (!already) {
-//       room.participants.push({
-//         userId:   req.user.id,
-//         username: req.user.username,
-//         joinedAt: new Date(),
-//       });
-//       await room.save();
-//     }
-//     res.json({ room });
-//   } catch (error) {
-//     res.status(500).json({ error: 'Failed to join room' });
-//   }
-// });
-// // ── LEAVE room (removes user from participants) ──
-// router.post('/:roomId/leave', authenticateToken, async (req, res) => {
-//   try {
-//     const room = await Room.findOne({ roomId: req.params.roomId });
-//     if (!room) return res.status(404).json({ error: 'Room not found' });
-//     room.participants = room.participants.filter(
-//       p => String(p.userId) !== String(req.user.id)
-//     );
-//     await room.save();
-//     res.json({ success: true });
-//   } catch (error) {
-//     res.status(500).json({ error: 'Failed to leave room' });
-//   }
-// });
