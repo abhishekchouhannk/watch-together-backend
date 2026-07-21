@@ -32,6 +32,7 @@
   const DRIFT_THRESHOLD = 1.5;   // seconds
   const REMOTE_COOLDOWN = 1000;  // ms
   const SEEK_DEBOUNCE   = 300;   // ms
+  const GROUP_WINDOW = 3 * 60 * 1000; // Group messages from the same sender if they are sent within 3 minutes of each other
   /* ═══════ STATE ═══════ */
   const S = {
     room: null, userId: null, username: "You", themeMode: "auto", detailsOpen: null,
@@ -802,6 +803,7 @@
       const frag = document.createDocumentFragment();
       d.messages.forEach((m) => frag.appendChild(buildMsgEl(m)));
       dom.chatMsgs.appendChild(frag);
+      regroupChat();
       dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight;
       if (!hasMoreMsgs) markStartReached();
     } catch (_) {}
@@ -821,6 +823,7 @@
         const frag = document.createDocumentFragment();
         d.messages.forEach((m) => frag.appendChild(buildMsgEl(m)));
         dom.chatMsgs.insertBefore(frag, dom.chatMsgs.firstChild);
+        regroupChat();
         dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight - prev;
       }
       if (!hasMoreMsgs) markStartReached();
@@ -832,6 +835,8 @@
     const c = avColor(msg.username), ini = (msg.username || "?")[0].toUpperCase();
     const div = document.createElement("div");
     div.className = "chat-msg" + (self ? " self" : "");
+    div.dataset.sender = msg.senderId || msg.username;
+    div.dataset.ts = new Date(msg.timestamp || Date.now()).getTime();
     div.innerHTML =
       '<div class="msg-av" style="background:' + c + '">' + ini + "</div>" +
       '<div class="msg-body">' +
@@ -846,6 +851,7 @@
   function appendMessage(msg, auto) {
     const near = dom.chatMsgs.scrollHeight - dom.chatMsgs.scrollTop - dom.chatMsgs.clientHeight < 120;
     dom.chatMsgs.appendChild(buildMsgEl(msg));
+    regroupChat();
     if (auto && near) dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight;
   }
   function addSystemMsg(text) {
@@ -855,6 +861,20 @@
     dom.chatMsgs.appendChild(div);
     dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight;
   }
+  // Marks consecutive same-sender messages as grouped
+
+  function regroupChat() {
+    let prev = null;
+    Array.from(dom.chatMsgs.children).forEach((el) => {
+      if (!el.classList.contains("chat-msg")) { prev = null; return; } // sys msgs / loaders break grouping
+      const sender = el.dataset.sender, ts = parseInt(el.dataset.ts, 10);
+      const grouped = prev && prev.sender === sender && !isNaN(ts) && (ts - prev.ts) < GROUP_WINDOW;
+      el.classList.toggle("grouped", grouped);
+      prev = { sender, ts };
+    });
+  }
+
+  // "Loading earlier messages…" loader at the top of the chat
   function showTopLoader() {
     if (dom.chatMsgs.querySelector(".chat-loader")) return;
     const el = document.createElement("div");
