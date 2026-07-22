@@ -861,3 +861,44 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .cfg-dirty.warn{color:#eab308}
 .cfg-dirty.is-hidden{display:none}
 .cfg-btn.is-blocked{opacity:.55;cursor:not-allowed}
+
+/* ── native number-input spinners: hide ── */
+.num-stepper input[type="number"]::-webkit-inner-spin-button,
+.num-stepper input[type="number"]::-webkit-outer-spin-button{
+  -webkit-appearance:none;margin:0;
+}
+.num-stepper input[type="number"]{-moz-appearance:textfield}
+/* ── custom stepper chrome ── */
+.num-stepper{position:relative;display:flex;align-items:stretch}
+.num-stepper input{flex:1;min-width:0;padding-right:1.8rem}
+.num-btns{
+  position:absolute;right:.4rem;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;gap:1px;
+}
+.num-btn{
+  display:flex;align-items:center;justify-content:center;
+  width:18px;height:13px;border-radius:4px;
+  background:transparent;border:none;padding:0;
+  color:var(--t3);cursor:pointer;transition:all .15s;
+}
+.num-btn:hover{background:var(--surf-h);color:var(--t1)}
+.num-btn:active{transform:scale(.88)}
+.num-btn svg{width:10px;height:10px;pointer-events:none}
+/* ── collapsible sections ── */
+.cfg-sec-head{cursor:default}                           /* base: non-collapsible */
+[data-collapsible] > .cfg-sec-head{
+  cursor:pointer;-webkit-user-select:none;user-select:none;
+}
+.cfg-chev{
+  margin-left:auto;display:flex;align-items:center;
+  color:var(--t3);transition:transform .25s ease;
+  flex-shrink:0;
+}
+.cfg-sec.collapsed .cfg-chev{transform:rotate(-90deg)}
+.cfg-sec.collapsed > .cfg-sec-head{margin-bottom:0}
+.cfg-sec-body{
+  display:grid;grid-template-rows:1fr;
+  transition:grid-template-rows .28s ease;
+}
+.cfg-sec.collapsed .cfg-sec-body{grid-template-rows:0fr}
+.cfg-sec-inner{overflow:hidden;min-height:0}

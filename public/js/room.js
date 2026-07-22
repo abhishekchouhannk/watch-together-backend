@@ -67,6 +67,44 @@
     cfgSheet: $("cfgSheet"), cfgBackdrop: $("cfgBackdrop"), cfgBody: $("cfgBody"),
   };
   /* ═══════════════════════════════════════════
+     ROOM STATE / PERMISSIONS / CONFIG
+     ═══════════════════════════════════════════ */
+    /* ── SVG fragments ── */
+  const CHEV_SVG =
+    '<svg width="12" height="12" viewBox="0 0 12 12" fill="none">' +
+    '<path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.6" ' +
+    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const STEP_UP =
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none">' +
+    '<path d="M2.5 6.5L5 4L7.5 6.5" stroke="currentColor" stroke-width="1.4" ' +
+    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const STEP_DN =
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none">' +
+    '<path d="M2.5 3.5L5 6L7.5 3.5" stroke="currentColor" stroke-width="1.4" ' +
+    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  /* ── collapse bookkeeping (survives re-renders) ── */
+  S.cfgCollapsed = {};          // { people: true, room: false, … }
+  /**
+   * Opens a collapsible section.
+   * @param {string}  id                 stored key in S.cfgCollapsed
+   * @param {string}  titleHTML          inner HTML for the <h4> (before the chevron)
+   * @param {boolean} [defaultClosed]    initial state when no user toggle yet
+   * @param {string}  [extraAttrs]       additional HTML attributes for the <section>
+   */
+  function secOpen(id, titleHTML, defaultClosed, extraAttrs) {
+    const closed = S.cfgCollapsed[id] !== undefined
+      ? S.cfgCollapsed[id]
+      : !!defaultClosed;
+    return '<section class="cfg-sec' + (closed ? " collapsed" : "") + '"' +
+      ' data-collapsible data-sec-id="' + id + '"' +
+      (extraAttrs ? " " + extraAttrs : "") + ">" +
+      '<h4 class="cfg-sec-head">' + titleHTML +
+        '<span class="cfg-chev">' + CHEV_SVG + "</span></h4>" +
+      '<div class="cfg-sec-body"><div class="cfg-sec-inner">';
+  }
+  const SEC_CLOSE = "</div></div></section>";
+
+  /* ═══════════════════════════════════════════
      PLAYER ABSTRACTION  (direct <video> + YT)
      ═══════════════════════════════════════════ */
   const P = {
@@ -956,115 +994,150 @@
     const online = new Set((r.participants || []).map((x) => (x.userId || "").toString()));
     const host = !!p.isAdmin, mod = !!p.isMod;
     let h = "";
-    /* ── your access / role (anyone who isn't the host) ── */
+    /* ── your access (non-host) ── */
     if (!host) {
-      h += '<section class="cfg-sec"><h4>Your access</h4>';
+      h += secOpen("access", "Your access");
       if (mod) {
         h += '<div class="cfg-banner"><span class="role-tag role-mod">🛡️ MOD</span>' +
-             "<span>You're a moderator of this room</span></div>" +
-             '<div class="cfg-row"><span>Playback control</span><span class="pill pill-ok">Allowed</span></div>' +
-             '<p class="cfg-note">You can edit the room details and grant playback control to others. ' +
-             "Only the host can change roles or the video.</p>";
+              "<span>You're a moderator of this room</span></div>" +
+              '<div class="cfg-row"><span>Playback control</span>' +
+              '<span class="pill pill-ok">Allowed</span></div>' +
+              '<p class="cfg-note">You can edit the room details and grant playback ' +
+              "control to others. Only the host can change roles or the video.</p>";
       } else {
         const st = p.canSync ? "granted" : p.requestState;
         h += '<div class="cfg-row"><span>Playback control</span>' +
-               '<span class="pill ' + (p.canSync ? "pill-ok" : "pill-no") + '">' +
-               (p.canSync ? "Allowed" : "Host-controlled") + "</span></div>";
+                '<span class="pill ' + (p.canSync ? "pill-ok" : "pill-no") + '">' +
+                (p.canSync ? "Allowed" : "Host-controlled") + "</span></div>";
         if (!p.canSync) {
-          if (st === "pending")     h += '<p class="cfg-note">⏳ Request sent — waiting for the host.</p>';
-          else if (st === "denied") h += '<p class="cfg-note">🚫 Your request was declined. A host or mod can still grant it from their settings.</p>';
-          else                      h += '<button class="cfg-btn primary" data-act="request">Request playback control</button>';
+          if (st === "pending")
+            h += '<p class="cfg-note">⏳ Request sent — waiting for the host.</p>';
+          else if (st === "denied")
+            h += '<p class="cfg-note">🚫 Your request was declined. A host or mod ' +
+                  "can still grant it from their settings.</p>";
+          else
+            h += '<button class="cfg-btn primary" data-act="request">' +
+                  "Request playback control</button>";
         }
       }
-      h += "</section>";
+      h += SEC_CLOSE;
     }
     /* ── sync mode (host + mods) ── */
     if (p.canGrantSync) {
-      h += '<section class="cfg-sec"><h4>Who can play / pause / seek</h4>' +
-           '<div class="seg">' +
-             '<button class="seg-btn' + (p.syncMode === "host" ? " on" : "") + '" data-act="mode" data-mode="host">🔒 Host only</button>' +
-             '<button class="seg-btn' + (p.syncMode === "everyone" ? " on" : "") + '" data-act="mode" data-mode="everyone">👥 Everyone</button>' +
-           "</div>" +
-           '<p class="cfg-note">' +
-             (host ? "Only you can change the video, regardless of this setting."
-                   : "Only the host can change the video, regardless of this setting.") +
-           "</p></section>";
+      h += secOpen("sync", "Who can play / pause / seek");
+      h += '<div class="seg">' +
+              '<button class="seg-btn' + (p.syncMode === "host" ? " on" : "") +
+                '" data-act="mode" data-mode="host">🔒 Host only</button>' +
+              '<button class="seg-btn' + (p.syncMode === "everyone" ? " on" : "") +
+                '" data-act="mode" data-mode="everyone">👥 Everyone</button>' +
+            "</div>" +
+            '<p class="cfg-note">' +
+              (host ? "Only you can change the video, regardless of this setting."
+                    : "Only the host can change the video, regardless of this setting.") +
+            "</p>" + SEC_CLOSE;
       /* ── pending requests ── */
       if (S.requests.length) {
-        h += '<section class="cfg-sec"><h4>Requests <span class="cnt">' + S.requests.length + "</span></h4>";
+        h += secOpen("requests", 'Requests <span class="cnt">' + S.requests.length + "</span>");
         S.requests.forEach((m) => {
-          h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) + esc(m.username) + "</span>" +
-               '<span class="cfg-acts">' +
-                 '<button class="cfg-mini ok" data-act="respond" data-approve="1" data-id="' + m.userId + '">Approve</button>' +
-                 '<button class="cfg-mini no" data-act="respond" data-approve="0" data-id="' + m.userId + '">Deny</button>' +
-               "</span></div>";
+          h += '<div class="cfg-row"><span class="cfg-user">' +
+                avatarHTML(m.username) + esc(m.username) + "</span>" +
+                '<span class="cfg-acts">' +
+                  '<button class="cfg-mini ok"  data-act="respond" data-approve="1" ' +
+                    'data-id="' + m.userId + '">Approve</button>' +
+                  '<button class="cfg-mini no" data-act="respond" data-approve="0" ' +
+                    'data-id="' + m.userId + '">Deny</button>' +
+                "</span></div>";
         });
-        h += "</section>";
+        h += SEC_CLOSE;
       }
     }
     /* ── people (host + mods) ── */
     if (p.canManage) {
-      h += '<section class="cfg-sec"><h4>People</h4>';
+      h += secOpen(
+        "people",
+        'People <span class="cnt">' + S.members.length + "</span>",
+        S.members.length > 8          // auto-collapse when the list is long
+      );
       S.members.forEach((m) => {
         const isHostRow = m.role === "admin";
         const isModRow  = m.role === "mod";
-        // implicit control → toggle is meaningless; mods also can't touch host/mod rows
         const locked = isHostRow || isModRow || p.syncMode === "everyone" || !p.canGrantSync;
         const showRoleSelect = p.canSetRoles && !isHostRow;
         h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
-               '<span class="cfg-uname">' + esc(m.username) +
-                 (online.has(m.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
-               "</span>" +
-               '<span class="role-tag role-' + m.role + '">' + ROLE_LABEL[m.role] + "</span>" +
-             "</span>" +
-             '<span class="cfg-acts">' +
-               (showRoleSelect
-                 ? '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
-                     '<option value="member"' + (m.role === "member" ? " selected" : "") + ">Member</option>" +
-                     '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
-                   "</select>"
-                 : "") +
-               '<label class="sw' + (locked ? " sw-lock" : "") + '" title="' +
-                 (isHostRow || isModRow ? "Has playback control automatically" : "Can control playback") + '">' +
-                 '<input type="checkbox" data-act="sync" data-id="' + m.userId + '"' +
-                   (m.canSync ? " checked" : "") + (locked ? " disabled" : "") + ">" +
-                 '<span class="sw-track"><span class="sw-knob"></span></span>' +
-               "</label>" +
-             "</span></div>";
+                '<span class="cfg-uname">' + esc(m.username) +
+                  (online.has(m.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
+                "</span>" +
+                '<span class="role-tag role-' + m.role + '">' + ROLE_LABEL[m.role] + "</span>" +
+              "</span>" +
+              '<span class="cfg-acts">' +
+                (showRoleSelect
+                  ? '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
+                      '<option value="member"' + (m.role === "member" ? " selected" : "") + ">Member</option>" +
+                      '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
+                    "</select>"
+                  : "") +
+                '<label class="sw' + (locked ? " sw-lock" : "") + '" title="' +
+                  (isHostRow || isModRow ? "Has playback control automatically"
+                                        : "Can control playback") + '">' +
+                  '<input type="checkbox" data-act="sync" data-id="' + m.userId + '"' +
+                    (m.canSync ? " checked" : "") + (locked ? " disabled" : "") + ">" +
+                  '<span class="sw-track"><span class="sw-knob"></span></span>' +
+                "</label>" +
+              "</span></div>";
       });
       h += '<p class="cfg-note">Hosts and mods get playback control automatically.' +
-           (p.canSetRoles ? " Mods can edit room details and grant playback control, but can't change roles."
-                          : " Only the host can change roles.") +
-           "</p></section>";
+            (p.canSetRoles
+              ? " Mods can edit room details and grant playback control, but can't change roles."
+              : " Only the host can change roles.") +
+            "</p>" + SEC_CLOSE;
     }
+    /* ── room details (host + mods → editable) ── */
     if (p.canEditRoom) {
       const f = roomFormValues();
-      h += '<section class="cfg-sec" data-sec="room"><h4>Room details</h4>' +
-           (S.roomConflict ? conflictHTML(S.roomConflict) : "") +
-           '<label class="cfg-field"><span>Name</span>' +
-             '<input id="cfgName" data-room-field type="text" maxlength="60" value="' + esc(f.roomName) + '"></label>' +
-           '<label class="cfg-field"><span>Description</span>' +
-             '<textarea id="cfgDesc" data-room-field rows="2" maxlength="200">' + esc(f.description) + "</textarea></label>" +
-           '<label class="cfg-field"><span>Mode</span><select id="cfgMode" data-room-field>' +
-             Object.keys(MODES).map((k) =>
-               '<option value="' + k + '"' + (f.mode === k ? " selected" : "") + ">" +
-               MODES[k].icon + " " + MODES[k].label + "</option>").join("") +
-           "</select></label>" +
-           '<label class="cfg-field"><span>Tags <span class="cfg-note" style="margin:0">(comma separated, max 8)</span></span>' +
-             '<input id="cfgTags" data-room-field type="text" value="' + esc(f.tags) + '"></label>' +
-           '<label class="cfg-field"><span>Visibility</span><select id="cfgVis" data-room-field>' +
-             '<option value="public"'  + (f.isPublic ? " selected" : "") + ">Public</option>" +
-             '<option value="private"' + (!f.isPublic ? " selected" : "") + ">Private</option>" +
-           "</select></label>" +
-           '<label class="cfg-field"><span>Max participants</span>' +
-             '<input id="cfgMax" data-room-field type="number" min="2" max="50" value="' + f.maxParticipants + '"></label>' +
-           '<div class="cfg-actions">' +
-             '<button class="cfg-btn primary" id="cfgSave" data-act="save-room">Save changes</button>' +
-             '<button class="cfg-btn" id="cfgReset" data-act="reset-room" disabled>Reset</button>' +
-           "</div>" +
-           '<p class="cfg-dirty is-hidden" id="cfgDirtyNote"></p>' +
-           (host ? "" : '<p class="cfg-note">Changes are visible to everyone in the room.</p>') +
-           "</section>";
+      h += secOpen("room", "Room details", false, 'data-sec="room"');
+      if (S.roomConflict) h += conflictHTML(S.roomConflict);
+      h += '<label class="cfg-field"><span>Name</span>' +
+              '<input id="cfgName" data-room-field type="text" maxlength="60" ' +
+                'value="' + esc(f.roomName) + '"></label>' +
+            '<label class="cfg-field"><span>Description</span>' +
+              '<textarea id="cfgDesc" data-room-field rows="2" maxlength="200">' +
+                esc(f.description) + "</textarea></label>" +
+            '<label class="cfg-field"><span>Mode</span>' +
+              '<select id="cfgMode" data-room-field>' +
+                Object.keys(MODES).map((k) =>
+                  '<option value="' + k + '"' + (f.mode === k ? " selected" : "") + ">" +
+                  MODES[k].icon + " " + MODES[k].label + "</option>").join("") +
+              "</select></label>" +
+            '<label class="cfg-field"><span>Tags ' +
+              '<span class="cfg-note" style="margin:0">(comma separated, max 8)</span>' +
+              "</span>" +
+              '<input id="cfgTags" data-room-field type="text" ' +
+                'value="' + esc(f.tags) + '"></label>' +
+            '<label class="cfg-field"><span>Visibility</span>' +
+              '<select id="cfgVis" data-room-field>' +
+                '<option value="public"'  + (f.isPublic  ? " selected" : "") + ">Public</option>" +
+                '<option value="private"' + (!f.isPublic ? " selected" : "") + ">Private</option>" +
+              "</select></label>" +
+            '<label class="cfg-field"><span>Max participants</span>' +
+              '<div class="num-stepper">' +
+                '<input id="cfgMax" data-room-field type="number" min="2" max="50" ' +
+                  'value="' + f.maxParticipants + '">' +
+                '<span class="num-btns">' +
+                  '<button type="button" class="num-btn" data-act="step-up" tabindex="-1">' +
+                    STEP_UP + "</button>" +
+                  '<button type="button" class="num-btn" data-act="step-down" tabindex="-1">' +
+                    STEP_DN + "</button>" +
+                "</span></div></label>" +
+            '<div class="cfg-actions">' +
+              '<button class="cfg-btn primary" id="cfgSave" data-act="save-room">' +
+                "Save changes</button>" +
+              '<button class="cfg-btn" id="cfgReset" data-act="reset-room" disabled>' +
+                "Reset</button>" +
+            "</div>" +
+            '<p class="cfg-dirty is-hidden" id="cfgDirtyNote"></p>' +
+            (host ? ""
+              : '<p class="cfg-note">Changes are visible to everyone in the room.</p>');
+      h += SEC_CLOSE;
     }
     dom.cfgBody.innerHTML = h;
     syncDirtyUI();
@@ -1186,15 +1259,44 @@
   }
   /* delegated actions inside the sheet */
   function onCfgClick(e) {
+    /* ── collapsible header toggle ── */
+    const head = e.target.closest(".cfg-sec-head");
+    if (head) {
+      const sec = head.closest("[data-collapsible]");
+      if (sec) {
+        const id = sec.dataset.secId;
+        sec.classList.toggle("collapsed");
+        S.cfgCollapsed[id] = sec.classList.contains("collapsed");
+        return;
+      }
+    }
+    /* ── data-act buttons ── */
     const el = e.target.closest("[data-act]");
     if (!el || el.tagName === "SELECT" || el.tagName === "INPUT") return;
     const act = el.dataset.act;
+    /* number stepper */
+    if (act === "step-up" || act === "step-down") {
+      const input = $("cfgMax");
+      if (!input) return;
+      const dir = act === "step-up" ? 1 : -1;
+      const min = parseInt(input.min, 10) || 2;
+      const max = parseInt(input.max, 10) || 50;
+      const cur = parseInt(input.value, 10) || min;
+      const next = Math.max(min, Math.min(max, cur + dir));
+      if (next !== cur) {
+        input.value = next;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      return;
+    }
     if (act === "request")  socket && socket.emit("perm-request");
     if (act === "mode")     socket && socket.emit("perm-set-mode", { mode: el.dataset.mode });
-    if (act === "respond")  socket && socket.emit("perm-respond", { userId: el.dataset.id, approve: el.dataset.approve === "1" });
+    if (act === "respond")  socket && socket.emit("perm-respond", {
+      userId: el.dataset.id, approve: el.dataset.approve === "1",
+    });
     if (act === "save-room") {
       if (!socket) return;
-      if (S.roomConflict) return nudgeConflict();        // ← can't save until they press OK
+      if (S.roomConflict) return nudgeConflict();
       const payload = readRoomForm();
       S.roomDraft = payload;
       el.disabled = true;
@@ -1202,17 +1304,33 @@
       setTimeout(() => { el.disabled = false; }, 1200);
       return;
     }
+    if (act === "reset-room") {
+      S.roomDraft = null;
+      S.roomConflict = null;
+      renderConfig();
+      return;
+    }
     if (act === "ack-conflict") {
       S.roomConflict = null;
       const b = dom.cfgBody.querySelector(".cfg-conflict");
       if (b) b.remove();
-      syncDirtyUI();                                    // Save unblocked, draft intact
+      syncDirtyUI();
       return;
     }
-    if (act === "reset-room") {
-      S.roomDraft = null;
-      S.roomConflict = null;             // their change is what we just loaded
-      renderConfig();
+  }
+  /* scroll-to-step on the number field */
+  function onCfgWheel(e) {
+    const input = e.target.closest('.num-stepper input[type="number"]');
+    if (!input) return;
+    e.preventDefault();
+    const dir = e.deltaY < 0 ? 1 : -1;
+    const min = parseInt(input.min, 10) || 2;
+    const max = parseInt(input.max, 10) || 50;
+    const cur = parseInt(input.value, 10) || min;
+    const next = Math.max(min, Math.min(max, cur + dir));
+    if (next !== cur) {
+      input.value = next;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
     }
   }
   function onCfgChange(e) {
@@ -1228,10 +1346,11 @@
     syncDirtyUI();                       // Reset lights up immediately
   }
   function dom_cfgDelegate() {
-    dom.cfgBody.addEventListener("click", onCfgClick);
+    dom.cfgBody.addEventListener("click",  onCfgClick);
     dom.cfgBody.addEventListener("change", onCfgChange);
     dom.cfgBody.addEventListener("input",  onCfgRoomInput);
-    dom.cfgBody.addEventListener("change", onCfgRoomInput);   // selects
+    dom.cfgBody.addEventListener("change", onCfgRoomInput);          // selects
+    dom.cfgBody.addEventListener("wheel",  onCfgWheel, { passive: false });
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", dom_cfgDelegate, { once: true });
