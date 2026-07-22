@@ -322,7 +322,7 @@
       S.room = room;
       if (perms) S.perms = perms;
       applyPerms();
-      renderHeader(); renderDetails();
+      renderRoomDetails();
       addSystemMsg("You joined the room");
       await loadInitialMessages();
       if (room.video && room.video.url && !videoLoaded) {
@@ -346,14 +346,14 @@
       applyPerms();
       refreshConfig();            // ← live swap member ⇄ mod UI
     });
-    // new room-details broadcast
-    socket.on("room-updated", ({ room }) => {
+    socket.on("room-saved", ({ room }) => {               // my own save came back
       S.room = Object.assign({}, S.room, room);
-      S.roomDraft = null;                       // server copy wins after a successful save
-      renderHeader();
-      renderDetails();
+      S.roomDraft = null;
+      S.roomConflict = null;
+      renderRoomDetails();
       refreshConfig();
     });
+    socket.on("room-updated", ({ room, by, changed }) => applyIncomingRoom(room, by, changed));
     socket.on("perm-denied", ({ message, video }) => {
       toast(message || "Not allowed", "error");
       if (video) { markLocal(video.currentTime, video.isPlaying); revertToRoomState(video); }
@@ -461,6 +461,11 @@
     dom.details.classList.toggle("expanded", S.detailsOpen);
     dom.details.setAttribute("aria-expanded", String(S.detailsOpen));
     dom.chatOnline.textContent = parts.length + " in room";
+  }
+  // update everything together
+  function renderRoomDetails() {
+    renderHeader();
+    renderDetails();
   }
   function renderAvatars(list) {
     if (!list.length) return "";
@@ -940,6 +945,7 @@
   }
   function closeConfig() {
     S.roomDraft = null;
+    S.roomConflict = null;
     dom.cfgSheet.classList.remove("open");
     dom.cfgBackdrop.classList.remove("open");
     dom.cfgSheet.setAttribute("aria-hidden", "true");
@@ -1031,11 +1037,10 @@
                           : " Only the host can change roles.") +
            "</p></section>";
     }
-    /* ── room details (host + mods → editable) ── */
     if (p.canEditRoom) {
       const f = roomFormValues();
-      const dirty = !!S.roomDraft;
-      h += '<section class="cfg-sec"><h4>Room details</h4>' +
+      h += '<section class="cfg-sec" data-sec="room"><h4>Room details</h4>' +
+           (S.roomConflict ? conflictHTML(S.roomConflict) : "") +
            '<label class="cfg-field"><span>Name</span>' +
              '<input id="cfgName" data-room-field type="text" maxlength="60" value="' + esc(f.roomName) + '"></label>' +
            '<label class="cfg-field"><span>Description</span>' +
@@ -1054,17 +1059,91 @@
            '<label class="cfg-field"><span>Max participants</span>' +
              '<input id="cfgMax" data-room-field type="number" min="2" max="50" value="' + f.maxParticipants + '"></label>' +
            '<div class="cfg-actions">' +
-             '<button class="cfg-btn primary" data-act="save-room">Save changes</button>' +
-             '<button class="cfg-btn" data-act="reset-room"' + (dirty ? "" : " disabled") + ">Reset</button>" +
+             '<button class="cfg-btn primary" id="cfgSave" data-act="save-room">Save changes</button>' +
+             '<button class="cfg-btn" id="cfgReset" data-act="reset-room" disabled>Reset</button>' +
            "</div>" +
-           (dirty ? '<p class="cfg-dirty">Unsaved changes</p>' : "") +
+           '<p class="cfg-dirty is-hidden" id="cfgDirtyNote"></p>' +
            (host ? "" : '<p class="cfg-note">Changes are visible to everyone in the room.</p>') +
            "</section>";
     }
     dom.cfgBody.innerHTML = h;
+    syncDirtyUI();
   }
-   /* keeps in-progress edits alive across re-renders (perm broadcasts re-render the sheet) */
-  S.roomDraft = null;
+
+  /* ── incoming room-details change ── */
+  function conflictHTML(c) {
+    const fields = (c.changed || []).map((k) => FIELD_LABEL[k] || k).join(", ");
+    return '<div class="cfg-conflict" role="status">' +
+      '<div class="pp-txt"><strong>' + esc(c.by) + "</strong> updated the room" +
+        (fields ? " <em>(" + esc(fields) + ")</em>" : "") +
+        ". Your edits were kept — save to overwrite, or discard to load theirs.</div>" +
+      '<div class="pp-acts">' +
+        '<button class="cfg-mini ok" data-act="ack-conflict">OK, keep mine</button>' +
+        '<button class="cfg-mini alt" data-act="reset-room">Discard mine</button>' +
+      "</div></div>";
+  }
+  function mountConflict() {
+    const head = dom.cfgBody.querySelector('[data-sec="room"] h4');
+    if (!head) return;
+    const old = dom.cfgBody.querySelector(".cfg-conflict");
+    if (old) old.remove();                              // refresh text if a 2nd edit lands
+    head.insertAdjacentHTML("afterend", conflictHTML(S.roomConflict));
+  }
+  function nudgeConflict() {
+    const el = dom.cfgBody.querySelector(".cfg-conflict");
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    el.classList.remove("nudge");
+    void el.offsetWidth;                                // restart the animation
+    el.classList.add("nudge");
+    setTimeout(() => el.classList.remove("nudge"), 600);
+  }
+  function applyIncomingRoom(room, by, changed) {
+    S.room = Object.assign({}, S.room, room);
+    renderRoomDetails();                                // header/title/tags update for everyone
+    if (!isConfigOpen() || !isRoomDirty()) {            // nothing to protect → just refresh
+      S.roomDraft = null;
+      S.roomConflict = null;
+      refreshConfig();
+      return;
+    }
+    /* dirty form: keep the draft, queue an acknowledgement */
+    const prev = (S.roomConflict && S.roomConflict.changed) || [];
+    S.roomConflict = { by, changed: [...new Set([...prev, ...(changed || [])])] };
+    mountConflict();
+    syncDirtyUI();                                      // blocks Save, shows the warning line
+  }
+
+  S.roomDraft    = null;   // in-progress edits
+  S.roomConflict = null;   // unacknowledged incoming change
+  const FIELD_LABEL = {
+    roomName: "Name", description: "Description", mode: "Mode",
+    tags: "Tags", isPublic: "Visibility", maxParticipants: "Max participants",
+  };
+  /* canonical form of the six editable fields — mirrors the server's sanitizer */
+  function normRoom(v) {
+    const tags = String(v.tags == null ? "" : v.tags)
+      .split(",").map((t) => t.trim().replace(/^#/, "").toLowerCase()).filter(Boolean);
+    return {
+      roomName:        String(v.roomName || "").trim().replace(/\s+/g, " "),
+      description:     String(v.description || "").trim(),
+      mode:            v.mode || "casual",
+      tags:            [...new Set(tags)].slice(0, 8).join(","),
+      isPublic:        !!v.isPublic,
+      maxParticipants: parseInt(v.maxParticipants, 10) || 0,
+    };
+  }
+  /* what's in the DB right now (S.room is kept in sync by room-saved/room-updated) */
+  function serverRoomVals() {
+    const r = S.room || {};
+    return normRoom({
+      roomName: r.roomName, description: r.description, mode: r.mode || "casual",
+      tags: (r.tags || []).join(","), isPublic: r.isPublic !== false,
+      maxParticipants: r.maxParticipants || 10,
+    });
+  }
+  const isRoomDirty = () =>
+    !!S.roomDraft && JSON.stringify(normRoom(S.roomDraft)) !== JSON.stringify(serverRoomVals());
   function roomFormValues() {
     const r = S.room || {}, d = S.roomDraft || {};
     const pick = (k, fb) => (d[k] !== undefined ? d[k] : fb);
@@ -1087,6 +1166,20 @@
       maxParticipants: $("cfgMax").value,
     };
   }
+  /* live state of Reset / Save / the hint line — no re-render, so typing isn't interrupted */
+  function syncDirtyUI() {
+    const reset = $("cfgReset"), save = $("cfgSave"), note = $("cfgDirtyNote");
+    if (!reset || !save || !note) return;                 // section not rendered (member view)
+    const dirty = isRoomDirty(), blocked = !!S.roomConflict;
+    reset.disabled = !dirty;
+    note.textContent = blocked
+      ? "⚠️ Someone else changed the room — dismiss the note above, then save."
+      : dirty ? "Unsaved changes" : "";
+    note.classList.toggle("warn", blocked);
+    note.classList.toggle("is-hidden", !note.textContent);
+    save.classList.toggle("is-blocked", blocked);
+    save.setAttribute("aria-disabled", blocked ? "true" : "false");
+  }
   const refreshConfig = () => { if (isConfigOpen()) renderConfig(); };
   function avatarHTML(name) {
     return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
@@ -1101,13 +1194,26 @@
     if (act === "respond")  socket && socket.emit("perm-respond", { userId: el.dataset.id, approve: el.dataset.approve === "1" });
     if (act === "save-room") {
       if (!socket) return;
+      if (S.roomConflict) return nudgeConflict();        // ← can't save until they press OK
       const payload = readRoomForm();
       S.roomDraft = payload;
       el.disabled = true;
       socket.emit("room-update", payload);
-      setTimeout(() => { el.disabled = false; }, 1200);   // re-enabled anyway on next render
+      setTimeout(() => { el.disabled = false; }, 1200);
+      return;
     }
-    if (act === "reset-room") { S.roomDraft = null; renderConfig(); }
+    if (act === "ack-conflict") {
+      S.roomConflict = null;
+      const b = dom.cfgBody.querySelector(".cfg-conflict");
+      if (b) b.remove();
+      syncDirtyUI();                                    // Save unblocked, draft intact
+      return;
+    }
+    if (act === "reset-room") {
+      S.roomDraft = null;
+      S.roomConflict = null;             // their change is what we just loaded
+      renderConfig();
+    }
   }
   function onCfgChange(e) {
     const el = e.target.closest("[data-act]");
@@ -1119,6 +1225,7 @@
   function onCfgRoomInput(e) {
     if (!e.target.closest("[data-room-field]")) return;
     S.roomDraft = readRoomForm();
+    syncDirtyUI();                       // Reset lights up immediately
   }
   function dom_cfgDelegate() {
     dom.cfgBody.addEventListener("click", onCfgClick);

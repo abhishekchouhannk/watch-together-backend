@@ -813,3 +813,51 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   }
   .cfg-sheet.open{transform:none}
 }
+/* ---- selects: kill the native widget so border-radius actually applies ---- */
+.cfg-sel,
+.cfg-field select{
+  -webkit-appearance:none;-moz-appearance:none;appearance:none;
+  background-color:var(--in-bg);
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%238b8b9a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat;
+  cursor:pointer;
+  text-overflow:ellipsis;
+}
+.cfg-field select{
+  border-radius:8px;
+  padding-right:1.7rem;
+  background-position:right .55rem center;background-size:11px 11px;
+}
+.cfg-sel{
+  border-radius:7px;
+  padding-right:1.25rem;
+  background-position:right .3rem center;background-size:9px 9px;
+}
+.cfg-sel:hover,.cfg-field select:hover{border-color:var(--acc)}
+.cfg-sel:focus-visible,.cfg-field select:focus-visible,
+.cfg-field input:focus-visible,.cfg-field textarea:focus-visible{
+  outline:none;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-glow);
+}
+/* dark-mode readability for the native option list */
+.cfg-sel option,.cfg-field select option{background:var(--menu-bg);color:var(--t1)}
+
+/* in-sheet conflict notice — same visual language as .perm-prompt */
+.cfg-conflict{
+  display:flex;flex-direction:column;gap:.5rem;margin:.1rem 0 .6rem;
+  padding:.6rem .7rem;border-radius:12px;
+  background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.35);
+  animation:toastIn .25s ease;
+}
+.cfg-conflict .pp-txt{font-size:.78rem;line-height:1.4}
+.cfg-conflict em{font-style:normal;color:var(--t3)}
+.cfg-conflict.nudge{animation:cfgShake .45s ease}
+@keyframes cfgShake{
+  0%,100%{transform:translateX(0)}
+  20%,60%{transform:translateX(-4px)}
+  40%,80%{transform:translateX(4px)}
+}
+.cfg-mini.alt{background:var(--surf);color:var(--t1)}
+.cfg-mini.alt:hover{background:var(--surf-h)}
+.cfg-dirty.warn{color:#eab308}
+.cfg-dirty.is-hidden{display:none}
+.cfg-btn.is-blocked{opacity:.55;cursor:not-allowed}

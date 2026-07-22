@@ -299,7 +299,9 @@ module.exports = function registerRoomHandlers(io, socket) {
     if (!changed.length) return socket.emit("perm-toast", { message: "Nothing to save", type: "info" });
     changed.forEach((k) => { room[k] = patch[k]; });
     await room.save();   // schema validators (enum/maxlength) run here; guarded() catches throws
-    io.to(roomId).emit("room-updated", { room: serializeRoom(room), by: user.username, changed });
+    const updatedRoom = serializeRoom(room);
+    socket.emit("room-saved", { room: updatedRoom, changed });                               // the editor
+    socket.to(roomId).emit("room-updated", { room: updatedRoom, by: user.username, changed }); // everyone else
     socket.emit("perm-toast", { message: "Room details saved ✅", type: "success" });
     socket.to(roomId).emit("perm-notice", { text: `${user.username} updated the room details` });
   }));
