@@ -405,7 +405,7 @@
     /* presence moves the validation floor */
     socket.on("participants-update", ({ participants, count }) => {
       S.room = Object.assign({}, S.room, { participants: participants || [] });
-      renderParticipants(count);        // ← your existing presence renderer
+      renderRoomDetails();
       if (isConfigOpen()) { refreshMaxHint(); syncDirtyUI(); }
     });
     socket.on("room-kicked", ({ message }) => {
@@ -413,7 +413,7 @@
     });
     socket.on("room-error", ({ message, fatal }) => {
       if (fatal) return bounceToDashboard(message || "You can't join this room");
-      toast(message, "error");           // ← your existing in-room toast
+      toast(message, "error");           
     });
     socket.on("user-joined", ({ username }) => addSystemMsg(username + " joined"));
     socket.on("user-left",   ({ username }) => addSystemMsg(username + " left"));
@@ -460,7 +460,7 @@
   function bounceToDashboard(text) {
     try { sessionStorage.setItem("wp:notice", JSON.stringify({ text, type: "error" })); } catch (_) {}
     try { socket.disconnect(); } catch (_) {}
-    window.location.replace("/dashboard");   // ← adjust if your dashboard lives elsewhere
+    window.location.replace("/dashboard");   // ← adjust if dashboard lives elsewhere
   }
   /* ═══════ RENDER ═══════ */
   function renderHeader() {
