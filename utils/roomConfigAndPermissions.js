@@ -1,13 +1,19 @@
 // utils/roomPermissions.js
+const { Types } = require("mongoose");
+
+const ROOM_CAP = 10;
 const MODE_VALUES = ["study", "gaming", "entertainment", "casual"];
 const sameId = (a, b) => !!a && !!b && a.toString() === b.toString();
 const isAdmin   = (room, uid) => !!(room.admin && sameId(room.admin.userId, uid));
+const canSetRoles = isAdmin;   // promote/demote mods
+const canBan      = isAdmin;   // kick / remove / ban / unban
 const getMember = (room, uid) => (room.members || []).find((m) => sameId(m.userId, uid));
 function roleOf(room, uid) {
   if (isAdmin(room, uid)) return "admin";
   const m = getMember(room, uid);
   return m && m.role === "mod" ? "mod" : "member";
 }
+const validId = (v) => !!v && Types.ObjectId.isValid(String(v));
 
 function sanitizeRoomPatch(room, raw = {}) {
   const patch = {}, errors = [];
@@ -35,10 +41,15 @@ function sanitizeRoomPatch(room, raw = {}) {
   }
   if (raw.isPublic !== undefined) patch.isPublic = !!raw.isPublic;
   if (raw.maxParticipants !== undefined) {
-    const n = parseInt(raw.maxParticipants, 10);
-    if (!Number.isFinite(n) || n < 2 || n > 50) errors.push("Max participants must be between 2 and 50");
-    else if (n < room.participants.length)
-      errors.push(`There are already ${room.participants.length} people in the room`);
+    const n = Number(raw.maxParticipants);
+    const here = room.participants.length;
+    const floor = Math.max(2, here);                 // ← the bug: never below who's already in
+    if (!Number.isInteger(n))  errors.push("Max participants must be a whole number");
+    else if (n > ROOM_CAP)     errors.push(`Rooms can't hold more than ${ROOM_CAP} people`);
+    else if (n < 2)            errors.push("Rooms need space for at least 2 people");
+    else if (n < floor)        errors.push(
+      `${here} ${here === 1 ? "person is" : "people are"} in the room right now — remove someone before lowering the limit to ${n}`
+    );
     else patch.maxParticipants = n;
   }
   return { patch, errors };
@@ -86,7 +97,8 @@ function canChangeVideo(room, uid) {
 const canModerate = (room, uid) => isAdmin(room, uid) || isMod(room, uid); // mods + host
 const canEditRoom = canModerate;   // edit name/desc/mode/tags/visibility/cap
 const canGrantSync = canModerate;  // grant/revoke playback, answer requests, set sync mode
-const canSetRoles  = isAdmin;      // ONLY the host may promote/demote mods
+const isBanned = (room, uid) =>
+  (room.bannedUsers || []).some((b) => sameId(b.userId, uid));
 function resolvePerms(room, uid) {
   const role = roleOf(room, uid);
   const m = getMember(room, uid);
@@ -96,10 +108,12 @@ function resolvePerms(room, uid) {
     isMod:   role === "mod",
     canSync:        canSync(room, uid),
     canChangeVideo: canChangeVideo(room, uid),
-    canManage:      canModerate(room, uid),   // "sees the management UI" (host OR mod)
+    canManage:      canModerate(room, uid),
     canGrantSync:   canGrantSync(room, uid),
     canEditRoom:    canEditRoom(room, uid),
     canSetRoles:    canSetRoles(room, uid),
+    canBan:         canBan(room, uid),        // ← new (admin only)
+    canKick:        canBan(room, uid),        // ← new (flip to canModerate to let mods kick)
     syncMode:     (room.settings && room.settings.syncMode) || "host",
     requestState: (m && m.syncRequest) || "none",
   };
@@ -113,7 +127,8 @@ function serializeMembers(room, privileged) {
   });
 }
 module.exports = {
-  MODE_VALUES, sameId, isAdmin, isMod, roleOf, getMember, ensureMember,
-  canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles,
+  ROOM_CAP, MODE_VALUES, validId,
+  sameId, isAdmin, isMod, roleOf, getMember, ensureMember, isBanned,
+  canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles, canBan,
   resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue,
 };

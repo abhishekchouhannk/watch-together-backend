@@ -3,10 +3,14 @@ const Room = require("../models/Room");
 const Message = require("../models/Message");
 const User = require("../models/User");
 const {
-  sameId, isAdmin, isMod, getMember, ensureMember,
-  canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles,
-  resolvePerms, serializeMembers, MODE_VALUES, sanitizeRoomPatch, sameValue,
+  ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
+  isBanned, canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles,
+  canBan, serializeMembers, sanitizeRoomPatch, sameValue, resolvePerms,
 } = require("../utils/roomConfigAndPermissions");
+
+const recentKicks = new Map();                       // "roomId:userId" → expiry ms
+const KICK_COOLDOWN = 10000;
+
 function serializeRoom(room) {
   const v = room.video || {};
   let currentTime = v.currentTime || 0;
@@ -38,9 +42,14 @@ function permPayload(room, uid) {
     perms,
     members: serializeMembers(room, perms.canManage),
     requests: perms.canGrantSync
-      ? (room.members || [])
-          .filter((m) => m.syncRequest === "pending")
+      ? (room.members || []).filter((m) => m.syncRequest === "pending")
           .map((m) => ({ userId: m.userId.toString(), username: m.username }))
+      : [],
+    banned: perms.canBan
+      ? (room.bannedUsers || []).map((b) => ({
+          userId: b.userId.toString(), username: b.username,
+          reason: b.reason || "", by: b.bannedByName || "", bannedAt: b.bannedAt,
+        }))
       : [],
   };
 }
@@ -98,12 +107,58 @@ async function handleLeave(io, socket) {
   });
   io.to(roomId).emit("user-left", { username: user.username });
 }
+/* a kick must survive the client's auto-reconnect for a few seconds,
+   otherwise a reconnecting socket walks straight back in */
+const kickKey = (roomId, uid) => roomId + ":" + uid;
+function markKicked(roomId, uid) {
+  recentKicks.set(kickKey(roomId, uid), Date.now() + KICK_COOLDOWN);
+}
+function kickCooldownLeft(roomId, uid) {
+  const until = recentKicks.get(kickKey(roomId, uid));
+  if (!until) return 0;
+  if (Date.now() > until) { recentKicks.delete(kickKey(roomId, uid)); return 0; }
+  return until - Date.now();
+}
+/* boot every socket this user has in the room, prune presence (caller saves) */
+async function evictUser(io, roomId, room, userId, reason, message) {
+  const sockets = await io.in(roomId).fetchSockets();
+  const mine = sockets.filter((s) => s.data.user && sameId(s.data.user.id, userId));
+  for (const s of mine) {
+    s.emit("room-kicked", { reason, message, roomId });   // client stashes a toast + redirects
+    s.leave(roomId);                                      // no further room traffic reaches them
+    s.data.roomId = null;
+    s.data.perm = null;
+    setTimeout(() => { try { s.disconnect(true); } catch (_) {} }, 1000); // in case their JS is dead
+  }
+  const before = room.participants.length;
+  room.participants = room.participants.filter((p) => !sameId(p.userId, userId));
+  if (room.participants.length === 0 && room.status === "active") room.status = "idle";
+  return { wasPresent: before !== room.participants.length, sockets: mine.length };
+}
+const presencePayload = (room) => ({
+  participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
+  count: room.participants.length,
+});
 module.exports = function registerRoomHandlers(io, socket) {
   const user = socket.data.user;
   socket.on("join-room", async ({ roomId }) => {
     try {
       const room = await Room.findOne({ roomId });
       if (!room) return socket.emit("room-error", { message: "Room not found" });
+
+      if (isBanned(room, user.id)) {
+        return socket.emit("room-error", {
+          message: "You've been banned from this room",
+          code: "banned", fatal: true,
+        });
+      }
+      const cool = kickCooldownLeft(roomId, user.id);
+      if (cool > 0) {
+        return socket.emit("room-error", {
+          message: `You were just removed from this room — try again in ${Math.ceil(cool / 1000)}s`,
+          code: "kicked", fatal: true,
+        });
+      }
       socket.join(roomId);
       socket.data.roomId = roomId;
       const alreadyIn = room.participants.some((p) => p.userId && p.userId.toString() === user.id);
@@ -347,6 +402,92 @@ module.exports = function registerRoomHandlers(io, socket) {
     });
     if (approve) io.to(roomId).emit("perm-notice", { text: `${m.username} can now control playback` });
   }));
+  /* ═══════════════ MEMBER MODERATION (host only) ═══════════════ */
+  /* resolve a display name even if the member record is already gone */
+  function nameOf(room, userId) {
+    const m = getMember(room, userId);
+    if (m && m.username) return m.username;
+    const p = room.participants.find((x) => sameId(x.userId, userId));
+    if (p && p.username) return p.username;
+    const b = (room.bannedUsers || []).find((x) => sameId(x.userId, userId));
+    return (b && b.username) || "That user";
+  }
+  /* shared target validation for all three destructive actions */
+  function badTarget(room, userId) {
+    if (!validId(userId)) return "Unknown user";
+    if (sameId(userId, user.id)) return "You can't do that to yourself";
+    if (isAdmin(room, userId))   return "The host can't be removed";
+    return null;
+  }
+  /* KICK — boot from this session; membership + permissions survive, they may rejoin */
+  socket.on("member-kick", adminAction(async (room, roomId, { userId } = {}) => {
+    const bad = badTarget(room, userId);
+    if (bad) return socket.emit("perm-toast", { message: bad, type: "error" });
+    const name = nameOf(room, userId);
+    const { wasPresent } = await evictUser(
+      io, roomId, room, userId, "kick",
+      `${user.username} removed you from “${room.roomName}”. You can rejoin in a moment.`
+    );
+    if (!wasPresent) return socket.emit("perm-toast", { message: `${name} isn't in the room right now`, type: "error" });
+    markKicked(roomId, userId);
+    await room.save();
+    io.to(roomId).emit("participants-update", presencePayload(room));
+    io.to(roomId).emit("perm-notice", { text: `${name} was kicked from the room` });
+    socket.emit("perm-toast", { message: `${name} was kicked`, type: "success" });
+    await broadcastPermissions(io, roomId, room);
+  }));
+  /* REMOVE — delete the member record (role, grants, request state) + boot; rejoining is allowed */
+  socket.on("member-remove", adminAction(async (room, roomId, { userId } = {}) => {
+    const bad = badTarget(room, userId);
+    if (bad) return socket.emit("perm-toast", { message: bad, type: "error" });
+    if (!getMember(room, userId)) return socket.emit("perm-toast", { message: "They're not a member of this room", type: "error" });
+    const name = nameOf(room, userId);
+    await evictUser(io, roomId, room, userId, "removed",
+      `${user.username} removed you from “${room.roomName}”.`);
+    room.members = room.members.filter((m) => !sameId(m.userId, userId));
+    markKicked(roomId, userId);
+    await room.save();
+    await User.updateOne({ _id: userId }, { $pull: { joinedRooms: roomId } });
+    io.to(roomId).emit("participants-update", presencePayload(room));
+    io.to(roomId).emit("perm-notice", { text: `${name} was removed from the room` });
+    socket.emit("perm-toast", { message: `${name} was removed`, type: "success" });
+    await broadcastPermissions(io, roomId, room);
+  }));
+  /* BAN — remove + blocklist; rejoining is impossible until unbanned */
+  socket.on("member-ban", adminAction(async (room, roomId, { userId, reason } = {}) => {
+    const bad = badTarget(room, userId);
+    if (bad) return socket.emit("perm-toast", { message: bad, type: "error" });
+    const name = nameOf(room, userId);
+    if (isBanned(room, userId)) return socket.emit("perm-toast", { message: `${name} is already banned`, type: "error" });
+    await evictUser(io, roomId, room, userId, "banned",
+      `You were banned from “${room.roomName}” by ${user.username}.`);
+    room.members = room.members.filter((m) => !sameId(m.userId, userId));
+    room.bannedUsers.push({
+      userId, username: name,
+      bannedBy: user.id, bannedByName: user.username,
+      reason: String(reason || "").trim().slice(0, 140),
+      bannedAt: new Date(),
+    });
+    await room.save();
+    await User.updateOne({ _id: userId }, { $pull: { joinedRooms: roomId } });
+    io.to(roomId).emit("participants-update", presencePayload(room));
+    io.to(roomId).emit("perm-notice", { text: `${name} was banned from the room` });
+    socket.emit("perm-toast", { message: `${name} was banned`, type: "success" });
+    await broadcastPermissions(io, roomId, room);
+  }));
+  /* UNBAN */
+  socket.on("member-unban", adminAction(async (room, roomId, { userId } = {}) => {
+    if (!validId(userId)) return;
+    const b = (room.bannedUsers || []).find((x) => sameId(x.userId, userId));
+    if (!b) return;
+    const name = b.username || "They";
+    room.bannedUsers = room.bannedUsers.filter((x) => !sameId(x.userId, userId));
+    recentKicks.delete(kickKey(roomId, userId));
+    await room.save();
+    await broadcastPermissions(io, roomId, room);
+    socket.emit("perm-toast", { message: `${name} can join again`, type: "success" });
+  }));
+
   /* ═══════════════ REACTIONS (unchanged) ═══════════════ */
   const ALLOWED_REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👏", "💀"];
   const REACT_LIMIT = 8, REACT_WINDOW = 4000;

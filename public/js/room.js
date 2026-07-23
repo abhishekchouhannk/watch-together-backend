@@ -377,12 +377,14 @@
     });
 
     /* ── permissions ── */
-    socket.on("room-permissions", ({ perms, members, requests }) => {
+    socket.on("room-permissions", ({ perms, members, requests, banned }) => {
       S.perms    = perms;
-      S.members  = members || [];
+      S.members  = members  || [];
       S.requests = requests || [];
+      S.banned   = banned   || [];
+      if (S.cfgRowMenu && !S.members.some((m) => m.userId === S.cfgRowMenu.id)) S.cfgRowMenu = null;
       applyPerms();
-      refreshConfig();            // ← live swap member ⇄ mod UI
+      refreshConfig();
     });
     socket.on("room-saved", ({ room }) => {               // my own save came back
       S.room = Object.assign({}, S.room, room);
@@ -400,11 +402,18 @@
     socket.on("perm-notice", ({ text }) => addSystemMsg(text));
     socket.on("perm-request", ({ userId, username }) => showRequestPrompt(userId, username));
 
+    /* presence moves the validation floor */
     socket.on("participants-update", ({ participants, count }) => {
-      if (!S.room) return;
-      S.room.participants = participants;
-      renderDetails();
-      dom.chatOnline.textContent = count + " in room";
+      S.room = Object.assign({}, S.room, { participants: participants || [] });
+      renderParticipants(count);        // ← your existing presence renderer
+      if (isConfigOpen()) { refreshMaxHint(); syncDirtyUI(); }
+    });
+    socket.on("room-kicked", ({ message }) => {
+      bounceToDashboard(message || "You were removed from this room");
+    });
+    socket.on("room-error", ({ message, fatal }) => {
+      if (fatal) return bounceToDashboard(message || "You can't join this room");
+      toast(message, "error");           // ← your existing in-room toast
     });
     socket.on("user-joined", ({ username }) => addSystemMsg(username + " joined"));
     socket.on("user-left",   ({ username }) => addSystemMsg(username + " left"));
@@ -447,6 +456,11 @@
   function leaveRoom() {
     if (socket) socket.emit("leave-room");
     location.href = "/dashboard";
+  }
+  function bounceToDashboard(text) {
+    try { sessionStorage.setItem("wp:notice", JSON.stringify({ text, type: "error" })); } catch (_) {}
+    try { socket.disconnect(); } catch (_) {}
+    window.location.replace("/dashboard");   // ← adjust if your dashboard lives elsewhere
   }
   /* ═══════ RENDER ═══════ */
   function renderHeader() {
@@ -959,6 +973,29 @@
   /* ══════════════════════════════════════
      PERMISSIONS UI + ROOM CONFIG SHEET
      ══════════════════════════════════════ */
+
+  const ROOM_CAP = 10;                                    // keep in step with the model
+  const participantsHere = () => ((S.room && S.room.participants) || []).length;
+  const participantFloor = () => Math.max(2, participantsHere());
+  S.banned     = [];      // admin-only, from room-permissions
+  S.cfgRowMenu = null;    // { id, confirm: null | 'ban' | 'remove' }
+  /* first blocking problem with the room-details form, or null */
+  function roomFormError() {
+    if (!$("cfgMax")) return null;
+    const v = readRoomForm();
+    const name = String(v.roomName || "").trim();
+    if (name.length < 3)  return { id: "cfgName", msg: "Room name needs at least 3 characters" };
+    if (name.length > 60) return { id: "cfgName", msg: "Room name can be 60 characters at most" };
+    const here = participantsHere();
+    const n = Number(v.maxParticipants);
+    if (!Number.isInteger(n)) return { id: "cfgMax", msg: "Max participants must be a whole number" };
+    if (n > ROOM_CAP)         return { id: "cfgMax", msg: `Rooms can't hold more than ${ROOM_CAP} people` };
+    if (n < 2)               return { id: "cfgMax", msg: "Rooms need space for at least 2 people" };
+    if (n < here)            return { id: "cfgMax",
+      msg: `${here} ${here === 1 ? "person is" : "people are"} here right now — remove someone first` };
+    return null;
+  }
+
   function applyPerms() {
     const p = S.perms;
     dom.container.classList.toggle("locked", !p.canSync);
@@ -1063,6 +1100,8 @@
         const isModRow  = m.role === "mod";
         const locked = isHostRow || isModRow || p.syncMode === "everyone" || !p.canGrantSync;
         const showRoleSelect = p.canSetRoles && !isHostRow;
+        const menuOpen = !!(S.cfgRowMenu && S.cfgRowMenu.id === m.userId);
+        const canAct   = !!p.canBan && !isHostRow;
         h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
                 '<span class="cfg-uname">' + esc(m.username) +
                   (online.has(m.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
@@ -1077,19 +1116,38 @@
                     "</select>"
                   : "") +
                 '<label class="sw' + (locked ? " sw-lock" : "") + '" title="' +
-                  (isHostRow || isModRow ? "Has playback control automatically"
-                                        : "Can control playback") + '">' +
-                  '<input type="checkbox" data-act="sync" data-id="' + m.userId + '"' +
-                    (m.canSync ? " checked" : "") + (locked ? " disabled" : "") + ">" +
-                  '<span class="sw-track"><span class="sw-knob"></span></span>' +
-                "</label>" +
-              "</span></div>";
+                (isHostRow || isModRow ? "Has playback control automatically"
+                                      : "Can control playback") + '">' +
+                '<input type="checkbox" data-act="sync" data-id="' + m.userId + '"' +
+                  (m.canSync ? " checked" : "") + (locked ? " disabled" : "") + ">" +
+                '<span class="sw-track"><span class="sw-knob"></span></span>' +
+              "</label>" +
+              (canAct
+                ? '<button class="cfg-more' + (menuOpen ? " on" : "") + '" data-act="row-menu" ' +
+                    'data-id="' + m.userId + '" aria-expanded="' + menuOpen + '" ' +
+                    'title="More actions" aria-label="More actions for ' + esc(m.username) + '">⋯</button>'
+                : "") +
+            "</span></div>";
+        if (canAct && menuOpen) h += rowMenuHTML(m, online.has(m.userId));
       });
       h += '<p class="cfg-note">Hosts and mods get playback control automatically.' +
             (p.canSetRoles
               ? " Mods can edit room details and grant playback control, but can't change roles."
               : " Only the host can change roles.") +
             "</p>" + SEC_CLOSE;
+    }
+    /* ── banned (host only) ── */
+    if (p.canBan && S.banned.length) {
+      h += secOpen("banned", 'Banned <span class="cnt">' + S.banned.length + "</span>", true);
+      S.banned.forEach((b) => {
+        h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(b.username) +
+               '<span class="cfg-uname">' + esc(b.username) + "</span></span>" +
+             '<span class="cfg-acts">' +
+               '<button class="cfg-mini ok" data-act="unban" data-id="' + b.userId + '">Unban</button>' +
+             "</span></div>" +
+             (b.reason ? '<p class="cfg-note" style="margin-top:0">"' + esc(b.reason) + "\"</p>" : "");
+      });
+      h += '<p class="cfg-note">Banned people can\'t rejoin and won\'t see this room in Discover.</p>' + SEC_CLOSE;
     }
     /* ── room details (host + mods → editable) ── */
     if (p.canEditRoom) {
@@ -1118,16 +1176,17 @@
                 '<option value="public"'  + (f.isPublic  ? " selected" : "") + ">Public</option>" +
                 '<option value="private"' + (!f.isPublic ? " selected" : "") + ">Private</option>" +
               "</select></label>" +
-            '<label class="cfg-field"><span>Max participants</span>' +
-              '<div class="num-stepper">' +
-                '<input id="cfgMax" data-room-field type="number" min="2" max="50" ' +
-                  'value="' + f.maxParticipants + '">' +
-                '<span class="num-btns">' +
-                  '<button type="button" class="num-btn" data-act="step-up" tabindex="-1">' +
-                    STEP_UP + "</button>" +
-                  '<button type="button" class="num-btn" data-act="step-down" tabindex="-1">' +
-                    STEP_DN + "</button>" +
-                "</span></div></label>" +
+            '<label class="cfg-field"><span>Max participants ' +
+             '<span class="cfg-note" id="cfgMaxHint" style="margin:0">(' + participantsHere() +
+               " here now · " + participantFloor() + "–" + ROOM_CAP + ")</span></span>" +
+             '<div class="num-stepper">' +
+               '<input id="cfgMax" data-room-field type="number" step="1" ' +
+                 'min="' + participantFloor() + '" max="' + ROOM_CAP + '" ' +
+                 'value="' + f.maxParticipants + '">' +
+               '<span class="num-btns">' +
+                 '<button type="button" class="num-btn" data-act="step-up" tabindex="-1">' + STEP_UP + "</button>" +
+                 '<button type="button" class="num-btn" data-act="step-down" tabindex="-1">' + STEP_DN + "</button>" +
+               "</span></div></label>" +
             '<div class="cfg-actions">' +
               '<button class="cfg-btn primary" id="cfgSave" data-act="save-room">' +
                 "Save changes</button>" +
@@ -1186,6 +1245,30 @@
     mountConflict();
     syncDirtyUI();                                      // blocks Save, shows the warning line
   }
+  function rowMenuHTML(m, isOnline) {
+    const c = S.cfgRowMenu.confirm;
+    if (c === "ban" || c === "remove") {
+      const ban = c === "ban";
+      return '<div class="cfg-rowmenu confirm">' +
+        '<div class="pp-txt">' + (ban
+          ? "<strong>Ban " + esc(m.username) + "?</strong> They'll be kicked out now and can't rejoin until you unban them."
+          : "<strong>Remove " + esc(m.username) + "?</strong> They lose their role and permissions here, but can join again.") +
+        "</div><div class=\"pp-acts\">" +
+          '<button class="cfg-mini no" data-act="do-' + c + '" data-id="' + m.userId + '">' +
+            (ban ? "🚫 Ban" : "✕ Remove") + "</button>" +
+          '<button class="cfg-mini alt" data-act="menu-close">Cancel</button>' +
+        "</div></div>";
+    }
+    return '<div class="cfg-rowmenu">' +
+      '<button class="cfg-mini alt" data-act="do-kick" data-id="' + m.userId + '"' +
+        (isOnline ? "" : " disabled") +
+        ' title="Boot from this session — they keep their permissions and can rejoin">👟 Kick</button>' +
+      '<button class="cfg-mini alt" data-act="ask-remove" data-id="' + m.userId + '"' +
+        ' title="Delete their membership and permissions">✕ Remove</button>' +
+      '<button class="cfg-mini no" data-act="ask-ban" data-id="' + m.userId + '"' +
+        ' title="Remove and block them from rejoining">🚫 Ban</button>' +
+    "</div>";
+  }
 
   S.roomDraft    = null;   // in-progress edits
   S.roomConflict = null;   // unacknowledged incoming change
@@ -1241,17 +1324,44 @@
   }
   /* live state of Reset / Save / the hint line — no re-render, so typing isn't interrupted */
   function syncDirtyUI() {
-    const reset = $("cfgReset"), save = $("cfgSave"), note = $("cfgDirtyNote");
-    if (!reset || !save || !note) return;                 // section not rendered (member view)
-    const dirty = isRoomDirty(), blocked = !!S.roomConflict;
+    const reset = $("cfgReset"), save = $("cfgSave"), note = $("cfgDirtyNote"), maxIn = $("cfgMax");
+    if (!reset || !save || !note) return;
+    /* keep the native clamp honest as people come and go */
+    if (maxIn) { maxIn.min = String(participantFloor()); maxIn.max = String(ROOM_CAP); }
+    const dirty = isRoomDirty();
+    const err   = roomFormError();
+    const blocked = !!S.roomConflict || !!err;
     reset.disabled = !dirty;
-    note.textContent = blocked
+    dom.cfgBody.querySelectorAll(".invalid").forEach((el) => el.classList.remove("invalid"));
+    if (err && $(err.id)) $(err.id).classList.add("invalid");
+    note.textContent = S.roomConflict
       ? "⚠️ Someone else changed the room — dismiss the note above, then save."
+      : err   ? "⚠️ " + err.msg
       : dirty ? "Unsaved changes" : "";
     note.classList.toggle("warn", blocked);
     note.classList.toggle("is-hidden", !note.textContent);
     save.classList.toggle("is-blocked", blocked);
     save.setAttribute("aria-disabled", blocked ? "true" : "false");
+    /* grey out the arrow that would go out of range */
+    if (maxIn) {
+      const n  = Number(maxIn.value);
+      const up = dom.cfgBody.querySelector('[data-act="step-up"]');
+      const dn = dom.cfgBody.querySelector('[data-act="step-down"]');
+      if (up) up.disabled = Number.isInteger(n) && n >= ROOM_CAP;
+      if (dn) dn.disabled = Number.isInteger(n) && n <= participantFloor();
+    }
+  }
+  function refreshMaxHint() {
+    const hint = $("cfgMaxHint");
+    if (!hint) return;
+    const here = participantsHere();
+    hint.textContent = "(" + here + " here now · " + participantFloor() + "–" + ROOM_CAP + ")";
+  }
+  function nudgeNote() {
+    const note = $("cfgDirtyNote");
+    if (!note) return;
+    note.classList.remove("nudge"); void note.offsetWidth; note.classList.add("nudge");
+    setTimeout(() => note.classList.remove("nudge"), 600);
   }
   const refreshConfig = () => { if (isConfigOpen()) renderConfig(); };
   function avatarHTML(name) {
@@ -1279,8 +1389,8 @@
       const input = $("cfgMax");
       if (!input) return;
       const dir = act === "step-up" ? 1 : -1;
-      const min = parseInt(input.min, 10) || 2;
-      const max = parseInt(input.max, 10) || 50;
+      const min = Number(input.min) || participantFloor();
+      const max = Number(input.max) || ROOM_CAP;
       const cur = parseInt(input.value, 10) || min;
       const next = Math.max(min, Math.min(max, cur + dir));
       if (next !== cur) {
@@ -1294,6 +1404,20 @@
     if (act === "respond")  socket && socket.emit("perm-respond", {
       userId: el.dataset.id, approve: el.dataset.approve === "1",
     });
+    if (act === "row-menu") {
+      const id = el.dataset.id;
+      S.cfgRowMenu = (S.cfgRowMenu && S.cfgRowMenu.id === id) ? null : { id, confirm: null };
+      renderConfig(); return;
+    }
+    if (act === "menu-close")  { S.cfgRowMenu = null; renderConfig(); return; }
+    if (act === "ask-ban")     { S.cfgRowMenu = { id: el.dataset.id, confirm: "ban" };    renderConfig(); return; }
+    if (act === "ask-remove")  { S.cfgRowMenu = { id: el.dataset.id, confirm: "remove" }; renderConfig(); return; }
+    if (act === "do-kick" || act === "do-ban" || act === "do-remove") {
+      const ev = { "do-kick": "member-kick", "do-ban": "member-ban", "do-remove": "member-remove" }[act];
+      socket && socket.emit(ev, { userId: el.dataset.id });
+      S.cfgRowMenu = null; renderConfig(); return;
+    }
+    if (act === "unban") { socket && socket.emit("member-unban", { userId: el.dataset.id }); return; }
     if (act === "save-room") {
       if (!socket) return;
       if (S.roomConflict) return nudgeConflict();

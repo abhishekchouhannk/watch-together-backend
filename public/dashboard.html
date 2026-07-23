@@ -697,6 +697,7 @@
     casual:        { label: 'Casual',        icon: '☕' },
   };
   const MAX_TAGS = 8;
+  const ROOM_CAP = 10;
   /* ---------- state ---------- */
   const S = {
     myRooms: [],
@@ -725,9 +726,19 @@
   document.addEventListener('DOMContentLoaded', async () => {
     initSky();
     wireEvents();
+    drainNotice();
     await fetchMe();     // need identity before rendering owner badges
     fetchRooms();
   });
+  function drainNotice() {
+    try {
+      var raw = sessionStorage.getItem('wp:notice');
+      if (!raw) return;
+      sessionStorage.removeItem('wp:notice');
+      var n = JSON.parse(raw);
+      if (n && n.text) toast(n.text, n.type || 'error');
+    } catch (_) {}
+  }
   /* ---------- sky background ----------
      Theme lands on <html> so the sky AND the dashboard CSS vars
      share one source of truth. intro:false = skip the cinematic
@@ -888,7 +899,7 @@
     btn.disabled = true; btn.textContent = 'Creating…';
     var maxP = parseInt($('f_max').value, 10);
     if (isNaN(maxP) || maxP < 2) maxP = 2;
-    if (maxP > 50) maxP = 50;
+    if (maxP > ROOM_CAP) maxP = ROOM_CAP;
     var body = {
       roomName:        $('f_name').value.trim(),
       description:     $('f_desc').value.trim(),
@@ -1043,7 +1054,36 @@
     document.body.style.overflow = '';
   }
   /* ---------- navigation ---------- */
-  function go(rid) { if (rid) window.location.href = '/room/' + rid; }
+  var navigating = false;
+  async function go(rid) {
+    if (!rid || navigating) return;
+    navigating = true;
+    try {
+      var res = await fetch('/api/rooms/' + encodeURIComponent(rid), { credentials: 'include' });
+      if (res.status === 401) { window.location.href = '/'; return; }
+      if (res.status === 403) {
+        var d = await res.json().catch(function () { return {}; });
+        toast(d.message || "You can't join this room", 'error');
+        fetchRooms();                                  // it shouldn't be on the board anyway
+        return;
+      }
+      if (res.status === 404) { toast('That room no longer exists', 'error'); fetchRooms(); return; }
+      if (!res.ok) throw new Error('lookup failed');
+      var room   = (await res.json()).room || {};
+      var here   = (room.participants || []).length;
+      var cap    = room.maxParticipants || ROOM_CAP;
+      var inside = (room.participants || []).some(function (p) {
+        return String(p.userId) === String(S.userId);
+      });
+      if (room.status === 'ended')      { toast('That room has ended', 'error'); fetchRooms(); return; }
+      if (!inside && here >= cap)       { toast('That room is full (' + here + '/' + cap + ')', 'error'); fetchRooms(); return; }
+      window.location.href = '/room/' + rid;
+    } catch (err) {
+      toast('Could not open that room', 'error');
+    } finally {
+      navigating = false;
+    }
+  }
   /* ---------- toasts ---------- */
   function toast(msg, type) {
     var el = document.createElement('div');

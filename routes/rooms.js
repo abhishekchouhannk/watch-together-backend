@@ -5,7 +5,7 @@ const Room = require('../models/Room');
 const Message = require('../models/Message');
 const { authenticateToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
-const { sanitizeRoomPatch, canModerate } = require('../utils/roomConfigAndPermissions');
+const { sanitizeRoomPatch, canModerate, isBanned, ROOM_CAP } = require('../utils/roomConfigAndPermissions');
 
 // Get user's joined rooms
 router.get('/joined', authenticateToken, async (req, res) => {
@@ -45,9 +45,10 @@ router.get('/my-rooms', authenticateToken, async (req, res) => {
 // Get public rooms
 router.get('/public', authenticateToken, async (req, res) => {
   try {
-    const rooms = await Room.find({ isPublic: true })
-      .sort({ createdAt: -1 })
-      .limit(20);
+    const rooms = await Room.find({
+      isPublic: true,
+      'bannedUsers.userId': { $ne: req.user.id },
+    }).sort({ createdAt: -1 }).limit(20);
     
     res.json({ rooms });
   } catch (error) {
@@ -59,7 +60,7 @@ router.get('/public', authenticateToken, async (req, res) => {
 router.get('/search', authenticateToken, async (req, res) => {
   try {
     const { q, type } = req.query;
-    let query = { isPublic: true };
+    let query = { isPublic: true, 'bannedUsers.userId': { $ne: req.user.id } };
     
     if (type && type !== 'all') {
       query.roomType = type;
@@ -83,32 +84,21 @@ router.get('/search', authenticateToken, async (req, res) => {
 router.post('/create', authenticateToken, async (req, res) => {
   try {
     const { roomName, description, mode, maxParticipants, isPublic, tags, thumbnail, video } = req.body;
-    
+    let cap = Number(maxParticipants);
+    if (!Number.isInteger(cap)) cap = ROOM_CAP;
+    cap = Math.min(ROOM_CAP, Math.max(2, cap));
     const newRoom = new Room({
-      roomId: uuidv4(),
-      roomName,
-      description,
-      mode,
-      maxParticipants,
-      isPublic,
-      tags,
-      video,
-      thumbnail,
-      admin: {
-        userId: req.user.id,
-        username: req.user.username
-      },
-      participants: [{
-        userId: req.user.id,
-        username: req.user.username,
-        joinedAt: new Date()
-      }]
+      roomId: uuidv4(), roomName, description, mode,
+      maxParticipants: cap,
+      isPublic, tags, video, thumbnail,
+      admin: { userId: req.user.id, username: req.user.username },
+      participants: [{ userId: req.user.id, username: req.user.username, joinedAt: new Date() }],
+      members: [{ userId: req.user.id, username: req.user.username, role: 'admin', canSync: true }],
     });
-    
     await newRoom.save();
     res.status(201).json({ room: newRoom });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create room' });
+    res.status(400).json({ error: error.message || 'Failed to create room' });
   }
 });
 
@@ -131,7 +121,13 @@ router.get('/:roomId', authenticateToken, async (req, res) => {
   try {
     const room = await Room.findOne({ roomId: req.params.roomId });
     if (!room) return res.status(404).json({ error: 'Room not found' });
-    res.json({ room });
+    if (isBanned(room, req.user.id)) {
+      return res.status(403).json({ error: 'banned', message: "You've been banned from this room" });
+    }
+    const safe = room.toObject();
+    delete safe.bannedUsers;
+    if (!canModerate(room, req.user.id)) delete safe.members;
+    res.json({ room: safe });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch room' });
   }
