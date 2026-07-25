@@ -530,6 +530,97 @@
     if (extra > 0) h += '<div class="avatar-sm avatar-more">+' + extra + "</div>";
     return h + "</div>";
   }
+
+  /* ══════════════════════════════════
+   YT LETTERBOX/CROP — frontend only
+   ══════════════════════════════════
+   Oversizes the YouTube iframe vertically so branding overlays render on
+   its internal black bars, then clips part of those bars symmetrically.
+   Geometry per side:   [ cropped (CFG.crop) | visible bar | VIDEO | visible bar | cropped ]
+   visible bar = CFG.pad − CFG.crop
+   Tuning guide:
+   • The title/watch-later/share chrome sits in ~the top 55px of the iframe.
+     To keep the title readable:  crop ≤ ~15px  and  pad − crop ≥ ~50px.
+   • A larger pad pushes the paused "More videos" shelf further off the video.
+   • crop also removes the bottom-edge YT logo region — be aware that hiding
+     attribution entirely can conflict with YT API ToS; keep crop modest.   */
+    const ytLetterbox = (() => {
+      const CFG = {
+        pad:  80,          // superficial black bar YT renders inside the iframe (px / side)
+        crop: 15,          // how much of that bar we clip away (px / side, symmetric)
+        aspect: 16 / 9,    // assumed AR, refined via oEmbed when possible
+        detectAspect: true,
+      };
+      const DEFAULT_AR = CFG.aspect;
+      const desktopMQ = window.matchMedia("(min-width:769px)");
+      let container = null, iframe = null, ro = null, raf = 0;
+      const visibleBar = () => Math.max(0, CFG.pad - CFG.crop);
+      const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); };
+      function layout() {
+        if (!container || !iframe) return;
+        /* Desktop & (pseudo-)fullscreen: container height is dictated by the
+          flex layout / viewport — we must NOT touch it, only overflow inside it.
+          Mobile: container height is derived from its width (video + bars).   */
+        const fixedH = desktopMQ.matches ||
+                      container.classList.contains("pseudo-fs") ||
+                      !!document.fullscreenElement;
+        if (fixedH) {
+          if (container.style.height) container.style.height = "";
+          place(container.clientWidth, container.clientHeight);
+        } else {
+          const W = container.clientWidth;
+          const H = Math.round(W / CFG.aspect + 2 * visibleBar());
+          if (container.style.height !== H + "px") container.style.height = H + "px";
+          document.documentElement.style.setProperty("--yt-extra", Math.round(2 * visibleBar()) + "px");
+          place(W, H);
+        }
+      }
+      /* Fit the video inside viewport W×H leaving `visibleBar` px top+bottom,
+        then oversize the iframe by `pad` per side and center it — the
+        container's overflow:hidden clips `pad − visibleBar` = crop per side. */
+      function place(W, H) {
+        const vb = visibleBar();
+        const Vw = Math.min(W, Math.max(50, H - 2 * vb) * CFG.aspect); // width- or height-limited
+        const Vh = Vw / CFG.aspect;
+        const Iw = Math.round(Vw);
+        const Ih = Math.round(Vh + 2 * CFG.pad);
+        iframe.style.width  = Iw + "px";
+        iframe.style.height = Ih + "px";
+        iframe.style.left   = Math.round((W - Iw) / 2) + "px";  // pillarbox = plain container bg
+        iframe.style.top    = Math.round((H - Ih) / 2) + "px";  // negative ⇒ symmetric crop
+      }
+      async function detectAspect(videoId) {
+        if (!CFG.detectAspect) return;
+        try {
+          const r = await fetch("https://www.youtube.com/oembed?format=json&url=" +
+            encodeURIComponent("https://www.youtube.com/watch?v=" + videoId));
+          const d = await r.json();
+          if (d.width && d.height) { CFG.aspect = d.width / d.height; schedule(); }
+        } catch (_) { /* keep default 16:9 (swap in noembed.com if CORS bites) */ }
+      }
+      function attach(containerEl, iframeEl, videoId) {
+        detach();
+        container = containerEl; iframe = iframeEl;
+        container.classList.add("yt-boxed");
+        ro = new ResizeObserver(schedule);                 // catches window resize,
+        ro.observe(container);                             // flex reflows, fullscreen…
+        desktopMQ.addEventListener("change", schedule);
+        document.addEventListener("fullscreenchange", schedule);
+        if (videoId) detectAspect(videoId);
+        layout();
+      }
+      function detach() {
+        if (ro) { ro.disconnect(); ro = null; }
+        desktopMQ.removeEventListener("change", schedule);
+        document.removeEventListener("fullscreenchange", schedule);
+        if (container) { container.classList.remove("yt-boxed"); container.style.height = ""; }
+        if (iframe) iframe.style.cssText = "";
+        document.documentElement.style.setProperty("--yt-extra", "0px");
+        container = iframe = null;
+        CFG.aspect = DEFAULT_AR;
+      }
+      return { attach, detach, CFG };
+    })();
   /* ══════════════════════════════════
      VIDEO — load / controls / sync
      ══════════════════════════════════ */
@@ -537,6 +628,7 @@
     if (!url) { toast("Enter a URL", "error"); return; }
     if (!fromRemote && !S.perms.canChangeVideo) { toast("Only the host can change the video", "error"); return; }
     P.destroy();
+    ytLetterbox.detach();
     if (dom.fxLayer) dom.fxLayer.innerHTML = "";
     const ytId = extractYT(url);
     if (ytId) {
@@ -553,6 +645,7 @@
         '<iframe id="ytPlayerDiv" title="YouTube player" frameborder="0"' +
         ' allow="autoplay; encrypted-media; picture-in-picture"' +
         ' src="https://www.youtube.com/embed/' + ytId + '?' + qs + '"></iframe>';
+      ytLetterbox.attach($("videoContainer"), $("ytPlayerDiv"), ytId);
       P.yt = new YT.Player("ytPlayerDiv", {
         events: { onReady: onPlayerReady, onStateChange: onYTState },
       });

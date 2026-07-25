@@ -505,7 +505,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   .video-container{border-radius:10px}
   .chat-section{
     margin:.65rem;border-radius:12px;
-    height:calc(100vh - 52px - 56.25vw - 80px);
+    height:calc(100vh - 52px - 56.25vw - 80px - var(--yt-extra, 0px));
     min-height:300px;
   }
   .rh-center{justify-content:flex-start}
@@ -929,3 +929,15 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .num-btn:disabled:hover{background:transparent}
 .cfg-field .invalid{border-color:#ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.15)}
 .cfg-dirty.nudge{animation:cfgShake .45s ease}
+
+/* ======== 16. YouTube letterbox / crop mode ======== */
+/* Applied to .video-container only while a YouTube video is loaded.
+   The iframe is deliberately oversized (taller than its video) so YT's
+   branding lands on its internal letterbox bars; the container's existing
+   overflow:hidden clips the excess symmetrically. The container itself
+   keeps its layout-driven size on desktop, so the flex column
+   (player + url-bar vs chat) is never disturbed. */
+.video-container.yt-boxed{ aspect-ratio:auto; }        /* mobile: JS sets height */
+.video-container.yt-boxed #videoWrapper iframe{
+  position:absolute;                                   /* JS sets w/h/left/top in px */
+}
