@@ -547,7 +547,7 @@
     const ytLetterbox = (() => {
       const CFG = {
         pad:  80,          // superficial black bar YT renders inside the iframe (px / side)
-        crop: 15,          // how much of that bar we clip away (px / side, symmetric)
+        crop: 80,          // how much of that bar we clip away (px / side, symmetric)
         aspect: 16 / 9,    // assumed AR, refined via oEmbed when possible
         detectAspect: true,
       };
