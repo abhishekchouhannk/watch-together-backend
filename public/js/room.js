@@ -580,14 +580,23 @@
         container's overflow:hidden clips `pad − visibleBar` = crop per side. */
       function place(W, H) {
         const vb = visibleBar();
-        const Vw = Math.min(W, Math.max(50, H - 2 * vb) * CFG.aspect); // width- or height-limited
+        const Vw = Math.min(W, Math.max(50, H - 2 * vb) * CFG.aspect);
         const Vh = Vw / CFG.aspect;
         const Iw = Math.round(Vw);
-        const Ih = Math.round(Vh + 2 * CFG.pad);
+
+        // Guarantee at least `crop` px of real overflow on top AND bottom,
+        // regardless of how tall the container is. This is the actual fix —
+        // Ih must exceed H by 2*crop, not just be >= H.
+        const Ih = Math.max(
+          Math.round(Vh + 2 * CFG.pad),
+          H + 2 * CFG.crop
+        );
+
+
         iframe.style.width  = Iw + "px";
         iframe.style.height = Ih + "px";
-        iframe.style.left   = Math.round((W - Iw) / 2) + "px";  // pillarbox = plain container bg
-        iframe.style.top    = Math.round((H - Ih) / 2) + "px";  // negative ⇒ symmetric crop
+        iframe.style.left   = Math.round((W - Iw) / 2) + "px";
+        iframe.style.top    = Math.round((H - Ih) / 2) + "px";
       }
       async function detectAspect(videoId) {
         if (!CFG.detectAspect) return;
