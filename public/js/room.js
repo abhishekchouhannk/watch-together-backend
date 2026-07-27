@@ -533,102 +533,190 @@
 
   /* ══════════════════════════════════
    YT LETTERBOX/CROP — frontend only
-   ══════════════════════════════════
-   Oversizes the YouTube iframe vertically so branding overlays render on
-   its internal black bars, then clips part of those bars symmetrically.
-   Geometry per side:   [ cropped (CFG.crop) | visible bar | VIDEO | visible bar | cropped ]
-   visible bar = CFG.pad − CFG.crop
-   Tuning guide:
-   • The title/watch-later/share chrome sits in ~the top 55px of the iframe.
-     To keep the title readable:  crop ≤ ~15px  and  pad − crop ≥ ~50px.
-   • A larger pad pushes the paused "More videos" shelf further off the video.
-   • crop also removes the bottom-edge YT logo region — be aware that hiding
-     attribution entirely can conflict with YT API ToS; keep crop modest.   */
-    const ytLetterbox = (() => {
-      const CFG = {
-        pad:  80,          // superficial black bar YT renders inside the iframe (px / side)
-        crop: 80,          // how much of that bar we clip away (px / side, symmetric)
-        aspect: 16 / 9,    // assumed AR, refined via oEmbed when possible
-        detectAspect: true,
-      };
-      const DEFAULT_AR = CFG.aspect;
-      const desktopMQ = window.matchMedia("(min-width:769px)");
-      let container = null, iframe = null, ro = null, raf = 0;
-      const visibleBar = () => Math.max(0, CFG.pad - CFG.crop);
-      const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); };
-      function layout() {
-        if (!container || !iframe) return;
-        /* Desktop & (pseudo-)fullscreen: container height is dictated by the
-          flex layout / viewport — we must NOT touch it, only overflow inside it.
-          Mobile: container height is derived from its width (video + bars).   */
-        const fixedH = desktopMQ.matches ||
-                      container.classList.contains("pseudo-fs") ||
-                      !!document.fullscreenElement;
-        if (fixedH) {
-          if (container.style.height) container.style.height = "";
-          place(container.clientWidth, container.clientHeight);
-        } else {
-          const W = container.clientWidth;
-          const H = Math.round(W / CFG.aspect + 2 * visibleBar());
-          if (container.style.height !== H + "px") container.style.height = H + "px";
-          document.documentElement.style.setProperty("--yt-extra", Math.round(2 * visibleBar()) + "px");
-          place(W, H);
-        }
+   ══════════════════════════════════ */
+  const ytLetterbox = (() => {
+    const CFG = {
+      pad: 80,           // superficial black bar YT renders inside the iframe (px / side)
+      crop: 80,          // clip amount per side (= pad → video fills the viewport exactly)
+      captionCrop: 12,   // relaxed clip while captions are ON (reveals the caption strip)
+      aspect: 16 / 9,
+    };
+    const DEFAULT_AR = CFG.aspect;
+    const desktopMQ = window.matchMedia("(min-width:769px)");
+    let container = null, iframe = null, ro = null, raf = 0, captionMode = false;
+    const effCrop    = () => (captionMode ? Math.min(CFG.captionCrop, CFG.crop) : CFG.crop);
+    const visibleBar = () => Math.max(0, CFG.pad - effCrop());
+    const schedule   = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); };
+    function layout() {
+      if (!container || !iframe) return;
+      const fixedH = desktopMQ.matches ||
+                    container.classList.contains("pseudo-fs") ||
+                    !!document.fullscreenElement;
+      if (fixedH) {
+        if (container.style.height) container.style.height = "";
+        place(container.clientWidth, container.clientHeight);
+      } else {
+        const W = container.clientWidth;
+        const H = Math.round(W / CFG.aspect + 2 * visibleBar());
+        if (container.style.height !== H + "px") container.style.height = H + "px";
+        document.documentElement.style.setProperty("--yt-extra", Math.round(2 * visibleBar()) + "px");
+        place(W, H);
       }
-      /* Fit the video inside viewport W×H leaving `visibleBar` px top+bottom,
-        then oversize the iframe by `pad` per side and center it — the
-        container's overflow:hidden clips `pad − visibleBar` = crop per side. */
-      function place(W, H) {
-        const vb = visibleBar();
-        const Vw = Math.min(W, Math.max(50, H - 2 * vb) * CFG.aspect);
-        const Vh = Vw / CFG.aspect;
-        const Iw = Math.round(Vw);
+    }
+    function place(W, H) {
+      const vb = visibleBar(), ec = effCrop();
+      const Vw = Math.min(W, Math.max(50, H - 2 * vb) * CFG.aspect);
+      const Vh = Vw / CFG.aspect;
+      const Iw = Math.round(Vw);
+      /* Guarantee at least `ec` px of REAL overflow top AND bottom, even when
+        the container is tall enough to swallow the whole padded iframe —
+        otherwise branding at the iframe edges stays in view. (your fix)   */
+      const Ih = Math.max(Math.round(Vh + 2 * CFG.pad), H + 2 * ec);
+      iframe.style.width  = Iw + "px";
+      iframe.style.height = Ih + "px";
+      iframe.style.left   = Math.round((W - Iw) / 2) + "px";
+      iframe.style.top    = Math.round((H - Ih) / 2) + "px";
+    }
+    function setAspect(ar)      { if (ar > 0 && container) { CFG.aspect = ar; schedule(); } }
+    function setCaptionMode(on) { captionMode = !!on; schedule(); }
+    function attach(containerEl, iframeEl) {
+      detach();
+      container = containerEl; iframe = iframeEl;
+      container.classList.add("yt-boxed");
+      ro = new ResizeObserver(schedule);
+      ro.observe(container);
+      desktopMQ.addEventListener("change", schedule);
+      document.addEventListener("fullscreenchange", schedule);
+      layout();
+    }
+    function detach() {
+      if (ro) { ro.disconnect(); ro = null; }
+      desktopMQ.removeEventListener("change", schedule);
+      document.removeEventListener("fullscreenchange", schedule);
+      if (container) { container.classList.remove("yt-boxed"); container.style.height = ""; }
+      if (iframe) iframe.style.cssText = "";
+      document.documentElement.style.setProperty("--yt-extra", "0px");
+      container = iframe = null;
+      captionMode = false;
+      CFG.aspect = DEFAULT_AR;
+    }
+    return { attach, detach, setAspect, setCaptionMode, CFG };
+  })();
 
-        // Guarantee at least `crop` px of real overflow on top AND bottom,
-        // regardless of how tall the container is. This is the actual fix —
-        // Ih must exceed H by 2*crop, not just be >= H.
-        const Ih = Math.max(
-          Math.round(Vh + 2 * CFG.pad),
-          H + 2 * CFG.crop
-        );
+  /* ═══════ YT METADATA (oEmbed: title, author, thumb, aspect) ═══════ */
+async function fetchYTMeta(videoId) {
+  const fallbackThumb = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+  try {
+    const r = await fetch("https://www.youtube.com/oembed?format=json&url=" +
+      encodeURIComponent("https://www.youtube.com/watch?v=" + videoId));
+    const d = await r.json();
+    return {
+      title:  d.title || "",
+      author: d.author_name || "",
+      thumb:  d.thumbnail_url || fallbackThumb,
+      aspect: (d.width && d.height) ? d.width / d.height : null,
+    };
+  } catch (_) {
+    return { title: "", author: "", thumb: fallbackThumb, aspect: null };
+  }
+}
+async function showVideoInfo(ytId) {
+  const meta = await fetchYTMeta(ytId);
+  if (meta.aspect) ytLetterbox.setAspect(meta.aspect);       // replaces old auto-detect
+  $("viThumb").src = meta.thumb;
+  $("viTitle").textContent  = meta.title  || "YouTube video";
+  $("viAuthor").textContent = meta.author || "";
+  $("viBar").style.display = "";
+  flashInfoBar(4000);
+}
+function flashInfoBar(ms = 3000) {
+  const bar = $("viBar");
+  if (!bar || bar.style.display === "none") return;
+  bar.classList.add("show");
+  clearTimeout(flashInfoBar._t);
+  flashInfoBar._t = setTimeout(() => bar.classList.remove("show"), ms);
+}
+/* ═══════ SETTINGS MENU — captions + quality (YouTube only) ═══════ */
+const settingsUI = (() => {
+  const QL = { highres:"4320p+", hd2160:"2160p", hd1440:"1440p", hd1080:"1080p",
+               hd720:"720p", large:"480p", medium:"360p", small:"240p", tiny:"144p", auto:"Auto" };
+  let open = false, curCaption = "", curQuality = "auto", ccMod = "captions";
+  /* some player builds expose 'captions', older ones 'cc' — probe both */
+  function tracklist() {
+    for (const m of ["captions", "cc"]) {
+      try {
+        const t = P.yt.getOption(m, "tracklist");
+        if (t && t.length) { ccMod = m; return t; }
+      } catch (_) {}
+    }
+    return [];
+  }
+  function toggle() { open ? close() : openMenu(); }
+  function openMenu() {
+    if (P.type !== "youtube" || !P.ready) return;
+    build();
+    $("vcMenu").classList.add("open");
+    $("settingsBtn").setAttribute("aria-expanded", "true");
+    open = true;
+    setTimeout(() => document.addEventListener("click", onDocClick), 0);
+  }
+  function close() {
+    $("vcMenu").classList.remove("open");
+    $("settingsBtn").setAttribute("aria-expanded", "false");
+    open = false;
+    document.removeEventListener("click", onDocClick);
+  }
+  function onDocClick(e) {
+    if (!$("vcMenu").contains(e.target) && !$("settingsBtn").contains(e.target)) close();
+  }
+  function build() {
+    const tracks = tracklist();
+    let lvls = [];
+    try { lvls = P.yt.getAvailableQualityLevels() || []; } catch (_) {}
+    if (!lvls.includes("auto")) lvls.push("auto");
+    const sec  = (t, inner) => '<div class="vcm-sec"><div class="vcm-title">' + t + "</div>" + inner + "</div>";
+    const item = (k, v, label, on) =>
+      '<button type="button" class="vcm-item' + (on ? " on" : "") + '" data-kind="' + k + '" data-val="' + v + '">' +
+      '<span class="vcm-check">' + (on ? "✓" : "") + "</span>" + label + "</button>";
+    $("vcMenu").innerHTML =
+      sec("Captions",
+        item("cc", "", "Off", curCaption === "") +
+        tracks.map(t => item("cc", t.languageCode,
+          t.displayName || t.languageName || t.languageCode, curCaption === t.languageCode)).join("")) +
+      sec("Quality",
+        lvls.map(l => item("q", l, QL[l] || l, curQuality === l)).join(""));
+    $("vcMenu").querySelectorAll("[data-kind]").forEach(btn => {
+      btn.onclick = (e) => { e.stopPropagation(); pick(btn.dataset.kind, btn.dataset.val); };
+    });
+  }
+  function pick(kind, val) {
+    if (kind === "cc") {
+      curCaption = val;
+      try {
+        if (val) { P.yt.loadModule(ccMod); P.yt.setOption(ccMod, "track", { languageCode: val }); }
+        else     { P.yt.setOption(ccMod, "track", {}); }   // keep module loaded → tracklist survives
+      } catch (_) {}
+      ytLetterbox.setCaptionMode(!!val);                   // reveal / hide the caption strip
+    } else {
+      curQuality = val;
+      try { P.yt.setPlaybackQuality(val); } catch (_) {}   // suggestion only — YT may override
+    }
+    build();                                               // refresh checkmarks
+  }
+  /* call when a YT player becomes ready: primes the captions module so the
+     tracklist populates, then immediately deselects so captions start OFF  */
+  function onYTReady() {
+    curCaption = ""; curQuality = "auto";
+    try {
+      P.yt.loadModule("captions");
+      setTimeout(() => { try { P.yt.setOption(ccMod, "track", {}); } catch (_) {} }, 400);
+    } catch (_) {}
+    $("settingsBtn").style.display = "";
+  }
+  function reset() { close(); $("settingsBtn").style.display = "none"; curCaption = ""; curQuality = "auto"; }
+    return { toggle, onYTReady, reset, close };
+  })();
 
-        iframe.style.width  = Iw + "px";
-        iframe.style.height = Ih + "px";
-        iframe.style.left   = Math.round((W - Iw) / 2) + "px";
-        iframe.style.top    = Math.round((H - Ih) / 2) + "px";
-      }
-      async function detectAspect(videoId) {
-        if (!CFG.detectAspect) return;
-        try {
-          const r = await fetch("https://www.youtube.com/oembed?format=json&url=" +
-            encodeURIComponent("https://www.youtube.com/watch?v=" + videoId));
-          const d = await r.json();
-          if (d.width && d.height) { CFG.aspect = d.width / d.height; schedule(); }
-        } catch (_) { /* keep default 16:9 (swap in noembed.com if CORS bites) */ }
-      }
-      function attach(containerEl, iframeEl, videoId) {
-        detach();
-        container = containerEl; iframe = iframeEl;
-        container.classList.add("yt-boxed");
-        ro = new ResizeObserver(schedule);                 // catches window resize,
-        ro.observe(container);                             // flex reflows, fullscreen…
-        desktopMQ.addEventListener("change", schedule);
-        document.addEventListener("fullscreenchange", schedule);
-        if (videoId) detectAspect(videoId);
-        layout();
-      }
-      function detach() {
-        if (ro) { ro.disconnect(); ro = null; }
-        desktopMQ.removeEventListener("change", schedule);
-        document.removeEventListener("fullscreenchange", schedule);
-        if (container) { container.classList.remove("yt-boxed"); container.style.height = ""; }
-        if (iframe) iframe.style.cssText = "";
-        document.documentElement.style.setProperty("--yt-extra", "0px");
-        container = iframe = null;
-        CFG.aspect = DEFAULT_AR;
-      }
-      return { attach, detach, CFG };
-    })();
   /* ══════════════════════════════════
      VIDEO — load / controls / sync
      ══════════════════════════════════ */
@@ -637,6 +725,8 @@
     if (!fromRemote && !S.perms.canChangeVideo) { toast("Only the host can change the video", "error"); return; }
     P.destroy();
     ytLetterbox.detach();
+    settingsUI.reset();
+    $("viBar").style.display = "none";  // (direct videos get no YT info bar)
     if (dom.fxLayer) dom.fxLayer.innerHTML = "";
     const ytId = extractYT(url);
     if (ytId) {
@@ -654,6 +744,7 @@
         ' allow="autoplay; encrypted-media; picture-in-picture"' +
         ' src="https://www.youtube.com/embed/' + ytId + '?' + qs + '"></iframe>';
       ytLetterbox.attach($("videoContainer"), $("ytPlayerDiv"), ytId);
+      showVideoInfo(ytId);
       P.yt = new YT.Player("ytPlayerDiv", {
         events: { onReady: onPlayerReady, onStateChange: onYTState },
       });
@@ -675,6 +766,7 @@
 
   /* Called once when the player is ready to accept commands */
   function onPlayerReady() {
+    if (P.type === "youtube") settingsUI.onYTReady();
     P.ready = true;
     if (!needsSync) return;
     needsSync = false;
@@ -689,6 +781,7 @@
   }
   /* YouTube state-change → emit play / pause */
   function onYTState(e) {
+    if (e.data === 2) flashInfoBar();                   // show title card on pause
     if (P.isRemote()) return;
     if (e.data !== 1 && e.data !== 2) return;
     if (!S.perms.canSync) return revertToRoomState();        // defensive (chrome is off)
@@ -740,6 +833,7 @@
     });
     fillSlider(volBar, 100, 100);
     $("fsBtn").onclick = toggleFullscreen;
+    $("settingsBtn").onclick = (e) => { e.stopPropagation(); settingsUI.toggle(); };
     /* keyboard */
     document.addEventListener("keydown", (e) => {
       const t = e.target;
