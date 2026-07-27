@@ -592,7 +592,6 @@
           H + 2 * CFG.crop
         );
 
-
         iframe.style.width  = Iw + "px";
         iframe.style.height = Ih + "px";
         iframe.style.left   = Math.round((W - Iw) / 2) + "px";
