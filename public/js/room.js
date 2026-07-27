@@ -535,72 +535,62 @@
    YT LETTERBOX/CROP — frontend only
    ══════════════════════════════════ */
   const ytLetterbox = (() => {
-    const CFG = {
-      pad: 80,           // superficial black bar YT renders inside the iframe (px / side)
-      crop: 80,          // clip amount per side (= pad → video fills the viewport exactly)
-      captionCrop: 12,   // relaxed clip while captions are ON (reveals the caption strip)
-      aspect: 16 / 9,
-    };
-    const DEFAULT_AR = CFG.aspect;
-    const desktopMQ = window.matchMedia("(min-width:769px)");
-    let container = null, iframe = null, ro = null, raf = 0, captionMode = false;
-    const effCrop    = () => (captionMode ? Math.min(CFG.captionCrop, CFG.crop) : CFG.crop);
-    const visibleBar = () => Math.max(0, CFG.pad - effCrop());
-    const schedule   = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); };
-    function layout() {
-      if (!container || !iframe) return;
-      const fixedH = desktopMQ.matches ||
-                    container.classList.contains("pseudo-fs") ||
-                    !!document.fullscreenElement;
-      if (fixedH) {
-        if (container.style.height) container.style.height = "";
-        place(container.clientWidth, container.clientHeight);
-      } else {
-        const W = container.clientWidth;
-        const H = Math.round(W / CFG.aspect + 2 * visibleBar());
-        if (container.style.height !== H + "px") container.style.height = H + "px";
-        document.documentElement.style.setProperty("--yt-extra", Math.round(2 * visibleBar()) + "px");
-        place(W, H);
-      }
+  const CFG = { pad: 80, crop: 80, aspect: 16 / 9 };
+  const DEFAULT_AR = CFG.aspect;
+  const desktopMQ = window.matchMedia("(min-width:769px)");
+  let container = null, iframe = null, ro = null, raf = 0;
+  const visibleBar = () => Math.max(0, CFG.pad - CFG.crop);
+  const schedule   = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); };
+  function layout() {
+    if (!container || !iframe) return;
+    const fixedH = desktopMQ.matches ||
+                   container.classList.contains("pseudo-fs") ||
+                   !!document.fullscreenElement;
+    if (fixedH) {
+      if (container.style.height) container.style.height = "";
+      place(container.clientWidth, container.clientHeight);
+    } else {
+      const W = container.clientWidth;
+      const H = Math.round(W / CFG.aspect + 2 * visibleBar());
+      if (container.style.height !== H + "px") container.style.height = H + "px";
+      document.documentElement.style.setProperty("--yt-extra", Math.round(2 * visibleBar()) + "px");
+      place(W, H);
     }
-    function place(W, H) {
-      const vb = visibleBar(), ec = effCrop();
-      const Vw = Math.min(W, Math.max(50, H - 2 * vb) * CFG.aspect);
-      const Vh = Vw / CFG.aspect;
-      const Iw = Math.round(Vw);
-      /* Guarantee at least `ec` px of REAL overflow top AND bottom, even when
-        the container is tall enough to swallow the whole padded iframe —
-        otherwise branding at the iframe edges stays in view. (your fix)   */
-      const Ih = Math.max(Math.round(Vh + 2 * CFG.pad), H + 2 * ec);
-      iframe.style.width  = Iw + "px";
-      iframe.style.height = Ih + "px";
-      iframe.style.left   = Math.round((W - Iw) / 2) + "px";
-      iframe.style.top    = Math.round((H - Ih) / 2) + "px";
-    }
-    function setAspect(ar)      { if (ar > 0 && container) { CFG.aspect = ar; schedule(); } }
-    function setCaptionMode(on) { captionMode = !!on; schedule(); }
-    function attach(containerEl, iframeEl) {
-      detach();
-      container = containerEl; iframe = iframeEl;
-      container.classList.add("yt-boxed");
-      ro = new ResizeObserver(schedule);
-      ro.observe(container);
-      desktopMQ.addEventListener("change", schedule);
-      document.addEventListener("fullscreenchange", schedule);
-      layout();
-    }
-    function detach() {
-      if (ro) { ro.disconnect(); ro = null; }
-      desktopMQ.removeEventListener("change", schedule);
-      document.removeEventListener("fullscreenchange", schedule);
-      if (container) { container.classList.remove("yt-boxed"); container.style.height = ""; }
-      if (iframe) iframe.style.cssText = "";
-      document.documentElement.style.setProperty("--yt-extra", "0px");
-      container = iframe = null;
-      captionMode = false;
-      CFG.aspect = DEFAULT_AR;
-    }
-    return { attach, detach, setAspect, setCaptionMode, CFG };
+  }
+  function place(W, H) {
+    const vb = visibleBar();
+    const Vw = Math.min(W, Math.max(50, H - 2 * vb) * CFG.aspect);
+    const Vh = Vw / CFG.aspect;
+    const Iw = Math.round(Vw);
+    /* guarantee ≥ crop px of real overflow per side even in tall containers */
+    const Ih = Math.max(Math.round(Vh + 2 * CFG.pad), H + 2 * CFG.crop);
+    iframe.style.width  = Iw + "px";
+    iframe.style.height = Ih + "px";
+    iframe.style.left   = Math.round((W - Iw) / 2) + "px";
+    iframe.style.top    = Math.round((H - Ih) / 2) + "px";
+  }
+  function setAspect(ar) { if (ar > 0 && container) { CFG.aspect = ar; schedule(); } }
+  function attach(containerEl, iframeEl) {
+    detach();
+    container = containerEl; iframe = iframeEl;
+    container.classList.add("yt-boxed");
+    ro = new ResizeObserver(schedule);
+    ro.observe(container);
+    desktopMQ.addEventListener("change", schedule);
+    document.addEventListener("fullscreenchange", schedule);
+    layout();
+  }
+  function detach() {
+    if (ro) { ro.disconnect(); ro = null; }
+    desktopMQ.removeEventListener("change", schedule);
+    document.removeEventListener("fullscreenchange", schedule);
+    if (container) { container.classList.remove("yt-boxed"); container.style.height = ""; }
+    if (iframe) iframe.style.cssText = "";
+    document.documentElement.style.setProperty("--yt-extra", "0px");
+    container = iframe = null;
+    CFG.aspect = DEFAULT_AR;
+  }
+    return { attach, detach, setAspect, CFG };
   })();
 
   /* ═══════ YT METADATA (oEmbed: title, author, thumb, aspect) ═══════ */
@@ -613,6 +603,7 @@ async function fetchYTMeta(videoId) {
     return {
       title:  d.title || "",
       author: d.author_name || "",
+      authorUrl: d.author_url || "",
       thumb:  d.thumbnail_url || fallbackThumb,
       aspect: (d.width && d.height) ? d.width / d.height : null,
     };
@@ -623,11 +614,25 @@ async function fetchYTMeta(videoId) {
 async function showVideoInfo(ytId) {
   const meta = await fetchYTMeta(ytId);
   if (meta.aspect) ytLetterbox.setAspect(meta.aspect);       // replaces old auto-detect
-  $("viThumb").src = meta.thumb;
+  setChannelAvatar(meta.author, meta.authorUrl);
   $("viTitle").textContent  = meta.title  || "YouTube video";
   $("viAuthor").textContent = meta.author || "";
   $("viBar").style.display = "";
   flashInfoBar(4000);
+}
+function setChannelAvatar(author, authorUrl) {
+  const img = $("viThumb"), av = $("viAv");
+  const fallback = () => {
+    img.style.display = "none";
+    av.style.display = "";
+    av.textContent = (author || "?").trim().charAt(0).toUpperCase();
+  };
+  av.style.display = "none";
+  img.style.display = "";
+  const m = (authorUrl || "").match(/youtube\.com\/(@[\w.\-]+)/);
+  if (!m) return fallback();
+  img.onerror = fallback;
+  img.src = "https://unavatar.io/youtube/" + encodeURIComponent(m[1]) + "?fallback=false";
 }
 function flashInfoBar(ms = 3000) {
   const bar = $("viBar");
@@ -636,20 +641,20 @@ function flashInfoBar(ms = 3000) {
   clearTimeout(flashInfoBar._t);
   flashInfoBar._t = setTimeout(() => bar.classList.remove("show"), ms);
 }
-/* ═══════ SETTINGS MENU — captions + quality (YouTube only) ═══════ */
+
+/* ═══════ SETTINGS MENU — informative only (YouTube) ═══════ */
 const settingsUI = (() => {
   const QL = { highres:"4320p+", hd2160:"2160p", hd1440:"1440p", hd1080:"1080p",
-               hd720:"720p", large:"480p", medium:"360p", small:"240p", tiny:"144p", auto:"Auto" };
-  let open = false, curCaption = "", curQuality = "auto", ccMod = "captions";
-  /* some player builds expose 'captions', older ones 'cc' — probe both */
-  function tracklist() {
-    for (const m of ["captions", "cc"]) {
-      try {
-        const t = P.yt.getOption(m, "tracklist");
-        if (t && t.length) { ccMod = m; return t; }
-      } catch (_) {}
-    }
-    return [];
+               hd720:"720p", large:"480p", medium:"360p", small:"240p",
+               tiny:"144p", auto:"Auto", unknown:"—" };
+  let open = false, tick = null;
+  function build() {
+    let q = "unknown";
+    try { q = P.yt.getPlaybackQuality() || "unknown"; } catch (_) {}
+    $("vcMenu").innerHTML =
+      '<div class="vcm-sec"><div class="vcm-title">Playback</div>' +
+      '<div class="vcm-row"><span>Quality</span><span class="vcm-val">' +
+      (QL[q] || q) + "</span></div></div>";
   }
   function toggle() { open ? close() : openMenu(); }
   function openMenu() {
@@ -658,9 +663,11 @@ const settingsUI = (() => {
     $("vcMenu").classList.add("open");
     $("settingsBtn").setAttribute("aria-expanded", "true");
     open = true;
+    tick = setInterval(build, 1000);                  // live-update while open
     setTimeout(() => document.addEventListener("click", onDocClick), 0);
   }
   function close() {
+    clearInterval(tick); tick = null;
     $("vcMenu").classList.remove("open");
     $("settingsBtn").setAttribute("aria-expanded", "false");
     open = false;
@@ -669,53 +676,10 @@ const settingsUI = (() => {
   function onDocClick(e) {
     if (!$("vcMenu").contains(e.target) && !$("settingsBtn").contains(e.target)) close();
   }
-  function build() {
-    const tracks = tracklist();
-    let lvls = [];
-    try { lvls = P.yt.getAvailableQualityLevels() || []; } catch (_) {}
-    if (!lvls.includes("auto")) lvls.push("auto");
-    const sec  = (t, inner) => '<div class="vcm-sec"><div class="vcm-title">' + t + "</div>" + inner + "</div>";
-    const item = (k, v, label, on) =>
-      '<button type="button" class="vcm-item' + (on ? " on" : "") + '" data-kind="' + k + '" data-val="' + v + '">' +
-      '<span class="vcm-check">' + (on ? "✓" : "") + "</span>" + label + "</button>";
-    $("vcMenu").innerHTML =
-      sec("Captions",
-        item("cc", "", "Off", curCaption === "") +
-        tracks.map(t => item("cc", t.languageCode,
-          t.displayName || t.languageName || t.languageCode, curCaption === t.languageCode)).join("")) +
-      sec("Quality",
-        lvls.map(l => item("q", l, QL[l] || l, curQuality === l)).join(""));
-    $("vcMenu").querySelectorAll("[data-kind]").forEach(btn => {
-      btn.onclick = (e) => { e.stopPropagation(); pick(btn.dataset.kind, btn.dataset.val); };
-    });
-  }
-  function pick(kind, val) {
-    if (kind === "cc") {
-      curCaption = val;
-      try {
-        if (val) { P.yt.loadModule(ccMod); P.yt.setOption(ccMod, "track", { languageCode: val }); }
-        else     { P.yt.setOption(ccMod, "track", {}); }   // keep module loaded → tracklist survives
-      } catch (_) {}
-      ytLetterbox.setCaptionMode(!!val);                   // reveal / hide the caption strip
-    } else {
-      curQuality = val;
-      try { P.yt.setPlaybackQuality(val); } catch (_) {}   // suggestion only — YT may override
-    }
-    build();                                               // refresh checkmarks
-  }
-  /* call when a YT player becomes ready: primes the captions module so the
-     tracklist populates, then immediately deselects so captions start OFF  */
-  function onYTReady() {
-    curCaption = ""; curQuality = "auto";
-    try {
-      P.yt.loadModule("captions");
-      setTimeout(() => { try { P.yt.setOption(ccMod, "track", {}); } catch (_) {} }, 400);
-    } catch (_) {}
-    $("settingsBtn").style.display = "";
-  }
-  function reset() { close(); $("settingsBtn").style.display = "none"; curCaption = ""; curQuality = "auto"; }
-    return { toggle, onYTReady, reset, close };
-  })();
+  function onYTReady() { $("settingsBtn").style.display = ""; }
+  function reset()     { close(); $("settingsBtn").style.display = "none"; }
+  return { toggle, onYTReady, reset, close };
+})();
 
   /* ══════════════════════════════════
      VIDEO — load / controls / sync

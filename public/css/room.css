@@ -336,7 +336,8 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   .vc-time{ min-width:0; text-align:left; }  /* remove the centering padding causing the gap */
   /* push volume + fullscreen hard right */
   .vol-wrap{ margin-left:auto; order:3 }
-  #fsBtn{ order:4 }
+  #settingsBtn {order: 4}
+  #fsBtn{ order:5 }
   /* mobile: no hover slider — just the mute/unmute toggle */
   .vc-volume{ display:none; }
 }
@@ -952,7 +953,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 }
 .video-container:hover .vi-bar,.vi-bar.show{opacity:1}
 .vi-thumb{
-  width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;
+  width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;
   box-shadow:0 2px 8px rgba(0,0,0,.4);
 }
 .vi-meta{min-width:0;display:flex;flex-direction:column;gap:.1rem}
@@ -993,3 +994,16 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .vcm-item:hover{background:rgba(255,255,255,.12)}
 .vcm-item.on{color:#fff;font-weight:600}
 .vcm-check{width:1em;flex-shrink:0}
+
+.vcm-row{
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  padding:.4rem .6rem;font-size:.82rem;color:#eee;
+}
+.vcm-val{color:rgba(255,255,255,.7);font-variant-numeric:tabular-nums}
+.vi-av{
+  width:44px;height:44px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.1rem;font-weight:700;color:#fff;
+  background:var(--acc,#555);box-shadow:0 2px 8px rgba(0,0,0,.4);
+}
+@media(max-width:768px){ .vi-av{width:34px;height:34px;font-size:.9rem} }
