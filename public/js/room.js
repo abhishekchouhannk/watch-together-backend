@@ -299,12 +299,8 @@
     dom.chatMsgs.addEventListener("scroll", onChatScroll);
     dom.container.addEventListener("touchstart", () => {
       dom.controls.classList.add("show");
-      $("vcCenter").classList.add("show");
       clearTimeout(dom.controls._t);
-      dom.controls._t = setTimeout(() => {
-        dom.controls.classList.remove("show");
-        $("vcCenter").classList.remove("show");
-      }, 3000);
+      dom.controls._t = setTimeout(() => dom.controls.classList.remove("show"), 3000);
     });
     /* collapsible room details — click anywhere on the card toggles */
     dom.details.addEventListener("click", toggleDetails);
@@ -1084,7 +1080,7 @@
     }
     $("durTime").textContent = fmtTime(d);
     $("playBtn").innerHTML = P.paused() ? playSVG : pauseSVG;
-    // $("cPlayBtn").innerHTML = P.paused() ? bigPlay : bigPause;
+    $("cPlayBtn").innerHTML = P.paused() ? bigPlay : bigPause;
     Q.tick(t, d);
   }
   function wirePlayerControls() {
@@ -1116,7 +1112,7 @@
     });
     fillSlider(volBar, 100, 100);
     $("fsBtn").onclick = toggleFullscreen;
-    // $("cPlayBtn").onclick = () => { if (guardSync()) P.toggle(); };
+    $("cPlayBtn").onclick = () => { if (guardSync()) P.toggle(); };
     $("settingsBtn").onclick = (e) => { e.stopPropagation(); settingsUI.toggle(); };
     /* keyboard */
     document.addEventListener("keydown", (e) => {
