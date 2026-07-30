@@ -452,6 +452,18 @@
       if (userId && S.userId && userId.toString() === S.userId) return; // already rendered locally
       spawnReaction(emoji, username);
     });
+
+    // user opens another instance (with the same account, in other browser or another device etc.)
+    socket.on("session-replaced", () => {
+      toast(
+        "This room has been opened in another tab. This tab will disconnect.",
+        "error"
+      );
+
+      setTimeout(() => {
+        window.location.href = "/dashboard";
+      }, 1500);
+    });
   }
   function leaveRoom() {
     if (socket) socket.emit("leave-room");

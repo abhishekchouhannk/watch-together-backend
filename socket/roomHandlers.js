@@ -11,6 +11,12 @@ const {
 const recentKicks = new Map();                       // "roomId:userId" → expiry ms
 const KICK_COOLDOWN = 10000;
 
+// roomId:userId -> socket
+// Only one socket allowed per user per room.
+const activeRoomConnections = new Map();
+
+const roomUserKey = (roomId, userId) => `${roomId}:${userId}`;
+
 function serializeRoom(room) {
   const v = room.video || {};
   let currentTime = v.currentTime || 0;
@@ -88,19 +94,30 @@ async function handleLeave(io, socket) {
   const roomId = socket.data.roomId;
   const user = socket.data.user;
   if (!roomId || !user) return;
-  const socketsInRoom = await io.in(roomId).fetchSockets();
-  const stillConnectedElsewhere = socketsInRoom.some(
-    (s) => s.id !== socket.id && s.data.user && s.data.user.id === user.id,
-  );
+
+  // prevent double cleanup
+  if (socket.data.cleanedUp) return;
+  socket.data.cleanedUp = true;
+
+  unregisterActiveSocket(roomId, user.id, socket);
+
   socket.leave(roomId);
   socket.data.roomId = null;
-  if (stillConnectedElsewhere) return;
+
+  // Session replacement is NOT a real leave.
+  if (socket.data.sessionReplaced) {
+    return;
+  }
+
   const room = await Room.findOne({ roomId });
   if (!room) return;
+
   // NOTE: we prune `participants` (presence) but NEVER `members` (permissions persist)
   room.participants = room.participants.filter((p) => !(p.userId && p.userId.toString() === user.id));
+
   if (room.participants.length === 0 && room.status === "active") room.status = "idle";
   await room.save();
+
   io.to(roomId).emit("participants-update", {
     participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
     count: room.participants.length,
@@ -139,6 +156,22 @@ const presencePayload = (room) => ({
   participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
   count: room.participants.length,
 });
+
+function getActiveSocket(roomId, userId) {
+  return activeRoomConnections.get(roomUserKey(roomId, userId));
+}
+
+function registerActiveSocket(roomId, userId, socket) {
+  activeRoomConnections.set(roomUserKey(roomId, userId), socket);
+}
+
+function unregisterActiveSocket(roomId, userId, socket) {
+  const key = roomUserKey(roomId, userId);
+  if (activeRoomConnections.get(key) === socket) {
+    activeRoomConnections.delete(key);
+  }
+}
+
 module.exports = function registerRoomHandlers(io, socket) {
   const user = socket.data.user;
   socket.on("join-room", async ({ roomId }) => {
@@ -159,6 +192,23 @@ module.exports = function registerRoomHandlers(io, socket) {
           code: "kicked", fatal: true,
         });
       }
+
+      const existingSocket = getActiveSocket(roomId, user.id);
+
+      if (existingSocket && existingSocket !== socket) {
+        existingSocket.data.sessionReplaced = true;
+
+        existingSocket.emit("session-replaced", {
+          roomId,
+        });
+
+        try {
+          existingSocket.disconnect(true);
+        } catch (_) {}
+      }
+
+      registerActiveSocket(roomId, user.id, socket);
+
       socket.join(roomId);
       socket.data.roomId = roomId;
       const alreadyIn = room.participants.some((p) => p.userId && p.userId.toString() === user.id);
