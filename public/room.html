@@ -250,16 +250,41 @@
               </div>
             </div>
 
+            <!-- ===== UP NEXT CARD (T-10s) ===== -->
+            <div class="upnext" id="upNext" hidden aria-live="polite">
+              <button class="un-x" id="unCancel" type="button" aria-label="Cancel">✕</button>
+              <div class="un-label">Up next in <span id="unCount">10</span></div>
+              <div class="un-row">
+                <div class="un-thumb-wrap">
+                  <img class="un-thumb" id="unThumb" alt="" />
+                  <div class="un-ring" id="unRing"></div>
+                </div>
+                <div class="un-meta">
+                  <div class="un-title" id="unTitle"></div>
+                  <div class="un-sub" id="unSub"></div>
+                </div>
+              </div>
+              <div class="un-btns">
+                <button class="un-btn" id="unCancelBtn" type="button">Cancel</button>
+                <button class="un-btn un-btn-primary" id="unNowBtn" type="button">Play now ▶</button>
+              </div>
+            </div>
+
             <!-- custom controls (hidden until a direct video loads) -->
             <div class="vc" id="videoControls">
+              <button class="vc-btn" id="prevBtn" title="Previous video" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="19 20 9 12 19 4 19 20" /><rect x="4" y="4" width="2.5" height="16" />
+                </svg>
+              </button>
               <button class="vc-btn" id="playBtn" title="Play / Pause">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <polygon points="6 3 20 12 6 21 6 3" />
+                </svg>
+              </button>
+              <button class="vc-btn" id="nextBtn" title="Next video" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 4 15 12 5 20 5 4" /><rect x="17.5" y="4" width="2.5" height="16" />
                 </svg>
               </button>
               <!-- Lock chip -->
@@ -348,48 +373,68 @@
           </div>
           <div class="player-bar" id="playerBar">
             <div class="url-bar">
-              <input
-                type="text"
-                class="url-input"
-                id="urlInput"
-                placeholder="Paste video URL (.mp4, YouTube, etc.)"
-                autocomplete="off"
-              />
+              <input type="text" class="url-input" id="urlInput"
+                    placeholder="Paste video URL (.mp4, YouTube, etc.)" autocomplete="off" />
               <button class="btn-sm" id="loadUrlBtn">Load</button>
+              <button class="btn-sm btn-ghost" id="queueUrlBtn" title="Add to queue">+ Queue</button>
             </div>
           </div>
         </div>
-        <!-- CHAT -->
+        <!-- SIDE PANEL (Chat + Queue) -->
         <div class="chat-section" id="chatSection">
-          <div class="chat-head">
-            <span class="chat-title">💬 Chat</span>
-            <span class="chat-online" id="chatOnline"></span>
-          </div>
-          <div class="chat-messages" id="chatMessages"></div>
-          <div class="chat-bar">
-            <input
-              type="text"
-              class="chat-input"
-              id="chatInput"
-              placeholder="Type a message…"
-              autocomplete="off"
-              maxlength="500"
-            />
-            <button class="send-btn" id="sendBtn" title="Send">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
+          <!-- tabs replace the old .chat-head -->
+          <div class="sp-tabs" role="tablist">
+            <button class="sp-tab active" id="tabChat" data-tab="chat" role="tab" aria-selected="true">
+              💬 Chat
             </button>
+            <button class="sp-tab" id="tabQueue" data-tab="queue" role="tab" aria-selected="false">
+              📺 Queue <span class="sp-badge" id="queueCount">0</span>
+            </button>
+            <span class="sp-online" id="chatOnline"></span>
+          </div>
+          <div class="sp-panes">
+            <!-- ── CHAT ── -->
+            <section class="sp-pane active" id="paneChat" role="tabpanel">
+              <div class="chat-messages" id="chatMessages"></div>
+              <div class="chat-bar">
+                <input type="text" class="chat-input" id="chatInput"
+                      placeholder="Type a message…" autocomplete="off" maxlength="500" />
+                <button class="send-btn" id="sendBtn" title="Send">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </button>
+              </div>
+            </section>
+            <!-- ── QUEUE ── -->
+            <section class="sp-pane" id="paneQueue" role="tabpanel">
+              <div class="q-head">
+                <span class="q-head-title">Playlist</span>
+                <label class="q-auto" title="Automatically play the next video">
+                  <input type="checkbox" id="qAutoplay" checked /><span>Autoplay</span>
+                </label>
+                <button class="q-clear" id="queueClearBtn" type="button">Clear</button>
+              </div>
+              <ol class="q-list" id="queueList"></ol>
+              <div class="q-empty" id="queueEmpty">
+                <div class="q-empty-icon">🎬</div>
+                <p class="q-empty-t">Queue is empty</p>
+                <p class="q-empty-s">Add videos and they'll play back to back</p>
+              </div>
+              <div class="q-bar" id="queueBar">
+                <input type="text" class="url-input" id="queueInput"
+                      placeholder="Paste a URL to add to queue…" autocomplete="off" />
+                <button class="btn-sm" id="queueAddBtn" type="button">Add</button>
+              </div>
+              <div class="q-lock" id="queueLock" hidden>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <span>Only the host &amp; moderators can edit the queue</span>
+              </div>
+            </section>
           </div>
         </div>
       </div>

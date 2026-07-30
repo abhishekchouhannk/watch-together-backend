@@ -65,6 +65,8 @@
     shield: $("playerShield"), vcLock: $("vcLock"),
     configBtn: $("configBtn"), gearBadge: $("gearBadge"),
     cfgSheet: $("cfgSheet"), cfgBackdrop: $("cfgBackdrop"), cfgBody: $("cfgBody"),
+    tabChat: $("tabChat"), tabQueue: $("tabQueue"),
+    paneChat: $("paneChat"), paneQueue: $("paneQueue"),
   };
   /* ═══════════════════════════════════════════
      ROOM STATE / PERMISSIONS / CONFIG
@@ -334,6 +336,8 @@
     dom.configBtn.onclick = openConfig;
     $("cfgClose").onclick = closeConfig;
     dom.cfgBackdrop.onclick = closeConfig;
+    // add the queue functionality
+    Q.wire();
   }
   /* ═══════ FETCH ME ═══════ */
   async function fetchMe() {
@@ -594,92 +598,395 @@
   })();
 
   /* ═══════ YT METADATA (oEmbed: title, author, thumb, aspect) ═══════ */
-async function fetchYTMeta(videoId) {
-  const fallbackThumb = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
-  try {
-    const r = await fetch("https://www.youtube.com/oembed?format=json&url=" +
-      encodeURIComponent("https://www.youtube.com/watch?v=" + videoId));
-    const d = await r.json();
-    return {
-      title:  d.title || "",
-      author: d.author_name || "",
-      authorUrl: d.author_url || "",
-      thumb:  d.thumbnail_url || fallbackThumb,
-      aspect: (d.width && d.height) ? d.width / d.height : null,
+  async function fetchYTMeta(videoId) {
+    const fallbackThumb = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+    try {
+      const r = await fetch("https://www.youtube.com/oembed?format=json&url=" +
+        encodeURIComponent("https://www.youtube.com/watch?v=" + videoId));
+      const d = await r.json();
+      return {
+        title:  d.title || "",
+        author: d.author_name || "",
+        authorUrl: d.author_url || "",
+        thumb:  d.thumbnail_url || fallbackThumb,
+        aspect: (d.width && d.height) ? d.width / d.height : null,
+      };
+    } catch (_) {
+      return { title: "", author: "", thumb: fallbackThumb, aspect: null };
+    }
+  }
+  async function showVideoInfo(ytId) {
+    const meta = await fetchYTMeta(ytId);
+    if (meta.aspect) ytLetterbox.setAspect(meta.aspect);       // replaces old auto-detect
+    setChannelAvatar(meta.author, meta.authorUrl);
+    $("viTitle").textContent  = meta.title  || "YouTube video";
+    $("viAuthor").textContent = meta.author || "";
+    $("viBar").style.display = "";
+    flashInfoBar(4000);
+  }
+  function setChannelAvatar(author, authorUrl) {
+    const img = $("viThumb"), av = $("viAv");
+    const fallback = () => {
+      img.style.display = "none";
+      av.style.display = "";
+      av.textContent = (author || "?").trim().charAt(0).toUpperCase();
     };
-  } catch (_) {
-    return { title: "", author: "", thumb: fallbackThumb, aspect: null };
+    av.style.display = "none";
+    img.style.display = "";
+    const m = (authorUrl || "").match(/youtube\.com\/(@[\w.\-]+)/);
+    if (!m) return fallback();
+    img.onerror = fallback;
+    img.src = "https://unavatar.io/youtube/" + encodeURIComponent(m[1]) + "?fallback=false";
   }
-}
-async function showVideoInfo(ytId) {
-  const meta = await fetchYTMeta(ytId);
-  if (meta.aspect) ytLetterbox.setAspect(meta.aspect);       // replaces old auto-detect
-  setChannelAvatar(meta.author, meta.authorUrl);
-  $("viTitle").textContent  = meta.title  || "YouTube video";
-  $("viAuthor").textContent = meta.author || "";
-  $("viBar").style.display = "";
-  flashInfoBar(4000);
-}
-function setChannelAvatar(author, authorUrl) {
-  const img = $("viThumb"), av = $("viAv");
-  const fallback = () => {
-    img.style.display = "none";
-    av.style.display = "";
-    av.textContent = (author || "?").trim().charAt(0).toUpperCase();
-  };
-  av.style.display = "none";
-  img.style.display = "";
-  const m = (authorUrl || "").match(/youtube\.com\/(@[\w.\-]+)/);
-  if (!m) return fallback();
-  img.onerror = fallback;
-  img.src = "https://unavatar.io/youtube/" + encodeURIComponent(m[1]) + "?fallback=false";
-}
-function flashInfoBar(ms = 3000) {
-  const bar = $("viBar");
-  if (!bar || bar.style.display === "none") return;
-  bar.classList.add("show");
-  clearTimeout(flashInfoBar._t);
-  flashInfoBar._t = setTimeout(() => bar.classList.remove("show"), ms);
-}
+  function flashInfoBar(ms = 3000) {
+    const bar = $("viBar");
+    if (!bar || bar.style.display === "none") return;
+    bar.classList.add("show");
+    clearTimeout(flashInfoBar._t);
+    flashInfoBar._t = setTimeout(() => bar.classList.remove("show"), ms);
+  }
 
-/* ═══════ SETTINGS MENU — informative only (YouTube) ═══════ */
-const settingsUI = (() => {
-  const QL = { highres:"4320p+", hd2160:"2160p", hd1440:"1440p", hd1080:"1080p",
-               hd720:"720p", large:"480p", medium:"360p", small:"240p",
-               tiny:"144p", auto:"Auto", unknown:"—" };
-  let open = false, tick = null;
-  function build() {
-    let q = "unknown";
-    try { q = P.yt.getPlaybackQuality() || "unknown"; } catch (_) {}
-    $("vcMenu").innerHTML =
-      '<div class="vcm-sec"><div class="vcm-title">Playback</div>' +
-      '<div class="vcm-row"><span>Quality</span><span class="vcm-val">' +
-      (QL[q] || q) + "</span></div></div>";
-  }
-  function toggle() { open ? close() : openMenu(); }
-  function openMenu() {
-    if (P.type !== "youtube" || !P.ready) return;
-    build();
-    $("vcMenu").classList.add("open");
-    $("settingsBtn").setAttribute("aria-expanded", "true");
-    open = true;
-    tick = setInterval(build, 1000);                  // live-update while open
-    setTimeout(() => document.addEventListener("click", onDocClick), 0);
-  }
-  function close() {
-    clearInterval(tick); tick = null;
-    $("vcMenu").classList.remove("open");
-    $("settingsBtn").setAttribute("aria-expanded", "false");
-    open = false;
-    document.removeEventListener("click", onDocClick);
-  }
-  function onDocClick(e) {
-    if (!$("vcMenu").contains(e.target) && !$("settingsBtn").contains(e.target)) close();
-  }
-  function onYTReady() { $("settingsBtn").style.display = ""; }
-  function reset()     { close(); $("settingsBtn").style.display = "none"; }
-  return { toggle, onYTReady, reset, close };
-})();
+  /* ═══════ SETTINGS MENU — informative only (YouTube) ═══════ */
+  const settingsUI = (() => {
+    const QL = { highres:"4320p+", hd2160:"2160p", hd1440:"1440p", hd1080:"1080p",
+                hd720:"720p", large:"480p", medium:"360p", small:"240p",
+                tiny:"144p", auto:"Auto", unknown:"—" };
+    let open = false, tick = null;
+    function build() {
+      let q = "unknown";
+      try { q = P.yt.getPlaybackQuality() || "unknown"; } catch (_) {}
+      $("vcMenu").innerHTML =
+        '<div class="vcm-sec"><div class="vcm-title">Playback</div>' +
+        '<div class="vcm-row"><span>Quality</span><span class="vcm-val">' +
+        (QL[q] || q) + "</span></div></div>";
+    }
+    function toggle() { open ? close() : openMenu(); }
+    function openMenu() {
+      if (P.type !== "youtube" || !P.ready) return;
+      build();
+      $("vcMenu").classList.add("open");
+      $("settingsBtn").setAttribute("aria-expanded", "true");
+      open = true;
+      tick = setInterval(build, 1000);                  // live-update while open
+      setTimeout(() => document.addEventListener("click", onDocClick), 0);
+    }
+    function close() {
+      clearInterval(tick); tick = null;
+      $("vcMenu").classList.remove("open");
+      $("settingsBtn").setAttribute("aria-expanded", "false");
+      open = false;
+      document.removeEventListener("click", onDocClick);
+    }
+    function onDocClick(e) {
+      if (!$("vcMenu").contains(e.target) && !$("settingsBtn").contains(e.target)) close();
+    }
+    function onYTReady() { $("settingsBtn").style.display = ""; }
+    function reset()     { close(); $("settingsBtn").style.display = "none"; }
+    return { toggle, onYTReady, reset, close };
+  })();
+
+/* ═══════════════════════════════════════════
+     QUEUE  —  playlist + auto-advance + up-next
+     ═══════════════════════════════════════════
+     Local-first: every mutation updates state, re-renders, then fires a
+     socket emit (BACKEND HOOK). Server should answer with `queue-update`
+     carrying the authoritative list → applyRemote() reconciles.
+     ═══════════════════════════════════════════ */
+  const UPNEXT_AT = 10;              // seconds before end → show card
+  const Q = (() => {
+    /* items[i] = { id, url, type:'youtube'|'direct', videoId, title, author,
+                    thumb, duration, addedBy } ; index = currently playing */
+    const st = (S.queue = { items: [], index: -1 });
+    let dragId = null, autoplay = true;
+    let unVisible = false, unCancelled = false, advancing = false;
+    const uid  = () => "q_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    /* Host + moderators. Server should ideally expose a dedicated `canQueue`
+       permission; until then we reuse the two flags you already ship. */
+    const canManage = () => !!(S.perms.canChangeVideo || S.perms.canManage);
+    /* Who is allowed to drive auto-advance (must be a single authority to
+       avoid N clients all emitting video-load). Best: move this server-side. */
+    const canDrive  = () => canManage();
+    /* ── metadata ───────────────────────────────────────── */
+    async function buildItem(url, addedBy) {
+      const ytId = extractYT(url);
+      const base = { id: uid(), url, addedBy: addedBy || S.username, duration: 0 };
+      if (ytId) {
+        const m = await fetchYTMeta(ytId);           // reuses your oEmbed helper
+        return Object.assign(base, {
+          type: "youtube", videoId: ytId,
+          title: m.title || "YouTube video", author: m.author || "YouTube", thumb: m.thumb,
+        });
+      }
+      const name = decodeURIComponent((url.split("/").pop() || url).split("?")[0]) || "Video";
+      const item = Object.assign(base, {
+        type: "direct", videoId: null, title: name, author: "Direct link", thumb: "",
+      });
+      probeDuration(item);                            // async, fills in later
+      return item;
+    }
+    /* cheap metadata-only probe so direct links show a runtime */
+    function probeDuration(item) {
+      const v = document.createElement("video");
+      v.preload = "metadata"; v.muted = true;
+      v.addEventListener("loadedmetadata", () => {
+        if (v.duration && isFinite(v.duration)) { item.duration = v.duration; render(); }
+        v.src = "";
+      }, { once: true });
+      v.addEventListener("error", () => { v.src = ""; }, { once: true });
+      v.src = item.url;
+    }
+    /* ── queries ────────────────────────────────────────── */
+    const hasNext = () => st.index >= -1 && st.index + 1 < st.items.length;
+    const hasPrev = () => st.index > 0;
+    const peekNext = () => (hasNext() ? st.items[st.index + 1] : null);
+    const find = (id) => st.items.findIndex((i) => i.id === id);
+    /* ── mutations ──────────────────────────────────────── */
+    async function add(url, opts) {
+      opts = opts || {};
+      if (!url) return toast("Enter a URL", "error");
+      if (!canManage()) return toast("Only the host & moderators can edit the queue", "error");
+      const item = await buildItem(url);
+      st.items.push(item);
+      render();
+      if (!opts.silent) toast("Added to queue", "success");
+      emit("queue-add", { url, id: item.id });                       // ← BACKEND HOOK
+      /* nothing playing yet → start immediately */
+      if (st.index === -1 && !videoLoaded) playIndex(st.items.length - 1);
+      return item;
+    }
+    function remove(id) {
+      if (!canManage()) return;
+      const i = find(id); if (i < 0) return;
+      const wasCurrent = i === st.index;
+      st.items.splice(i, 1);
+      if (i < st.index) st.index--;
+      else if (wasCurrent) st.index = Math.min(st.index, st.items.length - 1) - 0; // stay in place
+      render(); resetUpNext();
+      emit("queue-remove", { id });                                  // ← BACKEND HOOK
+      if (wasCurrent) { /* current removed: keep playing, just detach index */ st.index = -1; render(); }
+    }
+    function move(id, to) {
+      if (!canManage()) return;
+      const from = find(id);
+      if (from < 0 || to < 0 || to >= st.items.length || from === to) return;
+      const cur = st.items[st.index];
+      st.items.splice(to, 0, st.items.splice(from, 1)[0]);
+      st.index = cur ? st.items.indexOf(cur) : st.index;
+      render(); resetUpNext();
+      emit("queue-move", { id, to });                                // ← BACKEND HOOK
+    }
+    function clear() {
+      if (!canManage()) return;
+      const cur = st.index >= 0 ? st.items[st.index] : null;
+      st.items = cur ? [cur] : [];
+      st.index = cur ? 0 : -1;
+      render(); resetUpNext();
+      emit("queue-clear", {});                                       // ← BACKEND HOOK
+    }
+    /* ── playback ───────────────────────────────────────── */
+    function playIndex(i) {
+      if (i < 0 || i >= st.items.length) return;
+      if (!canManage()) return toast("Only the host can change the video", "error");
+      st.index = i;
+      resetUpNext();
+      loadVideo(st.items[i].url, false);      // emits video-load → everyone follows
+      emit("queue-play", { id: st.items[i].id, index: i });          // ← BACKEND HOOK
+      render();
+    }
+    const next = () => hasNext() && playIndex(st.index + 1);
+    const prev = () => hasPrev() && playIndex(st.index - 1);
+    /* Called by loadVideo() so the queue stays in sync with *any* load,
+       including remote ones pushed by the host. */
+    function syncToUrl(url) {
+      const i = st.items.findIndex((it) => it.url === url);
+      if (i >= 0) st.index = i;
+      else if (st.index >= 0 && st.items[st.index] && st.items[st.index].url !== url) st.index = -1;
+      resetUpNext();
+      render();
+    }
+    /* video finished */
+    function onEnded() {
+      hideUpNext();
+      if (!autoplay || !hasNext()) return;
+      if (!canDrive()) return;                // non-hosts wait for the video-load broadcast
+      if (advancing) return;
+      advancing = true;
+      setTimeout(() => { advancing = false; next(); }, 150);
+    }
+    /* ── UP NEXT card ───────────────────────────────────── */
+    function tick(t, d) {
+      const nxt = peekNext();
+      const rem = d > 0 && isFinite(d) ? d - t : Infinity;
+      if (!nxt || !autoplay) return hideUpNext();
+      if (rem > UPNEXT_AT + 0.5) { unCancelled = false; return hideUpNext(); }   // user seeked back
+      if (unCancelled || P.paused() || rem <= 0.25) return hideUpNext();
+      showUpNext(nxt, rem);
+    }
+    function showUpNext(item, rem) {
+      const card = $("upNext");
+      if (!unVisible) {
+        $("unTitle").textContent = item.title;
+        $("unSub").textContent   = item.author || "";
+        const img = $("unThumb");
+        img.style.display = item.thumb ? "" : "none";
+        if (item.thumb) img.src = item.thumb;
+        card.hidden = false; unVisible = true;
+      }
+      $("unCount").textContent = Math.max(0, Math.ceil(rem)) + "s";
+      $("unRing").style.setProperty("--p", Math.min(100, (1 - rem / UPNEXT_AT) * 100).toFixed(0) + "%");
+    }
+    function hideUpNext() { if (unVisible) { $("upNext").hidden = true; unVisible = false; } }
+    function resetUpNext() { hideUpNext(); unCancelled = false; advancing = false; }
+    /* ── render ─────────────────────────────────────────── */
+    const ICON = {
+      play:   '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
+      up:     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>',
+      down:   '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>',
+      remove: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    };
+    function render() {
+      const manage = canManage();
+      const list = $("queueList");
+      /* badge + empty state */
+      const upcoming = Math.max(0, st.items.length - (st.index + 1));
+      const badge = $("queueCount");
+      badge.textContent = upcoming;
+      badge.dataset.zero = upcoming ? "0" : "1";
+      $("queueEmpty").hidden = st.items.length > 0;
+      $("queueClearBtn").disabled = !manage || st.items.length === 0;
+      $("queueBar").hidden = !manage;
+      $("queueLock").hidden = manage;
+      $("queueUrlBtn").disabled = !manage;
+      list.innerHTML = st.items.map((it, i) => {
+        const cls = ["q-item", manage ? "can-manage" : "",
+                     i === st.index ? "playing" : (i < st.index ? "played" : "")].join(" ");
+        const idx = i === st.index
+          ? '<span class="q-eq"><i></i><i></i><i></i></span>'
+          : i + 1;
+        const thumb = it.thumb
+          ? '<img src="' + esc(it.thumb) + '" alt="" loading="lazy">'
+          : "🎞️";
+        const dur = it.duration ? '<span class="q-dur">' + fmtTime(it.duration) + "</span>" : "";
+        return (
+          '<li class="' + cls + '" data-id="' + it.id + '"' + (manage ? ' draggable="true"' : "") + ">" +
+            '<span class="q-grip" aria-hidden="true">⠿</span>' +
+            '<span class="q-idx">' + idx + "</span>" +
+            '<div class="q-thumb">' + thumb + dur + "</div>" +
+            '<div class="q-meta">' +
+              '<div class="q-title" title="' + esc(it.title) + '">' + esc(it.title) + "</div>" +
+              '<div class="q-sub">' + esc(it.author || "") +
+                (it.addedBy ? " · added by " + esc(it.addedBy) : "") + "</div>" +
+            "</div>" +
+            '<div class="q-actions">' +
+              '<button class="q-act" data-act="play"   title="Play now">'  + ICON.play   + "</button>" +
+              '<button class="q-act" data-act="up"     title="Move up"'    + (i === 0 ? " disabled" : "") + ">" + ICON.up + "</button>" +
+              '<button class="q-act" data-act="down"   title="Move down"'  + (i === st.items.length - 1 ? " disabled" : "") + ">" + ICON.down + "</button>" +
+              '<button class="q-act" data-act="remove" title="Remove">'    + ICON.remove + "</button>" +
+            "</div>" +
+          "</li>"
+        );
+      }).join("");
+      refreshNav();
+    }
+    /* prev/next enabled state in the control bar */
+    function refreshNav() {
+      const manage = canManage();
+      $("prevBtn").disabled = !manage || !hasPrev();
+      $("nextBtn").disabled = !manage || !hasNext();
+    }
+    /* ── remote reconcile (call from socket `queue-update`) ── */
+    function applyRemote(payload) {
+      if (!payload || !Array.isArray(payload.items)) return;
+      st.items = payload.items;
+      st.index = typeof payload.index === "number" ? payload.index : st.index;
+      render(); resetUpNext();
+    }
+    function emit(ev, data) { if (socket) socket.emit(ev, data); }
+    /* ── wiring ─────────────────────────────────────────── */
+    function wire() {
+      /* tabs */
+      [dom.tabChat, dom.tabQueue].forEach((b) =>
+        b.addEventListener("click", () => switchTab(b.dataset.tab))
+      );
+      /* add */
+      $("queueAddBtn").onclick = () => {
+        const v = $("queueInput").value.trim();
+        if (v) { add(v); $("queueInput").value = ""; }
+      };
+      $("queueInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") $("queueAddBtn").click();
+      });
+      $("queueUrlBtn").onclick = () => {
+        const v = $("urlInput").value.trim();
+        if (v) { add(v); $("urlInput").value = ""; switchTab("queue"); }
+      };
+      $("queueClearBtn").onclick = clear;
+      $("qAutoplay").onchange = (e) => { autoplay = e.target.checked; if (!autoplay) hideUpNext(); };
+      /* row actions (delegated) */
+      $("queueList").addEventListener("click", (e) => {
+        const btn = e.target.closest(".q-act"); if (!btn) return;
+        const id = e.target.closest(".q-item").dataset.id;
+        const i  = find(id); if (i < 0) return;
+        const act = btn.dataset.act;
+        if (act === "play")   playIndex(i);
+        if (act === "remove") remove(id);
+        if (act === "up")     move(id, i - 1);
+        if (act === "down")   move(id, i + 1);
+      });
+      /* drag & drop reorder */
+      const list = $("queueList");
+      list.addEventListener("dragstart", (e) => {
+        const li = e.target.closest(".q-item"); if (!li || !canManage()) return;
+        dragId = li.dataset.id; li.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+      list.addEventListener("dragend", () => {
+        dragId = null;
+        list.querySelectorAll(".q-item").forEach((n) => n.classList.remove("dragging", "drag-over"));
+      });
+      list.addEventListener("dragover", (e) => {
+        if (!dragId) return;
+        e.preventDefault();
+        const li = e.target.closest(".q-item"); if (!li) return;
+        list.querySelectorAll(".drag-over").forEach((n) => n.classList.remove("drag-over"));
+        li.classList.add("drag-over");
+      });
+      list.addEventListener("drop", (e) => {
+        if (!dragId) return;
+        e.preventDefault();
+        const li = e.target.closest(".q-item"); if (!li) return;
+        move(dragId, find(li.dataset.id));
+      });
+      /* transport */
+      $("prevBtn").onclick = prev;
+      $("nextBtn").onclick = next;
+      /* up-next card */
+      const cancel = () => { unCancelled = true; hideUpNext(); };
+      $("unCancel").onclick    = cancel;
+      $("unCancelBtn").onclick = cancel;
+      $("unNowBtn").onclick    = () => { hideUpNext(); next(); };
+      /* N / P shortcuts */
+      document.addEventListener("keydown", (e) => {
+        const t = e.target;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+        if (e.key === "n" || e.key === "N") next();
+        if (e.key === "p" || e.key === "P") prev();
+      });
+      render();
+    }
+    function switchTab(which) {
+      const chat = which === "chat";
+      dom.tabChat.classList.toggle("active", chat);
+      dom.tabQueue.classList.toggle("active", !chat);
+      dom.tabChat.setAttribute("aria-selected", String(chat));
+      dom.tabQueue.setAttribute("aria-selected", String(!chat));
+      dom.paneChat.classList.toggle("active", chat);
+      dom.paneQueue.classList.toggle("active", !chat);
+    }
+    return { wire, add, render, refreshNav, applyRemote, syncToUrl,
+             onEnded, tick, resetUpNext, next, prev, hasNext, hasPrev, canManage };
+  })();
 
   /* ══════════════════════════════════
      VIDEO — load / controls / sync
@@ -690,6 +997,7 @@ const settingsUI = (() => {
     P.destroy();
     ytLetterbox.detach();
     settingsUI.reset();
+    Q.resetUpNext();
     $("viBar").style.display = "none";  // (direct videos get no YT info bar)
     if (dom.fxLayer) dom.fxLayer.innerHTML = "";
     const ytId = extractYT(url);
@@ -726,6 +1034,7 @@ const settingsUI = (() => {
     $("urlInput").value = url;
     videoLoaded = true;
     if (!fromRemote && socket) socket.emit("video-load", { url });
+    Q.syncToUrl(url);   // keeps queue index aligned for local *and* remote loads
   }
 
   /* Called once when the player is ready to accept commands */
@@ -745,6 +1054,7 @@ const settingsUI = (() => {
   }
   /* YouTube state-change → emit play / pause */
   function onYTState(e) {
+    if (e.data === 0) return Q.onEnded();            // ENDED
     if (e.data === 2) flashInfoBar();                   // show title card on pause
     if (P.isRemote()) return;
     if (e.data !== 1 && e.data !== 2) return;
@@ -767,6 +1077,7 @@ const settingsUI = (() => {
     }
     $("durTime").textContent = fmtTime(d);
     $("playBtn").innerHTML = P.paused() ? playSVG : pauseSVG;
+    Q.tick(t, d);
   }
   function wirePlayerControls() {
     const prog = $("progressBar"), volBar = $("volBar");
@@ -832,6 +1143,7 @@ const settingsUI = (() => {
       clearTimeout(seekTimer);
       seekTimer = setTimeout(() => emitSeek(P.time()), SEEK_DEBOUNCE);
     });
+    v.addEventListener("ended", () => Q.onEnded());
   }
   function emitSeek(t) {
     if (!S.perms.canSync || !socket) return;
@@ -1168,6 +1480,7 @@ const settingsUI = (() => {
     dom.gearBadge.classList.toggle("is-hidden", n === 0);
     dom.gearBadge.textContent = n;  
     if (!p.canSync) P.stopLeader();
+    Q.render();
   }
   // Check if the config sheet is open
   const isConfigOpen = () => dom.cfgSheet.classList.contains("open");
