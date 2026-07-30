@@ -299,8 +299,12 @@
     dom.chatMsgs.addEventListener("scroll", onChatScroll);
     dom.container.addEventListener("touchstart", () => {
       dom.controls.classList.add("show");
+      $("vcCenter").classList.add("show");
       clearTimeout(dom.controls._t);
-      dom.controls._t = setTimeout(() => dom.controls.classList.remove("show"), 3000);
+      dom.controls._t = setTimeout(() => {
+        dom.controls.classList.remove("show");
+        $("vcCenter").classList.remove("show");
+      }, 3000);
     });
     /* collapsible room details — click anywhere on the card toggles */
     dom.details.addEventListener("click", toggleDetails);
@@ -858,24 +862,22 @@
       $("queueLock").hidden = manage;
       $("queueUrlBtn").disabled = !manage;
       list.innerHTML = st.items.map((it, i) => {
+        const playing = i === st.index;
         const cls = ["q-item", manage ? "can-manage" : "",
-                     i === st.index ? "playing" : (i < st.index ? "played" : "")].join(" ");
-        const idx = i === st.index
-          ? '<span class="q-eq"><i></i><i></i><i></i></span>'
-          : i + 1;
+                     playing ? "playing" : (i < st.index ? "played" : "")].join(" ");
         const thumb = it.thumb
           ? '<img src="' + esc(it.thumb) + '" alt="" loading="lazy">'
           : "🎞️";
+        const now = playing ? '<span class="q-now"><span class="q-eq"><i></i><i></i><i></i></span></span>' : "";
         const dur = it.duration ? '<span class="q-dur">' + fmtTime(it.duration) + "</span>" : "";
+        const sub = [it.author, it.addedBy].filter(Boolean).map(esc).join(" · ");
         return (
           '<li class="' + cls + '" data-id="' + it.id + '"' + (manage ? ' draggable="true"' : "") + ">" +
             '<span class="q-grip" aria-hidden="true">⠿</span>' +
-            '<span class="q-idx">' + idx + "</span>" +
-            '<div class="q-thumb">' + thumb + dur + "</div>" +
+            '<div class="q-thumb">' + thumb + dur + now + "</div>" +
             '<div class="q-meta">' +
               '<div class="q-title" title="' + esc(it.title) + '">' + esc(it.title) + "</div>" +
-              '<div class="q-sub">' + esc(it.author || "") +
-                (it.addedBy ? " · added by " + esc(it.addedBy) : "") + "</div>" +
+              '<div class="q-sub">' + sub + "</div>" +
             "</div>" +
             '<div class="q-actions">' +
               '<button class="q-act" data-act="play"   title="Play now">'  + ICON.play   + "</button>" +
@@ -891,8 +893,9 @@
     /* prev/next enabled state in the control bar */
     function refreshNav() {
       const manage = canManage();
-      $("prevBtn").disabled = !manage || !hasPrev();
-      $("nextBtn").disabled = !manage || !hasNext();
+      const noPrev = !manage || !hasPrev(), noNext = !manage || !hasNext();
+      $("prevBtn").disabled  = noPrev;  $("nextBtn").disabled  = noNext;
+      $("cPrevBtn").disabled = noPrev;  $("cNextBtn").disabled = noNext;
     }
     /* ── remote reconcile (call from socket `queue-update`) ── */
     function applyRemote(payload) {
@@ -960,6 +963,9 @@
       /* transport */
       $("prevBtn").onclick = prev;
       $("nextBtn").onclick = next;
+      /* center transport (previous/next video buttons) */
+      $("cPrevBtn").onclick = prev;
+      $("cNextBtn").onclick = next;
       /* up-next card */
       const cancel = () => { unCancelled = true; hideUpNext(); };
       $("unCancel").onclick    = cancel;
@@ -1029,6 +1035,7 @@
       P.el.addEventListener("canplay", onPlayerReady, { once: true });
     }
     dom.controls.style.display = "";                         // our bar now serves BOTH players
+    $("vcCenter").style.display = "";
     startUITicker();
     if (dom.placeholder && dom.placeholder.parentNode) dom.placeholder.remove();
     $("urlInput").value = url;
@@ -1077,6 +1084,7 @@
     }
     $("durTime").textContent = fmtTime(d);
     $("playBtn").innerHTML = P.paused() ? playSVG : pauseSVG;
+    // $("cPlayBtn").innerHTML = P.paused() ? bigPlay : bigPause;
     Q.tick(t, d);
   }
   function wirePlayerControls() {
@@ -1108,6 +1116,7 @@
     });
     fillSlider(volBar, 100, 100);
     $("fsBtn").onclick = toggleFullscreen;
+    // $("cPlayBtn").onclick = () => { if (guardSync()) P.toggle(); };
     $("settingsBtn").onclick = (e) => { e.stopPropagation(); settingsUI.toggle(); };
     /* keyboard */
     document.addEventListener("keydown", (e) => {
@@ -1176,6 +1185,8 @@
   /* SVG icons */
   const playSVG  = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
   const pauseSVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+  const bigPlay  = '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+  const bigPause = '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
   const volSVG   = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
   const mutedSVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
   function fillSlider(el, val, max) {
