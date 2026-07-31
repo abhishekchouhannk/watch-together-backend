@@ -59,7 +59,7 @@
     chatMsgs: $("chatMessages"), chatInput: $("chatInput"), chatOnline: $("chatOnline"),
     toasts: $("toastWrap"),
     themeSwitcher: $("themeSwitcher"), themeBtn: $("themeBtn"), themeBtnIcon: $("themeBtnIcon"), themeMenu: $("themeMenu"),
-    fxLayer: $("fxLayer"), playerBar: $("playerBar"),
+    fxLayer: $("fxLayer"),
     reactRail: $("reactRail"), reactToggle: $("reactToggle"), reactStrip: $("reactStrip"),
     reactHub: $("reactHub"),
     shield: $("playerShield"), vcLock: $("vcLock"),
@@ -177,6 +177,11 @@
       if (this.type === "youtube" && this.yt) { try { return this.yt.isMuted(); } catch(_) { return false; } }
       return this.el ? this.el.muted : false;
     },
+    vol() {
+      if (this.type === "youtube" && this.yt)
+        try { return (this.yt.getVolume() || 0) / 100; } catch (_) { return 1; }
+      return this.el ? this.el.volume : 1;
+    },
     toggle() { this.paused() ? this.play() : this.pause(); },
     /* ── sync leader: broadcasts time every SYNC_INTERVAL ── */
     startLeader() {
@@ -210,6 +215,17 @@
       this.type = null; this.ready = false; this._rc = 0;
     },
   };
+  let volDragging = false;
+  function isSilent() { return P.isMuted() || P.vol() === 0; }
+  function syncVolumeUI() {
+    if (!P.ready) return;
+    const m = isSilent();
+    $("muteBtn").innerHTML = m ? mutedSVG : volSVG;
+    if (volDragging || document.activeElement === $("volBar")) return;
+    const v = m ? 0 : Math.round(P.vol() * 100);
+    const vb = $("volBar");
+    if (+vb.value !== v) { vb.value = v; fillSlider(vb, v, 100); }
+  }
   /* ═══════ YOUTUBE IFRAME API (loaded once, on demand) ═══════ */
   let ytAPIReady = false, ytAPIProm = null;
   function loadYTAPI() {
@@ -288,10 +304,6 @@
   function wireEvents() {
     $("backBtn").onclick  = leaveRoom;
     $("leaveBtn").onclick = leaveRoom;
-    $("loadUrlBtn").onclick = () => loadVideo($("urlInput").value.trim(), false);
-    $("urlInput").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") loadVideo($("urlInput").value.trim(), false);
-    });
     $("sendBtn").onclick = sendMessage;
     dom.chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -856,7 +868,10 @@
       $("queueClearBtn").disabled = !manage || st.items.length === 0;
       $("queueBar").hidden = !manage;
       $("queueLock").hidden = manage;
-      $("queueUrlBtn").disabled = !manage;
+      if (st.items.length === 0 && manage && !videoLoaded) {
+        $("queueEmpty").querySelector(".q-empty-s").textContent =
+          "Paste a URL below — the first video starts right away";
+      }
       list.innerHTML = st.items.map((it, i) => {
         const playing = i === st.index;
         const cls = ["q-item", manage ? "can-manage" : "",
@@ -915,10 +930,6 @@
       $("queueInput").addEventListener("keydown", (e) => {
         if (e.key === "Enter") $("queueAddBtn").click();
       });
-      $("queueUrlBtn").onclick = () => {
-        const v = $("urlInput").value.trim();
-        if (v) { add(v); $("urlInput").value = ""; switchTab("queue"); }
-      };
       $("queueClearBtn").onclick = clear;
       $("qAutoplay").onchange = (e) => { autoplay = e.target.checked; if (!autoplay) hideUpNext(); };
       /* row actions (delegated) */
@@ -998,7 +1009,8 @@
     if (!fromRemote && !S.perms.canChangeVideo) { toast("Only the host can change the video", "error"); return; }
     P.destroy();
     ytLetterbox.detach();
-    settingsUI.reset();
+    settingsUI.reset(); 
+    volDragging = false;
     Q.resetUpNext();
     $("viBar").style.display = "none";  // (direct videos get no YT info bar)
     if (dom.fxLayer) dom.fxLayer.innerHTML = "";
@@ -1034,7 +1046,6 @@
     $("vcCenter").style.display = "";
     startUITicker();
     if (dom.placeholder && dom.placeholder.parentNode) dom.placeholder.remove();
-    $("urlInput").value = url;
     videoLoaded = true;
     if (!fromRemote && socket) socket.emit("video-load", { url });
     Q.syncToUrl(url);   // keeps queue index aligned for local *and* remote loads
@@ -1044,6 +1055,10 @@
   function onPlayerReady() {
     if (P.type === "youtube") settingsUI.onYTReady();
     P.ready = true;
+    /* YT hands a muted player; force it into the state the UI claims */
+    P.setVol(($("volBar").value || 100) / 100);
+    P.setMuted(false);
+    syncVolumeUI();
     if (!needsSync) return;
     needsSync = false;
     // 1) immediately apply the DB snapshot (best guess)
@@ -1078,6 +1093,7 @@
       fillSlider(prog, prog.value, prog.max);
       $("curTime").textContent = fmtTime(t);
     }
+    syncVolumeUI();   // YT can mute itself (autoplay policy, ads, etc.)
     $("durTime").textContent = fmtTime(d);
     $("playBtn").innerHTML = P.paused() ? playSVG : pauseSVG;
     $("cPlayBtn").innerHTML = P.paused() ? bigPlay : bigPause;
@@ -1086,6 +1102,7 @@
   function wirePlayerControls() {
     const prog = $("progressBar"), volBar = $("volBar");
     $("playBtn").onclick = () => { if (guardSync()) P.toggle(); };
+    if (P.type !== "youtube") $("cPlayBtn").innerHTML = P.paused() ? bigPlay : bigPause;
     dom.shield.addEventListener("click", () => { if (guardSync()) P.toggle(); });
     dom.vcLock.onclick = (e) => { e.stopPropagation(); openConfig(); };
     prog.addEventListener("input", () => {
@@ -1103,7 +1120,25 @@
       P.seek(t);
       if (P.type === "youtube") emitSeek(t);                // direct emits via its "seeked" event
     });
-    $("muteBtn").onclick = () => { const m = !P.isMuted(); P.setMuted(m); $("muteBtn").innerHTML = m ? mutedSVG : volSVG; };
+    $("muteBtn").onclick = () => {
+      const silent = isSilent();
+      if (silent) {                       // unmute → restore a usable level
+        P.setMuted(false);
+        if (P.vol() === 0) P.setVol(volBar.value > 0 ? volBar.value / 100 : 1);
+      } else {
+        P.setMuted(true);
+      }
+      syncVolumeUI();
+    };
+    volBar.addEventListener("pointerdown", () => (volDragging = true));
+    volBar.addEventListener("pointerup",   () => (volDragging = false));
+    volBar.addEventListener("input", () => {
+      const v = volBar.value / 100;
+      P.setVol(v);
+      P.setMuted(v === 0);
+      fillSlider(volBar, volBar.value, 100);
+      $("muteBtn").innerHTML = v === 0 ? mutedSVG : volSVG;
+    });
     volBar.addEventListener("input", () => {
       const v = volBar.value / 100;
       P.setVol(v); P.setMuted(v === 0);
@@ -1123,7 +1158,7 @@
       if (k === " " || k === "k")       { e.preventDefault(); if (guardSync()) P.toggle(); }
       else if (k === "arrowright")      { if (guardSync()) { const t2 = P.time() + 5; P.seek(t2); emitSeek(t2); } }
       else if (k === "arrowleft")       { if (guardSync()) { const t2 = Math.max(0, P.time() - 5); P.seek(t2); emitSeek(t2); } }
-      else if (k === "m")               { const m = !P.isMuted(); P.setMuted(m); $("muteBtn").innerHTML = m ? mutedSVG : volSVG; }
+      else if (k === "m") { P.setMuted(!isSilent()); syncVolumeUI(); }
     });
   }
   /* element-level listeners for the direct <video> (fresh element each load) */
@@ -1480,9 +1515,6 @@
     $("playBtn").disabled     = !p.canSync;
     $("progressBar").disabled = !p.canSync;
     dom.vcLock.style.display  = p.canSync ? "none" : "";
-    const ui = $("urlInput"), lb = $("loadUrlBtn");
-    ui.disabled = lb.disabled = !p.canChangeVideo;
-    ui.placeholder = p.canChangeVideo ? "Paste video URL (.mp4, YouTube, etc.)" : "Only the host can change the video";
     const n = p.canGrantSync ? S.requests.length : 0;      // host + mods get the badge
     dom.gearBadge.classList.toggle("is-hidden", n === 0);
     dom.gearBadge.textContent = n;  
