@@ -93,6 +93,25 @@ function canChangeVideo(room, uid) {
   if (who === "controllers") return canSync(room, uid);
   return false;                                                    // "host"
 }
+/* ── queue control: who may add / remove / reorder / play-from-queue ── */
+function canQueue(room, uid) {
+  if (isAdmin(room, uid) || isMod(room, uid)) return true;
+  const mode = (room.settings && room.settings.queueMode) || "host";
+  if (mode === "everyone") return true;
+  const m = getMember(room, uid);
+  return !!(m && m.canQueue);
+}
+/* loading a video IS a queue action now — the URL bar is gone */
+const canChangeVideo = canQueue;
+const canGrantQueue = canModerate;     // host + mods, same as canGrantSync
+/* scope table — lets one handler serve both permission kinds */
+const SCOPES = {
+  sync:  { grant: "canSync",  req: "syncRequest",  label: "playback control",
+           can: canSync,  mode: "syncMode",  grantedBy: canGrantSync },
+  queue: { grant: "canQueue", req: "queueRequest", label: "queue control",
+           can: canQueue, mode: "queueMode", grantedBy: canGrantQueue },
+};
+const isScope = (s) => Object.prototype.hasOwnProperty.call(SCOPES, s);
 /* ── moderation / room management ───────────────────────── */
 const canModerate = (room, uid) => isAdmin(room, uid) || isMod(room, uid); // mods + host
 const canEditRoom = canModerate;   // edit name/desc/mode/tags/visibility/cap
@@ -100,22 +119,28 @@ const canGrantSync = canModerate;  // grant/revoke playback, answer requests, se
 const isBanned = (room, uid) =>
   (room.bannedUsers || []).some((b) => sameId(b.userId, uid));
 function resolvePerms(room, uid) {
-  const role = roleOf(room, uid);
-  const m = getMember(room, uid);
+  const m     = getMember(room, uid) || {};
+  const admin = isAdmin(room, uid);
+  const mod   = isMod(room, uid);
+  const st    = room.settings || {};
   return {
-    role,
-    isAdmin: role === "admin",
-    isMod:   role === "mod",
+    isAdmin: admin,
+    isMod:   mod,
+    role:    admin ? "admin" : (m.role || "member"),
+    syncMode:  st.syncMode  || "host",
+    queueMode: st.queueMode || "host",
+    autoplay:  st.autoplay !== false,
     canSync:        canSync(room, uid),
-    canChangeVideo: canChangeVideo(room, uid),
-    canManage:      canModerate(room, uid),
-    canGrantSync:   canGrantSync(room, uid),
-    canEditRoom:    canEditRoom(room, uid),
-    canSetRoles:    canSetRoles(room, uid),
-    canBan:         canBan(room, uid),        // ← new (admin only)
-    canKick:        canBan(room, uid),        // ← new (flip to canModerate to let mods kick)
-    syncMode:     (room.settings && room.settings.syncMode) || "host",
-    requestState: (m && m.syncRequest) || "none",
+    canQueue:       canQueue(room, uid),
+    canChangeVideo: canQueue(room, uid),      // kept for backwards compat on the client
+    canEditRoom:   canEditRoom(room, uid),
+    canManage:     canModerate(room, uid),
+    canGrantSync:  canGrantSync(room, uid),
+    canGrantQueue: canGrantQueue(room, uid),
+    canSetRoles:   canSetRoles(room, uid),
+    canBan:        canBan(room, uid),
+    requestState:      m.syncRequest  || "none",
+    queueRequestState: m.queueRequest || "none",
   };
 }
 /* privileged viewers see canSync/syncRequest, everyone else just roles */

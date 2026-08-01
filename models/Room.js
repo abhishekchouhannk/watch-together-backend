@@ -8,6 +8,8 @@ const MemberSchema = new mongoose.Schema({
   role:        { type: String, enum: ["admin", "mod", "member"], default: "member" },
   canSync:     { type: Boolean, default: false },
   syncRequest: { type: String, enum: ["none", "pending", "denied"], default: "none" },
+  canQueue:     { type: Boolean, default: false },
+  queueRequest: { type: String, enum: ["none", "pending", "denied"], default: "none" },
   updatedAt:   { type: Date, default: Date.now },
 }, { _id: false });
 /* blocklist — checked on every join, REST read and discovery query */
@@ -18,6 +20,22 @@ const BannedUserSchema = new mongoose.Schema({
   bannedByName: { type: String },
   reason:       { type: String, maxlength: 140 },
   bannedAt:     { type: Date, default: Date.now },
+}, { _id: false });
+/* a single queued video — metadata is resolved server-side so every
+   client sees identical titles/thumbs and nobody can spoof them */
+const QueueItemSchema = new mongoose.Schema({
+  itemId:      { type: String, required: true },                 // public id (not the _id)
+  url:         { type: String, required: true, maxlength: 2048 },
+  type:        { type: String, enum: ["youtube", "direct"], default: "direct" },
+  videoId:     { type: String },                                 // YT id, null for direct
+  title:       { type: String, default: "Video", maxlength: 300 },
+  author:      { type: String, default: "", maxlength: 120 },
+  thumb:       { type: String, default: "", maxlength: 1024 },
+  duration:    { type: Number, default: 0 },                     // seconds, 0 = unknown
+  addedBy:     { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  addedByName: { type: String },
+  addedAt:     { type: Date, default: Date.now },
+  playedAt:    { type: Date },
 }, { _id: false });
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },
@@ -41,17 +59,23 @@ const RoomSchema = new mongoose.Schema({
   },
   settings: {
     syncMode:          { type: String, enum: ["host", "everyone"], default: "host" },
-    whoCanChangeVideo: { type: String, enum: ["host", "controllers", "everyone"], default: "host" },
+    queueMode:         { type: String, enum: ["host", "everyone"], default: "host" },  
+    autoplay:          { type: Boolean, default: true },                               
+    whoCanChangeVideo: { type: String, enum: ["host", "controllers", "everyone"], default: "host" }, // legacy, unused
   },
+  queue:      [QueueItemSchema],                 
+  queueIndex: { type: Number, default: -1 },     // index of the item currently playing (-1 = detached)
   members: [MemberSchema],
-  bannedUsers: [BannedUserSchema],          // ← new
+  bannedUsers: [BannedUserSchema],         
   video: {
-    url: { type: String },
-    title: { type: String },
+    url:         { type: String },
+    itemId:      { type: String },               // ← new: links video ↔ queue item
+    title:       { type: String },
+    thumb:       { type: String },               // ← new
     currentTime: { type: Number, default: 0 },
-    duration: { type: Number },
-    isPlaying: { type: Boolean, default: false },
-    updatedAt: { type: Date }
+    duration:    { type: Number },
+    isPlaying:   { type: Boolean, default: false },
+    updatedAt:   { type: Date },
   },
   participants: [
     {
