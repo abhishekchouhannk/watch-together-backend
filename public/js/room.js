@@ -36,8 +36,11 @@
   /* ═══════ STATE ═══════ */
   const S = {
     room: null, userId: null, username: "You", themeMode: "auto", detailsOpen: null,
-    perms: { isAdmin:false, role:"member", syncMode:"host", canSync:false,
-             canChangeVideo:false, canEditRoom:false, canManage:false, requestState:"none" },
+    perms: { isAdmin:false, isMod:false, role:"member",
+             syncMode:"host", queueMode:"host", autoplay:true,
+             canSync:false, canQueue:false, canChangeVideo:false,
+             canEditRoom:false, canManage:false, canGrantSync:false, canGrantQueue:false,
+             requestState:"none", queueRequestState:"none" },
     members: [], requests: [],
     video: { currentTime: 0, isPlaying: false, at: 0 },   // authoritative mirror
   };
@@ -379,18 +382,21 @@
       renderRoomDetails();
       addSystemMsg("You joined the room");
       await loadInitialMessages();
-      if (room.video && room.video.url && !videoLoaded) {
-        $("urlInput").value = room.video.url;
-        initialVideoState = { currentTime: room.video.currentTime || 0, isPlaying: room.video.isPlaying || false };
-        markLocal(initialVideoState.currentTime, initialVideoState.isPlaying);
+      if (room.queue) Q.applyRemote(room.queue);
+      if (room.video && room.video.url) {
+        S.currentItemId = room.video.itemId || null;
+        initialVideoState = { currentTime: room.video.currentTime, isPlaying: room.video.isPlaying };
         needsSync = true;
-        await loadVideo(room.video.url, true);
+        loadVideo(room.video.url, true);
       }
     });
     socket.on("room-error", ({ message }) => {
       toast(message || "Error", "error");
       setTimeout(() => (location.href = "/dashboard"), 1500);
     });
+    socket.on("queue-update", (p) => Q.applyRemote(p));
+    socket.on("queue-ended", () => { Q.resetUpNext(); toast("Queue finished 🎉", "success"); });
+    socket.on("chat-system", ({ text }) => addSystemMsg(text));
 
     /* ── permissions ── */
     socket.on("room-permissions", ({ perms, members, requests, banned }) => {
@@ -416,7 +422,7 @@
     });
     socket.on("perm-toast", ({ message, type }) => toast(message, type));
     socket.on("perm-notice", ({ text }) => addSystemMsg(text));
-    socket.on("perm-request", ({ userId, username }) => showRequestPrompt(userId, username));
+    socket.on("perm-request", ({ userId, username, scope }) => showRequestPrompt(userId, username, scope || "sync"));
 
     /* presence moves the validation floor */
     socket.on("participants-update", ({ participants, count }) => {
@@ -435,10 +441,10 @@
     socket.on("user-left",   ({ username }) => addSystemMsg(username + " left"));
     /* ── chat ── */
     socket.on("chat-message", (msg) => appendMessage(msg, true));
-    /* ── video sync ── */
-    socket.on("video-load", ({ url, username }) => {
-      loadVideo(url, true);
-      addSystemMsg(username + " loaded a new video");
+    /* server is the only source of loads now */
+    socket.on("video-load", ({ url, itemId, play }) => {
+      S.currentItemId = itemId || null;
+      loadVideo(url, true, { play: !!play });
     });
     socket.on("video-play",  ({ currentTime }) => { markLocal(currentTime, true);  P.remote(() => P.play(currentTime));  P.stopLeader(); });
     socket.on("video-pause", ({ currentTime }) => { markLocal(currentTime, false); P.remote(() => P.pause(currentTime)); P.stopLeader(); });
@@ -710,42 +716,13 @@
                     thumb, duration, addedBy } ; index = currently playing */
     const st = (S.queue = { items: [], index: -1 });
     let dragId = null, autoplay = true;
-    let unVisible = false, unCancelled = false, advancing = false;
-    const uid  = () => "q_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    let unVisible = false, unCancelled = false;
     /* Host + moderators. Server should ideally expose a dedicated `canQueue`
-       permission; until then we reuse the two flags you already ship. */
-    const canManage = () => !!(S.perms.canChangeVideo || S.perms.canManage);
-    /* Who is allowed to drive auto-advance (must be a single authority to
-       avoid N clients all emitting video-load). Best: move this server-side. */
-    const canDrive  = () => canManage();
-    /* ── metadata ───────────────────────────────────────── */
-    async function buildItem(url, addedBy) {
-      const ytId = extractYT(url);
-      const base = { id: uid(), url, addedBy: addedBy || S.username, duration: 0 };
-      if (ytId) {
-        const m = await fetchYTMeta(ytId);           // reuses your oEmbed helper
-        return Object.assign(base, {
-          type: "youtube", videoId: ytId,
-          title: m.title || "YouTube video", author: m.author || "YouTube", thumb: m.thumb,
-        });
-      }
-      const name = decodeURIComponent((url.split("/").pop() || url).split("?")[0]) || "Video";
-      const item = Object.assign(base, {
-        type: "direct", videoId: null, title: name, author: "Direct link", thumb: "",
-      });
-      probeDuration(item);                            // async, fills in later
-      return item;
-    }
-    /* cheap metadata-only probe so direct links show a runtime */
-    function probeDuration(item) {
-      const v = document.createElement("video");
-      v.preload = "metadata"; v.muted = true;
-      v.addEventListener("loadedmetadata", () => {
-        if (v.duration && isFinite(v.duration)) { item.duration = v.duration; render(); }
-        v.src = "";
-      }, { once: true });
-      v.addEventListener("error", () => { v.src = ""; }, { once: true });
-      v.src = item.url;
+       permission; until then reuse the two flags already shipped. */
+    const canManage = () => !!S.perms.canQueue;
+    function playId(id) {
+      if (!canManage()) return toast("You don't have queue control", "error");
+      emit("queue-play", { id });
     }
     /* ── queries ────────────────────────────────────────── */
     const hasNext = () => st.index >= -1 && st.index + 1 < st.items.length;
@@ -753,78 +730,24 @@
     const peekNext = () => (hasNext() ? st.items[st.index + 1] : null);
     const find = (id) => st.items.findIndex((i) => i.id === id);
     /* ── mutations ──────────────────────────────────────── */
-    async function add(url, opts) {
-      opts = opts || {};
+    function add(url) {
       if (!url) return toast("Enter a URL", "error");
-      if (!canManage()) return toast("Only the host & moderators can edit the queue", "error");
-      const item = await buildItem(url);
-      st.items.push(item);
-      render();
-      if (!opts.silent) toast("Added to queue", "success");
-      emit("queue-add", { url, id: item.id });                       // ← BACKEND HOOK
-      /* nothing playing yet → start immediately */
-      if (st.index === -1 && !videoLoaded) playIndex(st.items.length - 1);
-      return item;
+      if (!canManage()) return toast("You don't have queue control", "error");
+      emit("queue-add", { url });                      // server resolves metadata + echoes queue-update
     }
-    function remove(id) {
-      if (!canManage()) return;
-      const i = find(id); if (i < 0) return;
-      const wasCurrent = i === st.index;
-      st.items.splice(i, 1);
-      if (i < st.index) st.index--;
-      else if (wasCurrent) st.index = Math.min(st.index, st.items.length - 1) - 0; // stay in place
-      render(); resetUpNext();
-      emit("queue-remove", { id });                                  // ← BACKEND HOOK
-      if (wasCurrent) { /* current removed: keep playing, just detach index */ st.index = -1; render(); }
-    }
-    function move(id, to) {
-      if (!canManage()) return;
-      const from = find(id);
-      if (from < 0 || to < 0 || to >= st.items.length || from === to) return;
-      const cur = st.items[st.index];
-      st.items.splice(to, 0, st.items.splice(from, 1)[0]);
-      st.index = cur ? st.items.indexOf(cur) : st.index;
-      render(); resetUpNext();
-      emit("queue-move", { id, to });                                // ← BACKEND HOOK
-    }
-    function clear() {
-      if (!canManage()) return;
-      const cur = st.index >= 0 ? st.items[st.index] : null;
-      st.items = cur ? [cur] : [];
-      st.index = cur ? 0 : -1;
-      render(); resetUpNext();
-      emit("queue-clear", {});                                       // ← BACKEND HOOK
-    }
+    const remove = (id)     => canManage() && emit("queue-remove", { id });
+    const move   = (id, to) => canManage() && emit("queue-move", { id, to });
+    const clear  = ()       => canManage() && emit("queue-clear", {});
     /* ── playback ───────────────────────────────────────── */
-    function playIndex(i) {
-      if (i < 0 || i >= st.items.length) return;
-      if (!canManage()) return toast("Only the host can change the video", "error");
-      st.index = i;
-      resetUpNext();
-      loadVideo(st.items[i].url, false);      // emits video-load → everyone follows
-      emit("queue-play", { id: st.items[i].id, index: i });          // ← BACKEND HOOK
-      render();
-    }
+    const playIndex = (i) => st.items[i] && playId(st.items[i].id);
     const next = () => hasNext() && playIndex(st.index + 1);
     const prev = () => hasPrev() && playIndex(st.index - 1);
-    /* Called by loadVideo() so the queue stays in sync with *any* load,
-       including remote ones pushed by the host. */
-    function syncToUrl(url) {
-      const i = st.items.findIndex((it) => it.url === url);
-      if (i >= 0) st.index = i;
-      else if (st.index >= 0 && st.items[st.index] && st.items[st.index].url !== url) st.index = -1;
-      resetUpNext();
-      render();
-    }
-    /* video finished */
+    /* video finished → tell the server; IT decides what plays next (single authority) */
     function onEnded() {
       hideUpNext();
-      if (!autoplay || !hasNext()) return;
-      if (!canDrive()) return;                // non-hosts wait for the video-load broadcast
-      if (advancing) return;
-      advancing = true;
-      setTimeout(() => { advancing = false; next(); }, 150);
+      if (socket) socket.emit("video-ended", { itemId: S.currentItemId });
     }
+
     /* ── UP NEXT card ───────────────────────────────────── */
     function tick(t, d) {
       const nxt = peekNext();
@@ -848,7 +771,7 @@
       $("unRing").style.setProperty("--p", Math.min(100, (1 - rem / UPNEXT_AT) * 100).toFixed(0) + "%");
     }
     function hideUpNext() { if (unVisible) { $("upNext").hidden = true; unVisible = false; } }
-    function resetUpNext() { hideUpNext(); unCancelled = false; advancing = false; }
+    function resetUpNext() { hideUpNext(); unCancelled = false; }
     /* ── render ─────────────────────────────────────────── */
     const ICON = {
       play:   '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
@@ -868,6 +791,7 @@
       $("queueClearBtn").disabled = !manage || st.items.length === 0;
       $("queueBar").hidden = !manage;
       $("queueLock").hidden = manage;
+      $("qAutoplay").disabled = !manage;
       if (st.items.length === 0 && manage && !videoLoaded) {
         $("queueEmpty").querySelector(".q-empty-s").textContent =
           "Paste a URL below — the first video starts right away";
@@ -909,11 +833,16 @@
       $("cPrevBtn").disabled = noPrev;  $("cNextBtn").disabled = noNext;
     }
     /* ── remote reconcile (call from socket `queue-update`) ── */
-    function applyRemote(payload) {
-      if (!payload || !Array.isArray(payload.items)) return;
-      st.items = payload.items;
-      st.index = typeof payload.index === "number" ? payload.index : st.index;
-      render(); resetUpNext();
+    function applyRemote(p) {
+      if (!p || !Array.isArray(p.items)) return;
+      st.items = p.items;
+      st.index = typeof p.index === "number" ? p.index : -1;
+      if (typeof p.autoplay === "boolean") {
+        autoplay = p.autoplay;
+        const cb = $("qAutoplay");
+        if (cb) cb.checked = autoplay;
+      }
+      resetUpNext(); render();
     }
     function emit(ev, data) { if (socket) socket.emit(ev, data); }
     /* ── wiring ─────────────────────────────────────────── */
@@ -931,7 +860,10 @@
         if (e.key === "Enter") $("queueAddBtn").click();
       });
       $("queueClearBtn").onclick = clear;
-      $("qAutoplay").onchange = (e) => { autoplay = e.target.checked; if (!autoplay) hideUpNext(); };
+      $("qAutoplay").onchange = (e) => {
+        if (!canManage()) { e.target.checked = autoplay; return toast("You don't have queue control", "error"); }
+        emit("queue-autoplay", { on: e.target.checked });
+      };
       /* row actions (delegated) */
       $("queueList").addEventListener("click", (e) => {
         const btn = e.target.closest(".q-act"); if (!btn) return;
@@ -977,7 +909,7 @@
       const cancel = () => { unCancelled = true; hideUpNext(); };
       $("unCancel").onclick    = cancel;
       $("unCancelBtn").onclick = cancel;
-      $("unNowBtn").onclick    = () => { hideUpNext(); next(); };
+      $("unNowBtn").onclick = () => { hideUpNext(); next(); };
       /* N / P shortcuts */
       document.addEventListener("keydown", (e) => {
         const t = e.target;
@@ -997,28 +929,30 @@
       dom.paneChat.classList.toggle("active", chat);
       dom.paneQueue.classList.toggle("active", !chat);
     }
-    return { wire, add, render, refreshNav, applyRemote, syncToUrl,
+    return { wire, add, render, refreshNav, applyRemote,
              onEnded, tick, resetUpNext, next, prev, hasNext, hasPrev, canManage };
   })();
 
   /* ══════════════════════════════════
      VIDEO — load / controls / sync
      ══════════════════════════════════ */
-  async function loadVideo(url, fromRemote) {
-    if (!url) { toast("Enter a URL", "error"); return; }
-    if (!fromRemote && !S.perms.canChangeVideo) { toast("Only the host can change the video", "error"); return; }
+  let pendingAutoplay = false;
+  
+  async function loadVideo(url, fromRemote, opts) {
+    opts = opts || {};
+    if (!url) return;
     P.destroy();
     ytLetterbox.detach();
-    settingsUI.reset(); 
+    settingsUI.reset();
     volDragging = false;
     Q.resetUpNext();
-    $("viBar").style.display = "none";  // (direct videos get no YT info bar)
+    $("viBar").style.display = "none";
     if (dom.fxLayer) dom.fxLayer.innerHTML = "";
+    pendingAutoplay = !!opts.play;              // ← new: remember whether to auto-start
+
     const ytId = extractYT(url);
     if (ytId) {
       P.type = "youtube";
-      /* controls=0 + disablekb=1 + click-shield → YouTube's chrome can no longer be used to
-         pause/seek, so permissions are actually enforceable. We drive it from our own .vc bar. */
       await loadYTAPI();
       const qs = new URLSearchParams({
         enablejsapi: "1", fs: "0", controls: "0", disablekb: "1",
@@ -1039,16 +973,26 @@
       dom.videoWrap.innerHTML = '<video id="videoEl" preload="metadata"></video>';
       P.el = $("videoEl");
       P.el.src = url;
-      wireDirectVideoEvents();                               // element-level listeners only
+      wireDirectVideoEvents();
       P.el.addEventListener("canplay", onPlayerReady, { once: true });
     }
-    dom.controls.style.display = "";                         // our bar now serves BOTH players
+
+    dom.controls.style.display = "";
     $("vcCenter").style.display = "";
     startUITicker();
     if (dom.placeholder && dom.placeholder.parentNode) dom.placeholder.remove();
     videoLoaded = true;
-    if (!fromRemote && socket) socket.emit("video-load", { url });
-    Q.syncToUrl(url);   // keeps queue index aligned for local *and* remote loads
+    Q.render();
+  }
+
+  function reportDuration() {
+    if (!socket || !S.currentItemId || !S.perms.canSync) return;
+    const tryIt = () => {
+      const d = P.dur();
+      if (d > 0) socket.emit("queue-duration", { id: S.currentItemId, duration: d });
+      else setTimeout(tryIt, 700);
+    };
+    setTimeout(tryIt, 400);
   }
 
   /* Called once when the player is ready to accept commands */
@@ -1061,6 +1005,15 @@
     syncVolumeUI();
     if (!needsSync) return;
     needsSync = false;
+    /* auto-advance / play-now: the server told us to roll */
+    if (pendingAutoplay) {
+      pendingAutoplay = false;
+      needsSync = false;
+      P.remote(() => P.play(0));
+      reportDuration();
+      return;
+    }
+    reportDuration();
     // 1) immediately apply the DB snapshot (best guess)
     P.remote(() => P.seek(initialVideoState.currentTime));
     // 2) ask peers for the *live* position — overrides DB if someone answers
@@ -1515,9 +1468,9 @@
     $("playBtn").disabled     = !p.canSync;
     $("progressBar").disabled = !p.canSync;
     dom.vcLock.style.display  = p.canSync ? "none" : "";
-    const n = p.canGrantSync ? S.requests.length : 0;      // host + mods get the badge
+    const n = (p.canGrantSync || p.canGrantQueue) ? S.requests.length : 0;
     dom.gearBadge.classList.toggle("is-hidden", n === 0);
-    dom.gearBadge.textContent = n;  
+    dom.gearBadge.textContent = n;
     if (!p.canSync) P.stopLeader();
     Q.render();
   }
@@ -1537,6 +1490,18 @@
     dom.cfgSheet.setAttribute("aria-hidden", "true");
   }
   const ROLE_LABEL = { admin: "Host", mod: "Mod", member: "Member" };
+  /* one access row + its request affordance */
+  function accessRow(label, granted, state, scope, openToAll) {
+    let h = '<div class="cfg-row"><span>' + label + "</span>" +
+      '<span class="pill ' + (granted ? "pill-ok" : "pill-no") + '">' +
+      (granted ? (openToAll ? "Everyone" : "Allowed") : "Host-controlled") + "</span></div>";
+    if (granted || !scope) return h;
+    if (state === "pending")     h += '<p class="cfg-note">⏳ Request sent — waiting for a host or mod.</p>';
+    else if (state === "denied") h += '<p class="cfg-note">🚫 Declined. A host or mod can still grant it.</p>';
+    else h += '<button class="cfg-btn primary" data-act="request" data-scope="' + scope + '">Request ' +
+              label.toLowerCase() + "</button>";
+    return h;
+  }
   function renderConfig() {
     const p = S.perms, r = S.room || {};
     const online = new Set((r.participants || []).map((x) => (x.userId || "").toString()));
@@ -1547,26 +1512,16 @@
       h += secOpen("access", "Your access");
       if (mod) {
         h += '<div class="cfg-banner"><span class="role-tag role-mod">🛡️ MOD</span>' +
-              "<span>You're a moderator of this room</span></div>" +
-              '<div class="cfg-row"><span>Playback control</span>' +
-              '<span class="pill pill-ok">Allowed</span></div>' +
-              '<p class="cfg-note">You can edit the room details and grant playback ' +
-              "control to others. Only the host can change roles or the video.</p>";
+             "<span>You're a moderator of this room</span></div>" +
+             accessRow("Playback control", true, null, null) +
+             accessRow("Queue control",    true, null, null) +
+             '<p class="cfg-note">You can edit the room, manage the queue and grant ' +
+             "control to others. Only the host can change roles.</p>";
       } else {
-        const st = p.canSync ? "granted" : p.requestState;
-        h += '<div class="cfg-row"><span>Playback control</span>' +
-                '<span class="pill ' + (p.canSync ? "pill-ok" : "pill-no") + '">' +
-                (p.canSync ? "Allowed" : "Host-controlled") + "</span></div>";
-        if (!p.canSync) {
-          if (st === "pending")
-            h += '<p class="cfg-note">⏳ Request sent — waiting for the host.</p>';
-          else if (st === "denied")
-            h += '<p class="cfg-note">🚫 Your request was declined. A host or mod ' +
-                  "can still grant it from their settings.</p>";
-          else
-            h += '<button class="cfg-btn primary" data-act="request">' +
-                  "Request playback control</button>";
-        }
+        h += accessRow("Playback control", p.canSync,  p.requestState,      "sync",
+                       p.syncMode  === "everyone");
+        h += accessRow("Queue control",    p.canQueue, p.queueRequestState, "queue",
+                       p.queueMode === "everyone");
       }
       h += SEC_CLOSE;
     }
@@ -1587,17 +1542,28 @@
       if (S.requests.length) {
         h += secOpen("requests", 'Requests <span class="cnt">' + S.requests.length + "</span>");
         S.requests.forEach((m) => {
-          h += '<div class="cfg-row"><span class="cfg-user">' +
-                avatarHTML(m.username) + esc(m.username) + "</span>" +
-                '<span class="cfg-acts">' +
-                  '<button class="cfg-mini ok"  data-act="respond" data-approve="1" ' +
-                    'data-id="' + m.userId + '">Approve</button>' +
-                  '<button class="cfg-mini no" data-act="respond" data-approve="0" ' +
-                    'data-id="' + m.userId + '">Deny</button>' +
-                "</span></div>";
+          const lbl = m.scope === "queue" ? "queue" : "playback";
+          h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
+                 '<span class="cfg-uname">' + esc(m.username) + "</span>" +
+                 '<span class="scope-tag scope-' + lbl + '">' + lbl + "</span></span>" +
+               '<span class="cfg-acts">' +
+                 '<button class="cfg-mini ok"  data-act="respond" data-approve="1" data-scope="' + m.scope + '" data-id="' + m.userId + '">Approve</button>' +
+                 '<button class="cfg-mini no" data-act="respond" data-approve="0" data-scope="' + m.scope + '" data-id="' + m.userId + '">Deny</button>' +
+               "</span></div>";
         });
         h += SEC_CLOSE;
       }
+    }
+    // ── queue mode (host + mods) ──
+    if (p.canGrantQueue) {
+      h += secOpen("queuemode", "Who can manage the queue");
+      h += '<div class="seg">' +
+             '<button class="seg-btn' + (p.queueMode === "host" ? " on" : "") +
+               '" data-act="qmode" data-mode="host">🔒 Host &amp; mods</button>' +
+             '<button class="seg-btn' + (p.queueMode === "everyone" ? " on" : "") +
+               '" data-act="qmode" data-mode="everyone">👥 Everyone</button>' +
+           "</div>" +
+           '<p class="cfg-note">Controls adding, removing, reordering and skipping videos.</p>' + SEC_CLOSE;
     }
     /* ── people (host + mods) ── */
     if (p.canManage) {
@@ -1613,6 +1579,8 @@
         const showRoleSelect = p.canSetRoles && !isHostRow;
         const menuOpen = !!(S.cfgRowMenu && S.cfgRowMenu.id === m.userId);
         const canAct   = !!p.canBan && !isHostRow;
+        const syncLocked  = isHostRow || isModRow || p.syncMode  === "everyone" || !p.canGrantSync;
+        const queueLocked = isHostRow || isModRow || p.queueMode === "everyone" || !p.canGrantQueue;
         h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
                 '<span class="cfg-uname">' + esc(m.username) +
                   (online.has(m.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
@@ -1626,13 +1594,8 @@
                       '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
                     "</select>"
                   : "") +
-                '<label class="sw' + (locked ? " sw-lock" : "") + '" title="' +
-                (isHostRow || isModRow ? "Has playback control automatically"
-                                      : "Can control playback") + '">' +
-                '<input type="checkbox" data-act="sync" data-id="' + m.userId + '"' +
-                  (m.canSync ? " checked" : "") + (locked ? " disabled" : "") + ">" +
-                '<span class="sw-track"><span class="sw-knob"></span></span>' +
-              "</label>" +
+                swHTML("sync",  m.userId, m.canSync,  syncLocked,  "Can play / pause / seek") +    // ← replaces the old <label>
+                swHTML("queue", m.userId, m.canQueue, queueLocked, "Can manage the queue") +        // ← new
               (canAct
                 ? '<button class="cfg-more' + (menuOpen ? " on" : "") + '" data-act="row-menu" ' +
                     'data-id="' + m.userId + '" aria-expanded="' + menuOpen + '" ' +
@@ -1878,6 +1841,14 @@
   function avatarHTML(name) {
     return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
   }
+  function swHTML(scope, id, on, locked, title) {
+    const ic = scope === "sync" ? "▶" : "☰";
+    return '<label class="sw sw-ic' + (locked ? " sw-lock" : "") + '" title="' + title + '">' +
+      '<span class="sw-tag">' + ic + "</span>" +
+      '<input type="checkbox" data-act="' + scope + '" data-id="' + id + '"' +
+        (on ? " checked" : "") + (locked ? " disabled" : "") + ">" +
+      '<span class="sw-track"><span class="sw-knob"></span></span></label>';
+  }
   /* delegated actions inside the sheet */
   function onCfgClick(e) {
     /* ── collapsible header toggle ── */
@@ -1910,10 +1881,11 @@
       }
       return;
     }
-    if (act === "request")  socket && socket.emit("perm-request");
-    if (act === "mode")     socket && socket.emit("perm-set-mode", { mode: el.dataset.mode });
-    if (act === "respond")  socket && socket.emit("perm-respond", {
-      userId: el.dataset.id, approve: el.dataset.approve === "1",
+    if (act === "request") socket && socket.emit("perm-request", { scope: el.dataset.scope || "sync" });
+    if (act === "mode")    socket && socket.emit("perm-set-mode",       { mode: el.dataset.mode });
+    if (act === "qmode")   socket && socket.emit("perm-set-queue-mode", { mode: el.dataset.mode });
+    if (act === "respond") socket && socket.emit("perm-respond", {
+      userId: el.dataset.id, approve: el.dataset.approve === "1", scope: el.dataset.scope || "sync",
     });
     if (act === "row-menu") {
       const id = el.dataset.id;
@@ -1971,8 +1943,11 @@
   function onCfgChange(e) {
     const el = e.target.closest("[data-act]");
     if (!el) return;
-    if (el.dataset.act === "sync") socket && socket.emit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id });
-    if (el.dataset.act === "role") socket && socket.emit("perm-set-role", { userId: el.dataset.id, role: el.value });
+    const a = el.dataset.act;
+    if (a === "sync" || a === "queue")
+      socket && socket.emit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id, scope: a });
+    if (a === "role")
+      socket && socket.emit("perm-set-role", { userId: el.dataset.id, role: el.value });
   }
   /* remember room-detail edits so a perms broadcast doesn't wipe the form */
   function onCfgRoomInput(e) {
@@ -1993,21 +1968,22 @@
     dom_cfgDelegate();
   }
   /* host-side approve/deny prompt */
-  function showRequestPrompt(userId, username) {
-    if (dom.toasts.querySelector('[data-req="' + userId + '"]')) return;
+  function showRequestPrompt(userId, username, scope) {
+    const key = userId + ":" + scope;
+    if (dom.toasts.querySelector('[data-req="' + key + '"]')) return;
+    const label = scope === "queue" ? "manage the queue" : "control playback";
     const el = document.createElement("div");
     el.className = "perm-prompt";
-    el.dataset.req = userId;
+    el.dataset.req = key;
     el.innerHTML =
-      '<div class="pp-txt"><strong>' + esc(username) + "</strong> wants playback control</div>" +
+      '<div class="pp-txt"><strong>' + esc(username) + "</strong> wants to " + label + "</div>" +
       '<div class="pp-acts"><button class="cfg-mini ok">Approve</button><button class="cfg-mini no">Deny</button></div>';
     const [ok, no] = el.querySelectorAll("button");
-    ok.onclick = () => { socket.emit("perm-respond", { userId, approve: true  }); el.remove(); };
-    no.onclick = () => { socket.emit("perm-respond", { userId, approve: false }); el.remove(); };
+    ok.onclick = () => { socket.emit("perm-respond", { userId, scope, approve: true  }); el.remove(); };
+    no.onclick = () => { socket.emit("perm-respond", { userId, scope, approve: false }); el.remove(); };
     dom.toasts.appendChild(el);
-    setTimeout(() => el.remove(), 30000);   // falls back to the pending list in settings
+    setTimeout(() => el.remove(), 30000);
   }
-
 })();
 
 

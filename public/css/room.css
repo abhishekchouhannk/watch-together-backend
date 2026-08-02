@@ -755,9 +755,14 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .cfg-uname{display:flex;align-items:center;gap:.3rem;color:var(--t1);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cfg-av{width:1.5rem;height:1.5rem;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.62rem;font-weight:700;flex-shrink:0}
 .dot-on{width:.4rem;height:.4rem;border-radius:50%;background:#22c55e;box-shadow:0 0 5px rgba(34,197,94,.7);display:inline-block}
-.cfg-acts{display:flex;align-items:center;gap:.4rem;flex-shrink:0}
+.cfg-acts{display:flex;align-items:center;gap:.3rem;flex-shrink:0}
 .role-tag{font-size:.6rem;font-weight:800;padding:.05rem .3rem;border-radius:4px;background:var(--tag-bg);color:var(--tag-t)}
 .role-admin{background:var(--acc);color:var(--acc-t)}
+/* scope badges on request rows */
+.scope-tag{font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+  padding:.05rem .3rem;border-radius:4px;flex-shrink:0}
+.scope-playback{background:rgba(34,197,94,.16);color:#16a34a}
+.scope-queue{background:rgba(99,102,241,.16);color:#6366f1}
 .pill{font-size:.68rem;font-weight:700;padding:.12rem .45rem;border-radius:999px}
 .pill-ok{background:rgba(34,197,94,.16);color:#16a34a}
 .pill-no{background:var(--tag-bg);color:var(--tag-t)}
@@ -785,6 +790,9 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .sw input:checked + .sw-track{background:var(--acc)}
 .sw input:checked + .sw-track .sw-knob{transform:translateX(15px)}
 .sw-lock{opacity:.5;cursor:not-allowed}
+/* two switches per row need a hint of what they control */
+.sw-ic{display:inline-flex;align-items:center;gap:.2rem}
+.sw-tag{font-size:.6rem;color:var(--t3);width:.8rem;text-align:center}
 /* host approve/deny prompt (lives in the toast stack) */
 .perm-prompt{
   pointer-events:auto;display:flex;flex-direction:column;gap:.5rem;

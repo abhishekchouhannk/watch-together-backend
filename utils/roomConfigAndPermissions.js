@@ -55,7 +55,9 @@ function sanitizeRoomPatch(room, raw = {}) {
   return { patch, errors };
 }
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-
+/* ── moderation / room management ───────────────────────── */
+const canModerate = (room, uid) => isAdmin(room, uid) || isMod(room, uid); // mods + host
+const canGrantSync = canModerate;  // grant/revoke playback, answer requests, set sync mode
 
 const isMod = (room, uid) => roleOf(room, uid) === "mod";
 function ensureMember(room, user) {
@@ -86,13 +88,6 @@ function canSync(room, uid) {
   const m = getMember(room, uid);
   return !!(m && m.canSync);
 }
-function canChangeVideo(room, uid) {
-  if (isAdmin(room, uid)) return true;
-  const who = (room.settings && room.settings.whoCanChangeVideo) || "host";
-  if (who === "everyone") return true;
-  if (who === "controllers") return canSync(room, uid);
-  return false;                                                    // "host"
-}
 /* ── queue control: who may add / remove / reorder / play-from-queue ── */
 function canQueue(room, uid) {
   if (isAdmin(room, uid) || isMod(room, uid)) return true;
@@ -112,10 +107,7 @@ const SCOPES = {
            can: canQueue, mode: "queueMode", grantedBy: canGrantQueue },
 };
 const isScope = (s) => Object.prototype.hasOwnProperty.call(SCOPES, s);
-/* ── moderation / room management ───────────────────────── */
-const canModerate = (room, uid) => isAdmin(room, uid) || isMod(room, uid); // mods + host
 const canEditRoom = canModerate;   // edit name/desc/mode/tags/visibility/cap
-const canGrantSync = canModerate;  // grant/revoke playback, answer requests, set sync mode
 const isBanned = (room, uid) =>
   (room.bannedUsers || []).some((b) => sameId(b.userId, uid));
 function resolvePerms(room, uid) {
@@ -148,12 +140,16 @@ function serializeMembers(room, privileged) {
   return (room.members || []).map((m) => {
     const base = { userId: m.userId.toString(), username: m.username, role: m.role };
     if (!privileged) return base;
-    return { ...base, canSync: canSync(room, m.userId), syncRequest: m.syncRequest || "none" };
+    return { 
+      ...base, 
+      canSync: canSync(room, m.userId), syncRequest: m.syncRequest || "none",
+      canQueue: canQueue(room, m.userId), queueRequest: m.queueRequest || "none",
+    };
   });
 }
 module.exports = {
   ROOM_CAP, MODE_VALUES, validId,
   sameId, isAdmin, isMod, roleOf, getMember, ensureMember, isBanned,
   canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles, canBan,
-  resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue,
+  resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue, canQueue, canGrantQueue, SCOPES, isScope,
 };
