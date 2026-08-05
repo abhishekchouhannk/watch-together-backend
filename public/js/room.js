@@ -805,7 +805,7 @@
           : "🎞️";
         const now = playing ? '<span class="q-now"><span class="q-eq"><i></i><i></i><i></i></span></span>' : "";
         const dur = it.duration ? '<span class="q-dur">' + fmtTime(it.duration) + "</span>" : "";
-        const sub = [it.author, it.addedBy].filter(Boolean).map(esc).join(" · ");
+        const sub = [it.author, it.addedByName].filter(Boolean).map(esc).join(" · ");
         return (
           '<li class="' + cls + '" data-id="' + it.id + '"' + (manage ? ' draggable="true"' : "") + ">" +
             '<span class="q-grip" aria-hidden="true">⠿</span>' +
