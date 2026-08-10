@@ -352,6 +352,15 @@
     dom.configBtn.onclick = openConfig;
     $("cfgClose").onclick = closeConfig;
     dom.cfgBackdrop.onclick = closeConfig;
+    /* ── side-panel unread ── */
+    dom.chatJump.onclick = () => Unread.jump();
+    /* the click fires before/after Q.switchTab depending on order — defer a frame so the
+       pane's .active class is already settled */
+    dom.tabChat.addEventListener("click", () =>
+      requestAnimationFrame(() => Unread.onChatShown()));
+    document.addEventListener("visibilitychange", () => Unread.sync());
+    window.addEventListener("focus", () => Unread.sync());
+    Unread.paint();
     // add the queue functionality
     Q.wire();
   }
