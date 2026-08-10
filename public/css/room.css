@@ -442,6 +442,52 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   .chat-msg{max-width:92%}
 }
 
+/* ═══════════ SYSTEM / ROOM-UPDATE NOTICES (ephemeral) ═══════════ */
+/* we do all the scroll math ourselves — don't let the browser also "help" */
+.chat-messages{overflow-anchor:none}
+.chat-sys{
+  /* layout: centred pill, works in both a flex column and a block container */
+  display:block;align-self:center;
+  box-sizing:border-box;
+  width:fit-content;max-width:92%;
+  margin:.3rem auto;
+  padding:.28rem .62rem;
+  flex-shrink:0;
+  border-radius:999px;
+  background:var(--surf);
+  border:1px solid var(--card-bdr);
+  color:var(--t3);
+  font-size:.71rem;line-height:1.35;letter-spacing:.01em;
+  text-align:center;word-break:break-word;
+  transform-origin:center top;
+  animation:sysIn .2s ease-out;          /* opacity only → no layout movement */
+}
+@keyframes sysIn{from{opacity:0}to{opacity:1}}
+/* optional flavours — pass a class from addSystemMsg if you want them */
+.chat-sys.sys-queue{color:var(--t2)}
+.chat-sys.sys-perm {color:var(--t2);border-color:color-mix(in srgb,var(--acc) 35%,var(--card-bdr))}
+/* ── the exit: fade (0-240ms), THEN close the gap (200-500ms) ── */
+.chat-sys.sys-out{
+  opacity:0;
+  transform:translateY(-2px);
+  margin-top:0;margin-bottom:0;
+  padding-top:0;padding-bottom:0;
+  border-width:0;
+  overflow:hidden;
+  pointer-events:none;
+  transition:
+    opacity   .24s ease,
+    transform .24s ease,
+    height    .30s cubic-bezier(.4,0,.2,1) .2s,
+    margin    .30s cubic-bezier(.4,0,.2,1) .2s,
+    padding   .30s cubic-bezier(.4,0,.2,1) .2s,
+    border-width .30s cubic-bezier(.4,0,.2,1) .2s;
+}
+@media (prefers-reduced-motion:reduce){
+  .chat-sys{animation:none}
+  .chat-sys.sys-out{transition:opacity .12s linear}   /* JS still drops the node */
+}
+
 /* ======== 8. Toast ======== */
 .toast-wrap{position:fixed;bottom:1.5rem;right:1.5rem;z-index:200;display:flex;flex-direction:column;gap:.5rem;pointer-events:none}
 .toast{
