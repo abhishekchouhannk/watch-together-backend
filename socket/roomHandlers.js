@@ -85,8 +85,9 @@ function emitLoad(io, roomId, it, by, play) {
   });
 }
 const findItem = (room, id) => (room.queue || []).findIndex((i) => i.itemId === id);
-const sysMsg = (io, roomId, text) => io.to(roomId).emit("chat-system", { text });
-
+function sysMsg(io, roomId, text, byId = null) {
+  io.to(roomId).emit("chat-system", { text, byId: byId ? String(byId) : null });
+}
 function serializeRoom(room) {
   const v = room.video || {};
   let currentTime = v.currentTime || 0;
@@ -393,6 +394,7 @@ module.exports = function registerRoomHandlers(io, socket) {
       text: mode === "everyone"
         ? "Everyone can now control playback"
         : "Playback control is now host-only",
+        byId: user.id,
     });
   }));
   /* accepts { userId, scope:'sync'|'queue' } — scope defaults to 'sync' (old clients) */
@@ -407,7 +409,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     await room.save();
     await broadcastPermissions(io, roomId, room);
     await toUser(io, roomId, userId, "perm-toast", { message: `You can now use ${S.label} 🎉`, type: "success" });
-    io.to(roomId).emit("perm-notice", { text: `${m.username} can now use ${S.label}` });
+    io.to(roomId).emit("perm-notice", { text: `${m.username} can now use ${S.label}`, byId: user.id });
   }));
 
   socket.on("perm-revoke", modAction(async (room, roomId, { userId, scope = "sync" } = {}) => {
@@ -439,6 +441,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     });
     io.to(roomId).emit("perm-notice", {
       text: role === "mod" ? `${m.username} is now a moderator` : `${m.username} is no longer a moderator`,
+      byId: user.id
     });
   }));
   /* ═══════════════ ROOM DETAILS ═══════════════ */
@@ -454,7 +457,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     socket.emit("room-saved", { room: updatedRoom, changed });                               // the editor
     socket.to(roomId).emit("room-updated", { room: updatedRoom, by: user.username, changed }); // everyone else
     socket.emit("perm-toast", { message: "Room details saved ✅", type: "success" });
-    socket.to(roomId).emit("perm-notice", { text: `${user.username} updated the room details` });
+    socket.to(roomId).emit("perm-notice", { text: `${user.username} updated the room details`, byId: user.id });
   }));
   /* participant asks the host/mod for playback control */
   socket.on("perm-request", async ({ scope = "sync" } = {}) => {
@@ -496,16 +499,15 @@ module.exports = function registerRoomHandlers(io, socket) {
       message: approve ? `${user.username} gave you ${S.label} 🎉` : "Your request was declined",
       type: approve ? "success" : "error",
     });
-    if (approve) io.to(roomId).emit("perm-notice", { text: `${m.username} can now use ${S.label}` });
+    if (approve) io.to(roomId).emit("perm-notice", { text: `${m.username} can now use ${S.label}`, byId: user.id });
   }));
   socket.on("perm-set-queue-mode", modAction(async (room, roomId, { mode } = {}) => {
     if (!["host", "everyone"].includes(mode) || room.settings.queueMode === mode) return;
     room.settings.queueMode = mode;
     await room.save();
     await broadcastPermissions(io, roomId, room);
-    io.to(roomId).emit("perm-notice", {
-      text: mode === "everyone" ? "Everyone can now manage the queue" : "Queue control is now host-only",
-    });
+    io.to(roomId).emit("perm-notice", { text: mode === "everyone" ? "Everyone can now control playback"
+                                                                : "Playback control is now host-only", byId: user.id });
   }));
   /* ═══════════════ MEMBER MODERATION (host only) ═══════════════ */
   /* resolve a display name even if the member record is already gone */
@@ -537,7 +539,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     markKicked(roomId, userId);
     await room.save();
     io.to(roomId).emit("participants-update", presencePayload(room));
-    io.to(roomId).emit("perm-notice", { text: `${name} was kicked from the room` });
+    io.to(roomId).emit("perm-notice", { text: `${name} was kicked from the room`, byId: user.id });
     socket.emit("perm-toast", { message: `${name} was kicked`, type: "success" });
     await broadcastPermissions(io, roomId, room);
   }));
@@ -554,7 +556,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     await room.save();
     await User.updateOne({ _id: userId }, { $pull: { joinedRooms: roomId } });
     io.to(roomId).emit("participants-update", presencePayload(room));
-    io.to(roomId).emit("perm-notice", { text: `${name} was removed from the room` });
+    io.to(roomId).emit("perm-notice", { text: `${name} was removed from the room`, byId: user.id });
     socket.emit("perm-toast", { message: `${name} was removed`, type: "success" });
     await broadcastPermissions(io, roomId, room);
   }));
@@ -576,7 +578,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     await room.save();
     await User.updateOne({ _id: userId }, { $pull: { joinedRooms: roomId } });
     io.to(roomId).emit("participants-update", presencePayload(room));
-    io.to(roomId).emit("perm-notice", { text: `${name} was banned from the room` });
+    io.to(roomId).emit("perm-notice", { text: `${name} was banned from the room`, byId: user.id });
     socket.emit("perm-toast", { message: `${name} was banned`, type: "success" });
     await broadcastPermissions(io, roomId, room);
   }));
@@ -620,7 +622,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     if (startNow) applyCurrent(room, room.queue.length - 1, false);
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    sysMsg(io, roomId, `${user.username} added “${item.title}” to the queue`);
+    sysMsg(io, roomId, `${user.username} added “${item.title}” to the queue`, user.id);
     if (startNow) emitLoad(io, roomId, room.queue[room.queueIndex], user.username, false);
   }));
   socket.on("queue-remove", queueAction(async (room, roomId, { id } = {}) => {
@@ -631,7 +633,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     else if (i === room.queueIndex) room.queueIndex = -1;   // keep playing, just detach
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    sysMsg(io, roomId, `${user.username} removed “${gone.title}” from the queue`);
+    sysMsg(io, roomId, `${user.username} removed “${gone.title}” from the queue`, user.id);
   }));
   socket.on("queue-move", queueAction(async (room, roomId, { id, to } = {}) => {
     const from = findItem(room, id);
@@ -650,7 +652,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     room.queueIndex = cur ? 0 : -1;
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    sysMsg(io, roomId, `${user.username} cleared the queue`);
+    sysMsg(io, roomId, `${user.username} cleared the queue`, user.id);
   }));
   /* play a specific item (also powers the prev/next buttons) */
   socket.on("queue-play", queueAction(async (room, roomId, { id } = {}) => {
@@ -661,7 +663,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
     emitLoad(io, roomId, it, user.username, true);
-    sysMsg(io, roomId, `${user.username} started “${it.title}”`);
+    sysMsg(io, roomId, `${user.username} started “${it.title}”`, user.id);
   }));
   socket.on("queue-autoplay", queueAction(async (room, roomId, { on } = {}) => {
     const v = !!on;
@@ -669,7 +671,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     room.settings.autoplay = v;
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    io.to(roomId).emit("perm-notice", { text: `${user.username} turned autoplay ${v ? "on" : "off"}` });
+    io.to(roomId).emit("perm-notice", { text: `${user.username} turned autoplay ${v ? "on" : "off"}`, byId: user.id });
   }));
   /* a controller learned the real runtime — cache it so everyone sees it */
   socket.on("queue-duration", async ({ id, duration } = {}) => {
@@ -702,7 +704,7 @@ module.exports = function registerRoomHandlers(io, socket) {
       await room.save();
       io.to(roomId).emit("queue-update", serializeQueue(room));
       emitLoad(io, roomId, it, null, true);
-      sysMsg(io, roomId, `▶ Now playing “${it.title}”`);
+      sysMsg(io, roomId, `▶ Now playing “${it.title}”`, user.id);
     } else {
       room.video.isPlaying = false;
       room.video.updatedAt = new Date();

@@ -70,6 +70,7 @@
     cfgSheet: $("cfgSheet"), cfgBackdrop: $("cfgBackdrop"), cfgBody: $("cfgBody"),
     tabChat: $("tabChat"), tabQueue: $("tabQueue"),
     paneChat: $("paneChat"), paneQueue: $("paneQueue"),
+    chatUnread: $("chatUnread"), chatJump: $("chatJump"), chatJumpN: $("chatJumpN"),
   };
   /* ═══════════════════════════════════════════
      ROOM STATE / PERMISSIONS / CONFIG
@@ -380,7 +381,7 @@
       if (perms) S.perms = perms;
       applyPerms();
       renderRoomDetails();
-      addSystemMsg("You joined the room");
+      addSystemMsg("You joined the room", { silent: true });   // ← silenced
       await loadInitialMessages();
       if (room.queue) Q.applyRemote(room.queue);
       if (room.video && room.video.url) {
@@ -395,8 +396,12 @@
       setTimeout(() => (location.href = "/dashboard"), 1500);
     });
     socket.on("queue-update", (p) => Q.applyRemote(p));
-    socket.on("queue-ended", () => { Q.resetUpNext(); toast("Queue finished 🎉", "success"); });
-    socket.on("chat-system", ({ text }) => addSystemMsg(text));
+    socket.on("queue-ended", () => {
+      Q.resetUpNext();
+      addSystemMsg("Queue finished 🎉");
+      toast("Queue finished 🎉", "success");
+    });
+    socket.on("chat-system", ({ text, byId }) => addSystemMsg(text, { silent: isMe(byId) }));
 
     /* ── permissions ── */
     socket.on("room-permissions", ({ perms, members, requests, banned }) => {
@@ -421,7 +426,7 @@
       if (video) { markLocal(video.currentTime, video.isPlaying); revertToRoomState(video); }
     });
     socket.on("perm-toast", ({ message, type }) => toast(message, type));
-    socket.on("perm-notice", ({ text }) => addSystemMsg(text));
+    socket.on("perm-notice", ({ text, byId }) => addSystemMsg(text, { silent: isMe(byId) }));
     socket.on("perm-request", ({ userId, username, scope }) => showRequestPrompt(userId, username, scope || "sync"));
 
     /* presence moves the validation floor */
@@ -785,8 +790,10 @@
       /* badge + empty state */
       const upcoming = Math.max(0, st.items.length - (st.index + 1));
       const badge = $("queueCount");
-      badge.textContent = upcoming;
-      badge.dataset.zero = upcoming ? "0" : "1";
+      badge.textContent   = fmtBadge(upcoming);                  // ← 11+ → "10+"
+      badge.dataset.zero  = upcoming ? "0" : "1";
+      badge.title = upcoming === 1 ? "1 video up next"
+                                   : upcoming + " videos up next";
       $("queueEmpty").hidden = st.items.length > 0;
       $("queueClearBtn").disabled = !manage || st.items.length === 0;
       $("queueBar").hidden = !manage;
@@ -928,6 +935,7 @@
       dom.tabQueue.setAttribute("aria-selected", String(!chat));
       dom.paneChat.classList.toggle("active", chat);
       dom.paneQueue.classList.toggle("active", !chat);
+      if (chat) Unread.onChatShown();
     }
     return { wire, add, render, refreshNav, applyRemote,
              onEnded, tick, resetUpNext, next, prev, hasNext, hasPrev, canManage };
@@ -1316,6 +1324,69 @@
     if (vcFs) vcFs.innerHTML = svg;
   }
 
+  /* ══════════════════════════════════════
+     SIDE-PANEL BADGES (unread chat/room updates)
+     ══════════════════════════════════════ */
+  const BADGE_CAP = 10;                                    // 11 → "10+"
+  const fmtBadge  = (n) => (n > BADGE_CAP ? BADGE_CAP + "+" : String(n));
+  const isMe      = (id) => !!(id && S.userId && id.toString() === S.userId);
+  const Unread = {
+    n: 0,
+    stick: true,            // should the log snap to the bottom next time it's shown?
+    _title: document.title,
+    _raf: 0,
+    chatOnScreen() { return dom.paneChat.classList.contains("active"); },
+    atBottom(slack) {
+      const el = dom.chatMsgs;
+      return el.scrollHeight - el.scrollTop - el.clientHeight <= (slack == null ? 120 : slack);
+    },
+    /* "the user is demonstrably looking at the newest line" */
+    watching() { return !document.hidden && this.chatOnScreen() && this.atBottom(); },
+    toEnd() { dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight; },
+    /* ── called for every NEW line appended to the log (never for history) ── */
+    note(opts) {
+      opts = opts || {};
+      if (opts.stick !== undefined) this.stick = !!opts.stick;
+      if (opts.silent) return;                 // my own message / my own action
+      if (this.watching()) return;             // already on screen at the bottom
+      this.n++;
+      this.paint();
+    },
+    clear() { this.n = 0; this.paint(); },
+    /* tab switch / window refocus / scroll — re-evaluate, then repaint */
+    sync() {
+      if (this.watching()) this.n = 0;
+      this.paint();
+    },
+    /* chat pane just became visible */
+    onChatShown() {
+      if (this.stick) this.toEnd();            // content added while display:none loses scrollTop
+      this.sync();
+    },
+    onScroll() {
+      if (this._raf) return;
+      this._raf = requestAnimationFrame(() => {
+        this._raf = 0;
+        if (this.chatOnScreen()) this.stick = this.atBottom();
+        this.sync();
+      });
+    },
+    jump() { this.toEnd(); this.clear(); },
+    paint() {
+      const n = this.n, label = fmtBadge(n);
+      dom.chatUnread.hidden      = n === 0;
+      dom.chatUnread.textContent = label;
+      dom.chatUnread.title       = n === 1 ? "1 new update" : n + " new updates";
+      dom.tabChat.classList.toggle("has-unread", n > 0);
+      dom.tabChat.setAttribute("aria-label", n ? "Chat, " + label + " new updates" : "Chat");
+      /* pill only makes sense while the chat is on screen but scrolled away */
+      const showPill = n > 0 && this.chatOnScreen() && !this.atBottom();
+      dom.chatJump.hidden = !showPill;
+      dom.chatJumpN.textContent = label;
+      document.title = n > 0 ? "(" + label + ") " + this._title : this._title;
+    },
+  };
+
   /* ═══════ CHAT ═══════ */
   function sendMessage() {
     const text = dom.chatInput.value.trim();
@@ -1323,6 +1394,8 @@
     socket.emit("chat-message", { text });
     dom.chatInput.value = "";
     dom.chatInput.focus();
+    Unread.stick = true;
+    Unread.clear();
   }
   async function loadInitialMessages() {
     try {
@@ -1340,6 +1413,7 @@
     } catch (_) {}
   }
   async function onChatScroll() {
+    Unread.onScroll();
     if (dom.chatMsgs.scrollTop > 40 || !hasMoreMsgs || loadingOlder || !oldestMsgId) return;
     loadingOlder = true;
     const prev = dom.chatMsgs.scrollHeight;
@@ -1380,20 +1454,25 @@
     return div;
   }
   function appendMessage(msg, auto) {
-    const near = dom.chatMsgs.scrollHeight - dom.chatMsgs.scrollTop - dom.chatMsgs.clientHeight < 120;
+    const self = isMe(msg.senderId);
+    const stick = self || Unread.atBottom();          // measure BEFORE inserting
     dom.chatMsgs.appendChild(buildMsgEl(msg));
     regroupChat();
-    if (auto && near) dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight;
+    if (auto && stick) Unread.toEnd();
+    Unread.note({ silent: self, stick });
   }
-  function addSystemMsg(text) {
+  /* opts.silent → this line describes something *I* just did */
+  function addSystemMsg(text, opts) {
+    const stick = Unread.atBottom();
     const div = document.createElement("div");
     div.className = "chat-sys";
     div.textContent = text;
     dom.chatMsgs.appendChild(div);
-    dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight;
+    if (stick) Unread.toEnd();                         // ← no longer yanks the user down mid-scroll
+    Unread.note({ silent: !!(opts && opts.silent), stick });
   }
-  // Marks consecutive same-sender messages as grouped
 
+  // Marks consecutive same-sender messages as grouped
   function regroupChat() {
     let prev = null;
     Array.from(dom.chatMsgs.children).forEach((el) => {

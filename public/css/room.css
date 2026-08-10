@@ -1026,6 +1026,42 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .sp-panes{flex:1;min-height:0;display:flex}
 .sp-pane{display:none;flex:1;min-width:0;min-height:0;flex-direction:column}
 .sp-pane.active{display:flex}
+/* ── side-panel badges ── */
+.sp-badge[hidden]{display:none}
+.sp-tab .sp-badge{transition:transform .18s,opacity .18s}
+/* unread chat badge: louder than the queue count, pulses while unseen */
+.sp-badge-unread{
+  background:var(--acc);color:var(--acc-t);
+  font-variant-numeric:tabular-nums;
+}
+.sp-tab.has-unread{color:var(--t1)}
+.sp-tab.has-unread:not(.active) .sp-badge-unread{animation:spPulse 1.9s ease-in-out infinite}
+.sp-tab.has-unread:not(.active){background:var(--surf)}
+@keyframes spPulse{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.14)}
+}
+/* ── chat scroll wrapper + jump-to-latest pill ── */
+.chat-scroll-wrap{
+  position:relative;flex:1;min-height:0;min-width:0;
+  display:flex;flex-direction:column;
+}
+.chat-jump{
+  position:absolute;left:50%;bottom:.55rem;transform:translateX(-50%);
+  display:inline-flex;align-items:center;gap:.3rem;
+  padding:.3rem .6rem .3rem .45rem;border-radius:999px;
+  background:var(--acc);color:var(--acc-t);
+  font-size:.71rem;font-weight:700;line-height:1;
+  box-shadow:0 6px 18px rgba(0,0,0,.32);
+  cursor:pointer;z-index:4;
+  animation:cjIn .18s ease-out;
+}
+.chat-jump:hover{filter:brightness(1.08)}
+.chat-jump[hidden]{display:none}
+@keyframes cjIn{
+  from{opacity:0;transform:translate(-50%,8px)}
+  to  {opacity:1;transform:translate(-50%,0)}
+}
 /* ═══════════ QUEUE PANE ═══════════ */
 .q-head{
   display:flex;align-items:center;gap:.6rem;flex-shrink:0;

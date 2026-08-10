@@ -393,10 +393,10 @@
         </div>
         <!-- SIDE PANEL (Chat + Queue) -->
         <div class="chat-section" id="chatSection">
-          <!-- tabs replace the old .chat-head -->
           <div class="sp-tabs" role="tablist">
             <button class="sp-tab active" id="tabChat" data-tab="chat" role="tab" aria-selected="true">
               💬 Chat
+              <span class="sp-badge sp-badge-unread" id="chatUnread" hidden>0</span>
             </button>
             <button class="sp-tab" id="tabQueue" data-tab="queue" role="tab" aria-selected="false">
               📺 Queue <span class="sp-badge" id="queueCount">0</span>
@@ -406,7 +406,17 @@
           <div class="sp-panes">
             <!-- ── CHAT ── -->
             <section class="sp-pane active" id="paneChat" role="tabpanel">
-              <div class="chat-messages" id="chatMessages"></div>
+              <!-- gives the jump-pill something to anchor to -->
+              <div class="chat-scroll-wrap">
+                <div class="chat-messages" id="chatMessages"></div>
+                <button class="chat-jump" id="chatJump" type="button" hidden>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                  <span id="chatJumpN">1</span> new
+                </button>
+              </div>
               <div class="chat-bar">
                 <input type="text" class="chat-input" id="chatInput"
                       placeholder="Type a message…" autocomplete="off" maxlength="500" />
