@@ -71,6 +71,7 @@
     tabChat: $("tabChat"), tabQueue: $("tabQueue"),
     paneChat: $("paneChat"), paneQueue: $("paneQueue"),
     chatUnread: $("chatUnread"), chatJump: $("chatJump"), chatJumpN: $("chatJumpN"),
+    profCard: $("profCard"), profBackdrop: $("profBackdrop"), profBody: $("profBody"), profClose: $("profClose"),
   };
   /* ═══════════════════════════════════════════
      ROOM STATE / PERMISSIONS / CONFIG
@@ -420,14 +421,14 @@
       S.banned   = banned   || [];
       if (S.cfgRowMenu && !S.members.some((m) => m.userId === S.cfgRowMenu.id)) S.cfgRowMenu = null;
       applyPerms();
-      refreshConfig();
+      refreshPanels();
     });
     socket.on("room-saved", ({ room }) => {               // my own save came back
       S.room = Object.assign({}, S.room, room);
       S.roomDraft = null;
       S.roomConflict = null;
       renderRoomDetails();
-      refreshConfig();
+      refreshPanels();
     });
     socket.on("room-updated", ({ room, by, changed }) => applyIncomingRoom(room, by, changed));
     socket.on("perm-denied", ({ message, video }) => {
@@ -1565,15 +1566,22 @@
     } catch (_) { hideTopLoader(); }
     loadingOlder = false;
   }
-  function buildMsgEl(msg) {
+   function buildMsgEl(msg) {
     const self = msg.senderId && S.userId && msg.senderId.toString() === S.userId;
     const c = avColor(msg.username), ini = (msg.username || "?")[0].toUpperCase();
+    const uid = msg.senderId ? msg.senderId.toString() : "";
     const div = document.createElement("div");
     div.className = "chat-msg" + (self ? " self" : "");
     div.dataset.sender = msg.senderId || msg.username;
     div.dataset.ts = new Date(msg.timestamp || Date.now()).getTime();
+    const av = uid
+      ? '<button type="button" class="msg-av" style="background:' + c + '" ' +
+          'data-uid="' + esc(uid) + '" data-uname="' + esc(msg.username || "") + '" ' +
+          'title="View profile" aria-label="View profile of ' + esc(msg.username || "user") + '">' +
+          ini + "</button>"
+      : '<div class="msg-av" style="background:' + c + '">' + ini + "</div>";
     div.innerHTML =
-      '<div class="msg-av" style="background:' + c + '">' + ini + "</div>" +
+      av +
       '<div class="msg-body">' +
         '<div class="msg-head">' +
           '<span class="msg-name' + (self ? " self" : "") + '">' + esc(msg.username) + "</span>" +
@@ -1922,7 +1930,7 @@
     if (!isConfigOpen() || !isRoomDirty()) {            // nothing to protect → just refresh
       S.roomDraft = null;
       S.roomConflict = null;
-      refreshConfig();
+      refreshPanels();
       return;
     }
     /* dirty form: keep the draft, queue an acknowledgement */
@@ -1931,8 +1939,8 @@
     mountConflict();
     syncDirtyUI();                                      // blocks Save, shows the warning line
   }
-  function rowMenuHTML(m, isOnline) {
-    const c = S.cfgRowMenu.confirm;
+  function rowMenuHTML(m, isOnline, state) {
+    const c = (state || S.cfgRowMenu || {}).confirm;
     if (c === "ban" || c === "remove") {
       const ban = c === "ban";
       return '<div class="cfg-rowmenu confirm">' +
@@ -2049,7 +2057,12 @@
     note.classList.remove("nudge"); void note.offsetWidth; note.classList.add("nudge");
     setTimeout(() => note.classList.remove("nudge"), 600);
   }
-  const refreshConfig = () => { if (isConfigOpen()) renderConfig(); };
+  const refreshConfig  = () => { if (isConfigOpen())  renderConfig();  };
+  const refreshProfile = () => { if (isProfileOpen()) renderProfile(); };
+  /* anything that used to call refreshConfig() on a server broadcast
+     (room-permissions, member list changes, participants changes) should call this */
+  const refreshPanels  = () => { refreshConfig(); refreshProfile(); };
+  const MOD_EVT = { "do-kick": "member-kick", "do-ban": "member-ban", "do-remove": "member-remove" };
   function avatarHTML(name) {
     return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
   }
@@ -2108,8 +2121,7 @@
     if (act === "ask-ban")     { S.cfgRowMenu = { id: el.dataset.id, confirm: "ban" };    renderConfig(); return; }
     if (act === "ask-remove")  { S.cfgRowMenu = { id: el.dataset.id, confirm: "remove" }; renderConfig(); return; }
     if (act === "do-kick" || act === "do-ban" || act === "do-remove") {
-      const ev = { "do-kick": "member-kick", "do-ban": "member-ban", "do-remove": "member-remove" }[act];
-      socket && socket.emit(ev, { userId: el.dataset.id });
+      socket && socket.emit(MOD_EVT[act], { userId: el.dataset.id });
       S.cfgRowMenu = null; renderConfig(); return;
     }
     if (act === "unban") { socket && socket.emit("member-unban", { userId: el.dataset.id }); return; }
@@ -2196,6 +2208,185 @@
     dom.toasts.appendChild(el);
     setTimeout(() => el.remove(), 30000);
   }
+
+  /* ══════════════════════════════════════
+     MEMBER PROFILE PANEL
+     identity = /api/users/:id · moderation = reused from the config sheet
+     ══════════════════════════════════════ */
+  S.profile = null;                 // { userId, username, confirm, loading, error, data }
+  const profCache = new Map();      // userId → { username, avatar, createdAt }
+  const isProfileOpen = () => dom.profCard.classList.contains("open");
+  function openProfile(userId, fallbackName) {
+    if (!userId) return;
+    const cached = profCache.get(userId) || null;
+    S.profile = {
+      userId,
+      username: fallbackName || "",
+      confirm:  null,               // null | 'ban' | 'remove'  (mirrors S.cfgRowMenu.confirm)
+      loading:  !cached,
+      error:    false,
+      data:     cached,
+    };
+    renderProfile();
+    dom.profCard.classList.add("open");
+    dom.profBackdrop.classList.add("open");
+    dom.profCard.setAttribute("aria-hidden", "false");
+    dom.profClose.focus();
+    if (!cached) fetchProfile(userId);
+  }
+  function closeProfile() {
+    S.profile = null;
+    dom.profCard.classList.remove("open");
+    dom.profBackdrop.classList.remove("open");
+    dom.profCard.setAttribute("aria-hidden", "true");
+  }
+  async function fetchProfile(userId) {
+    try {
+      const r = await fetch("/api/users/" + encodeURIComponent(userId), { credentials: "include" });
+      if (!r.ok) throw new Error(String(r.status));
+      const d = await r.json();
+      profCache.set(userId, d);
+      if (S.profile && S.profile.userId === userId) {
+        S.profile.data = d; S.profile.loading = false; renderProfile();
+      }
+    } catch (_) {
+      if (S.profile && S.profile.userId === userId) {
+        S.profile.loading = false; S.profile.error = true; renderProfile();
+      }
+    }
+  }
+  /* only ever render http(s) images */
+  function safeHttpUrl(u) {
+    if (!u) return "";
+    try { const x = new URL(u, location.origin); return /^https?:$/.test(x.protocol) ? x.href : ""; }
+    catch (_) { return ""; }
+  }
+  function fmtJoined(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  }
+  /* generated avatar underneath, optional <img> on top; the img removes itself on error */
+  function profAvatarHTML(name, url) {
+    const u = safeHttpUrl(url);
+    return '<span class="prof-av" style="background:' + avColor(name) + '">' +
+      (name || "?")[0].toUpperCase() +
+      (u ? '<img src="' + esc(u) + '" alt="">' : "") +
+      "</span>";
+  }
+  const profSec = (title, inner) => '<div class="cfg-sec"><h4>' + title + "</h4>" + inner + "</div>";
+  function renderProfile() {
+    const p = S.profile;
+    if (!p) return;
+    const me     = S.perms || {};
+    const online = new Set(((S.room && S.room.participants) || []).map((x) => (x.userId || "").toString()));
+    const m      = (S.members || []).find((x) => x.userId === p.userId) || null;  // membership row
+    const d      = p.data || {};
+    const name      = d.username || (m && m.username) || p.username || "Unknown";
+    const role      = m ? m.role : null;
+    const isSelf    = !!S.userId && p.userId === S.userId;
+    const isHostRow = role === "admin";
+    const isModRow  = role === "mod";
+    /* ── 1. identity — EVERYONE sees exactly this much ── */
+    let h = '<div class="prof-id">' +
+        profAvatarHTML(name, d.avatar) +
+        '<div class="prof-name">' + esc(name) +
+          (online.has(p.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
+          (role ? '<span class="role-tag role-' + role + '">' + ROLE_LABEL[role] + "</span>" : "") +
+          (isSelf ? '<span class="prof-self">You</span>' : "") +
+        "</div>" +
+        '<div class="prof-meta">' +
+          (p.loading ? '<span class="prof-skel"></span>'
+            : p.error ? "Profile unavailable"
+            : d.createdAt ? "Joined " + esc(fmtJoined(d.createdAt))
+            : "Join date unknown") +
+        "</div>" +
+      "</div>";
+    /* ── 2. everything below is host/mod only, and never targets yourself ── */
+    if (me.canManage && m && !isSelf) {
+      /* permissions — mods & the host are immutable (they always have both) */
+      if (isHostRow) {
+        h += profSec("Permissions",
+          '<p class="cfg-note">The host always has playback and queue control.</p>');
+      } else if (isModRow) {
+        h += profSec("Permissions",
+          '<p class="cfg-note">🛡️ Moderators always have playback and queue control — it can\'t be revoked.' +
+          (me.canSetRoles ? " Change their role below to adjust this." : "") + "</p>");
+      } else if (me.canGrantSync || me.canGrantQueue) {
+        /* identical lock rules to the config sheet's member row */
+        const syncLocked  = me.syncMode  === "everyone" || !me.canGrantSync;
+        const queueLocked = me.queueMode === "everyone" || !me.canGrantQueue;
+        h += profSec("Permissions",
+          '<div class="cfg-row"><span>Playback control</span><span class="cfg-acts">' +
+            swHTML("sync", m.userId, m.canSync, syncLocked, "Can play / pause / seek") +
+          "</span></div>" +
+          '<div class="cfg-row"><span>Queue control</span><span class="cfg-acts">' +
+            swHTML("queue", m.userId, m.canQueue, queueLocked, "Can manage the queue") +
+          "</span></div>" +
+          (syncLocked || queueLocked
+            ? '<p class="cfg-note">Some controls are open to everyone right now — switch that off in ' +
+              "Room settings to grant them individually.</p>"
+            : ""));
+      }
+      /* role — host only (p.canSetRoles), never on the host row */
+      if (me.canSetRoles && !isHostRow) {
+        h += profSec("Role",
+          '<div class="cfg-row"><span>Room role</span><span class="cfg-acts">' +
+            '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
+              '<option value="member"' + (role === "member" ? " selected" : "") + ">Member</option>" +
+              '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
+            "</select></span></div>" +
+          '<p class="cfg-note">Mods can edit room details and grant playback control, but can\'t change roles.</p>');
+      }
+      /* moderation — host only (p.canBan), never on the host row.
+         rowMenuHTML() renders kick/remove/ban *and* the destructive confirm step. */
+      if (me.canBan && !isHostRow) {
+        h += profSec("Moderation",
+          rowMenuHTML(m, online.has(m.userId), p) +
+          (p.confirm ? "" :
+            '<p class="cfg-note">Kick boots them from this session. Remove deletes their membership ' +
+            "and permissions. Ban also blocks them from rejoining.</p>"));
+      }
+    }
+    dom.profBody.innerHTML = h;
+    const img = dom.profBody.querySelector(".prof-av img");
+    if (img) img.addEventListener("error", () => img.remove(), { once: true }); // → generated avatar
+  }
+  /* ── delegated clicks inside the card (change events reuse onCfgChange verbatim) ── */
+  function onProfClick(e) {
+    const el = e.target.closest("[data-act]");
+    if (!el || !S.profile || el.tagName === "SELECT" || el.tagName === "INPUT") return;
+    const a = el.dataset.act;
+    if (a === "ask-ban")    { S.profile.confirm = "ban";    renderProfile(); return; }
+    if (a === "ask-remove") { S.profile.confirm = "remove"; renderProfile(); return; }
+    if (a === "menu-close") { S.profile.confirm = null;     renderProfile(); return; }
+    if (MOD_EVT[a]) {
+      socket && socket.emit(MOD_EVT[a], { userId: el.dataset.id });
+      S.profile.confirm = null;
+      /* kick keeps the membership → stay open; remove/ban destroys it → close */
+      if (a === "do-kick") renderProfile(); else closeProfile();
+      return;
+    }
+  }
+  function onChatAvatarClick(e) {
+    const av = e.target.closest(".msg-av[data-uid]");
+    if (!av) return;
+    openProfile(av.dataset.uid, av.dataset.uname);
+  }
+  function dom_profDelegate() {
+    dom.profBody.addEventListener("click",  onProfClick);
+    dom.profBody.addEventListener("change", onCfgChange);   // ← sync / queue / role, same emits
+    dom.profClose.addEventListener("click", closeProfile);
+    dom.profBackdrop.addEventListener("click", closeProfile);
+    dom.chatMsgs.addEventListener("click", onChatAvatarClick);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && isProfileOpen()) { e.stopPropagation(); closeProfile(); }
+    }, true);                                               // capture → closes before the cfg sheet
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", dom_profDelegate, { once: true });
+  } else {
+    dom_profDelegate();
+  }
+
 })();
-
-
