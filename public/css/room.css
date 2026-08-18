@@ -1365,3 +1365,13 @@ button.msg-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
   button.msg-av:hover{transform:none}
   .prof-skel{animation:none}
 }
+/* banned state */
+.role-tag.role-banned{ background:rgba(248,113,113,.16); color:#ef4444; }
+.prof-ban{
+  display:flex;flex-direction:column;gap:.5rem;
+  padding:.55rem .6rem;border-radius:10px;
+  background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);
+}
+.prof-ban .pp-txt{font-size:.78rem;line-height:1.4;color:var(--t1)}
+.prof-ban .pp-acts{display:flex;gap:.4rem}
+.prof-reason{margin:0;font-style:italic}

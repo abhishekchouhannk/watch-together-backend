@@ -2234,11 +2234,40 @@
     dom.profClose.focus();
     if (!cached) fetchProfile(userId);
   }
+  /* the ban/unban round-trip is async — hold an optimistic state until the
+     room-permissions broadcast reconciles it (or 5s passes, i.e. it failed) */
+  function setPending(kind) {
+    if (!S.profile) return;
+    S.profile.pending = kind;                       // 'ban' | 'unban'
+    clearTimeout(S.profile._pt);
+    S.profile._pt = setTimeout(() => {
+      if (S.profile && S.profile.pending === kind) { S.profile.pending = null; renderProfile(); }
+    }, 5000);
+  }
+  function clearPending(p) { p.pending = null; clearTimeout(p._pt); }
   function closeProfile() {
+    if (S.profile) clearTimeout(S.profile._pt);
     S.profile = null;
     dom.profCard.classList.remove("open");
     dom.profBackdrop.classList.remove("open");
     dom.profCard.setAttribute("aria-hidden", "true");
+  }
+  /* mirrors the "Banned" section of the config sheet — same button, same event */
+  function profBanSec(name, userId, ban, pending) {
+    const busy   = pending === "ban" || pending === "unban";
+    const label  = pending === "ban"   ? "Banning…"
+                 : pending === "unban" ? "Unbanning…"
+                 : "✓ Unban";
+    return profSec("Banned",
+      '<div class="prof-ban">' +
+        '<div class="pp-txt"><strong>' + esc(name) + "</strong> is banned from this room. " +
+          "They can't rejoin and won't see it in Discover.</div>" +
+        (ban && ban.reason ? '<p class="cfg-note prof-reason">"' + esc(ban.reason) + '"</p>' : "") +
+        '<div class="pp-acts">' +
+          '<button class="cfg-mini ok" data-act="unban" data-id="' + userId + '"' +
+            (busy ? " disabled" : "") + ">" + label + "</button>" +
+        "</div>" +
+      "</div>");
   }
   async function fetchProfile(userId) {
     try {
@@ -2280,9 +2309,15 @@
     if (!p) return;
     const me     = S.perms || {};
     const online = new Set(((S.room && S.room.participants) || []).map((x) => (x.userId || "").toString()));
-    const m      = (S.members || []).find((x) => x.userId === p.userId) || null;  // membership row
+    const m      = (S.members || []).find((x) => x.userId === p.userId) || null;
     const d      = p.data || {};
-    const name      = d.username || (m && m.username) || p.username || "Unknown";
+    /* S.banned is only ever populated for the host (canBan) — mods/members see nothing */
+    const ban = me.canBan ? ((S.banned || []).find((b) => b.userId === p.userId) || null) : null;
+    /* reconcile the optimistic flag against the authoritative list */
+    if (p.pending === "ban"   &&  ban) clearPending(p);
+    if (p.pending === "unban" && !ban) clearPending(p);
+    const isBanned = !!ban || p.pending === "ban";
+    const name      = d.username || (m && m.username) || (ban && ban.username) || p.username || "Unknown";
     const role      = m ? m.role : null;
     const isSelf    = !!S.userId && p.userId === S.userId;
     const isHostRow = role === "admin";
@@ -2292,7 +2327,8 @@
         profAvatarHTML(name, d.avatar) +
         '<div class="prof-name">' + esc(name) +
           (online.has(p.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
-          (role ? '<span class="role-tag role-' + role + '">' + ROLE_LABEL[role] + "</span>" : "") +
+          (isBanned ? '<span class="role-tag role-banned">Banned</span>'
+            : role  ? '<span class="role-tag role-' + role + '">' + ROLE_LABEL[role] + "</span>" : "") +
           (isSelf ? '<span class="prof-self">You</span>' : "") +
         "</div>" +
         '<div class="prof-meta">' +
@@ -2302,55 +2338,61 @@
             : "Join date unknown") +
         "</div>" +
       "</div>";
-    /* ── 2. everything below is host/mod only, and never targets yourself ── */
-    if (me.canManage && m && !isSelf) {
-      /* permissions — mods & the host are immutable (they always have both) */
-      if (isHostRow) {
-        h += profSec("Permissions",
-          '<p class="cfg-note">The host always has playback and queue control.</p>');
-      } else if (isModRow) {
-        h += profSec("Permissions",
-          '<p class="cfg-note">🛡️ Moderators always have playback and queue control — it can\'t be revoked.' +
-          (me.canSetRoles ? " Change their role below to adjust this." : "") + "</p>");
-      } else if (me.canGrantSync || me.canGrantQueue) {
-        /* identical lock rules to the config sheet's member row */
-        const syncLocked  = me.syncMode  === "everyone" || !me.canGrantSync;
-        const queueLocked = me.queueMode === "everyone" || !me.canGrantQueue;
-        h += profSec("Permissions",
-          '<div class="cfg-row"><span>Playback control</span><span class="cfg-acts">' +
-            swHTML("sync", m.userId, m.canSync, syncLocked, "Can play / pause / seek") +
-          "</span></div>" +
-          '<div class="cfg-row"><span>Queue control</span><span class="cfg-acts">' +
-            swHTML("queue", m.userId, m.canQueue, queueLocked, "Can manage the queue") +
-          "</span></div>" +
-          (syncLocked || queueLocked
-            ? '<p class="cfg-note">Some controls are open to everyone right now — switch that off in ' +
-              "Room settings to grant them individually.</p>"
-            : ""));
+    /* ── 2. host/mod only, never targets yourself ── */
+    if (me.canManage && !isSelf) {
+      /* a) banned → the only thing left to do is lift it (host only, since S.banned is host-only) */
+      if (isBanned) {
+        h += profBanSec(name, p.userId, ban, p.pending);
       }
-      /* role — host only (p.canSetRoles), never on the host row */
-      if (me.canSetRoles && !isHostRow) {
-        h += profSec("Role",
-          '<div class="cfg-row"><span>Room role</span><span class="cfg-acts">' +
-            '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
-              '<option value="member"' + (role === "member" ? " selected" : "") + ">Member</option>" +
-              '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
-            "</select></span></div>" +
-          '<p class="cfg-note">Mods can edit room details and grant playback control, but can\'t change roles.</p>');
+      /* b) still a member → the normal perms / role / moderation stack */
+      else if (m) {
+        if (isHostRow) {
+          h += profSec("Permissions",
+            '<p class="cfg-note">The host always has playback and queue control.</p>');
+        } else if (isModRow) {
+          h += profSec("Permissions",
+            '<p class="cfg-note">🛡️ Moderators always have playback and queue control — it can\'t be revoked.' +
+            (me.canSetRoles ? " Change their role below to adjust this." : "") + "</p>");
+        } else if (me.canGrantSync || me.canGrantQueue) {
+          const syncLocked  = me.syncMode  === "everyone" || !me.canGrantSync;
+          const queueLocked = me.queueMode === "everyone" || !me.canGrantQueue;
+          h += profSec("Permissions",
+            '<div class="cfg-row"><span>Playback control</span><span class="cfg-acts">' +
+              swHTML("sync", m.userId, m.canSync, syncLocked, "Can play / pause / seek") +
+            "</span></div>" +
+            '<div class="cfg-row"><span>Queue control</span><span class="cfg-acts">' +
+              swHTML("queue", m.userId, m.canQueue, queueLocked, "Can manage the queue") +
+            "</span></div>" +
+            (syncLocked || queueLocked
+              ? '<p class="cfg-note">Some controls are open to everyone right now — switch that off in ' +
+                "Room settings to grant them individually.</p>"
+              : ""));
+        }
+        if (me.canSetRoles && !isHostRow) {
+          h += profSec("Role",
+            '<div class="cfg-row"><span>Room role</span><span class="cfg-acts">' +
+              '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
+                '<option value="member"' + (role === "member" ? " selected" : "") + ">Member</option>" +
+                '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
+              "</select></span></div>" +
+            '<p class="cfg-note">Mods can edit room details and grant playback control, but can\'t change roles.</p>');
+        }
+        if (me.canBan && !isHostRow) {
+          h += profSec("Moderation",
+            rowMenuHTML(m, online.has(m.userId), p) +
+            (p.confirm ? "" :
+              '<p class="cfg-note">Kick boots them from this session. Remove deletes their membership ' +
+              "and permissions. Ban also blocks them from rejoining.</p>"));
+        }
       }
-      /* moderation — host only (p.canBan), never on the host row.
-         rowMenuHTML() renders kick/remove/ban *and* the destructive confirm step. */
-      if (me.canBan && !isHostRow) {
-        h += profSec("Moderation",
-          rowMenuHTML(m, online.has(m.userId), p) +
-          (p.confirm ? "" :
-            '<p class="cfg-note">Kick boots them from this session. Remove deletes their membership ' +
-            "and permissions. Ban also blocks them from rejoining.</p>"));
+      /* c) removed / unbanned / never joined */
+      else {
+        h += '<div class="cfg-sec"><p class="cfg-note">Not a member of this room — they can join again.</p></div>';
       }
     }
     dom.profBody.innerHTML = h;
     const img = dom.profBody.querySelector(".prof-av img");
-    if (img) img.addEventListener("error", () => img.remove(), { once: true }); // → generated avatar
+    if (img) img.addEventListener("error", () => img.remove(), { once: true });
   }
   /* ── delegated clicks inside the card (change events reuse onCfgChange verbatim) ── */
   function onProfClick(e) {
@@ -2360,11 +2402,18 @@
     if (a === "ask-ban")    { S.profile.confirm = "ban";    renderProfile(); return; }
     if (a === "ask-remove") { S.profile.confirm = "remove"; renderProfile(); return; }
     if (a === "menu-close") { S.profile.confirm = null;     renderProfile(); return; }
-    if (MOD_EVT[a]) {
+    if (MOD_EVT[a]) {                                   // do-kick | do-ban | do-remove
       socket && socket.emit(MOD_EVT[a], { userId: el.dataset.id });
       S.profile.confirm = null;
-      /* kick keeps the membership → stay open; remove/ban destroys it → close */
-      if (a === "do-kick") renderProfile(); else closeProfile();
+      if (a === "do-remove") { closeProfile(); return; } // membership gone, nothing to undo here
+      if (a === "do-ban")    setPending("ban");          // ← stay open, flips to the Unban card
+      renderProfile();
+      return;
+    }
+    if (a === "unban") {                                 // same event the config sheet emits
+      socket && socket.emit("member-unban", { userId: el.dataset.id });
+      setPending("unban");
+      renderProfile();
       return;
     }
   }
