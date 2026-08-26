@@ -46,3 +46,9 @@ S.cfgRowMenu   = null;        // { id, confirm: null | 'ban' | 'remove' }
 S.roomDraft    = null;        // in-progress edits
 S.roomConflict = null;        // unacknowledged incoming change
 S.profile      = null;        // { userId, username, confirm, loading, error, data }
+/* ── video-load / late-join sync bookkeeping (was module-scope `let`s in room.js) ── */
+S.videoLoaded       = false;                                // a player has been mounted at least once
+S.needsSync         = false;                                // room-state arrived with a video → sync on ready
+S.initialVideoState = { currentTime: 0, isPlaying: false }; // DB snapshot used if no peer answers
+S.syncFallbackTimer = null;                                 // timer id for the 2 s peer-sync fallback
+S.currentItemId     = null;   

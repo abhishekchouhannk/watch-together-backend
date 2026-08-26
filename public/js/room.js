@@ -19,6 +19,11 @@ import {
   delay, esc, fmtTime, fmtMsgTs, avColor, fmtBadge, isMe,
   extractYT, fillSlider, safeHttpUrl, fmtJoined, toast,
 } from "./room/utils.js";
+import {
+  resolveTod, initTheme, applyTheme, highlightActiveThemeOpt,
+  setThemeMode, openThemeMenu, closeThemeMenu, wireTheme,
+} from "./room/theme.js";
+import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-details.js";
 
 (function () {
   "use strict";
@@ -27,12 +32,8 @@ import {
   let railCloseTmr  = null;
 
   let socket = null;
-  let videoLoaded = false;
   let startMarkerShown = false;
   let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
-  let needsSync = false;
-  let initialVideoState = { currentTime: 0, isPlaying: false };
-  let syncFallbackTimer = null;
   /* ═══════ DOM ═══════ */
   const dom = {
     root: $("roomPage"), sky: $("skyBg"),
@@ -215,60 +216,6 @@ import {
     await fetchMe();
     connectSocket();
   });
-  function resolveTod() {
-    try { if (typeof getTimeOfDay === "function") return getTimeOfDay(); } catch (_) {}
-    const h = new Date().getHours();
-    if (h >= 6  && h < 12) return "morning";
-    if (h >= 12 && h < 17) return "afternoon";
-    if (h >= 17 && h < 21) return "evening";
-    return "night";
-  }
-  /* ═══════ THEME SWITCHER ═══════ */
-  function initTheme() {
-    let saved = null;
-    try { saved = localStorage.getItem(THEME_STORAGE_KEY); } catch (_) {}
-    S.themeMode = saved && (saved === "auto" || THEMES[saved]) ? saved : "auto";
-    applyTheme(S.themeMode === "auto" ? resolveTod() : S.themeMode, false);
-    highlightActiveThemeOpt();
-  }
-  function applyTheme(themeKey, animate) {
-    if (!THEMES[themeKey]) themeKey = "morning";
-    const imgUrl = "url('/assets/" + themeKey + "/sky.png')";
-    if (animate) {
-      dom.sky.style.opacity = "0";
-      setTimeout(() => {
-        dom.root.dataset.theme = themeKey;
-        dom.sky.style.backgroundImage = imgUrl;
-        dom.root.style.setProperty("--sky-img", imgUrl);
-        requestAnimationFrame(() => (dom.sky.style.opacity = "1"));
-      }, 180);
-    } else {
-      dom.root.dataset.theme = themeKey;
-      dom.sky.style.backgroundImage = imgUrl;
-      dom.root.style.setProperty("--sky-img", imgUrl);
-    }
-    dom.themeBtnIcon.textContent = S.themeMode === "auto" ? "🧭" : (THEMES[themeKey] ? THEMES[themeKey].icon : "🌤️");
-  }
-  function highlightActiveThemeOpt() {
-    dom.themeMenu.querySelectorAll(".theme-opt").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.theme === S.themeMode);
-    });
-  }
-  function setThemeMode(mode) {
-    S.themeMode = mode;
-    try { localStorage.setItem(THEME_STORAGE_KEY, mode); } catch (_) {}
-    applyTheme(mode === "auto" ? resolveTod() : mode, true);
-    highlightActiveThemeOpt();
-    closeThemeMenu();
-  }
-  function openThemeMenu() {
-    dom.themeSwitcher.classList.add("open");
-    dom.themeBtn.setAttribute("aria-expanded", "true");
-  }
-  function closeThemeMenu() {
-    dom.themeSwitcher.classList.remove("open");
-    dom.themeBtn.setAttribute("aria-expanded", "false");
-  }
   /* ═══════ EVENT WIRING ═══════ */
   function wireEvents() {
     $("backBtn").onclick  = leaveRoom;
@@ -284,25 +231,9 @@ import {
       dom.controls._t = setTimeout(() => dom.controls.classList.remove("show"), 3000);
     });
     /* collapsible room details — click anywhere on the card toggles */
-    dom.details.addEventListener("click", toggleDetails);
-    dom.details.setAttribute("role", "button");
-    dom.details.tabIndex = 0;
-    dom.details.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleDetails(); }
-    });
+    wireRoomDetails();
     /* theme dropdown */
-    dom.themeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      dom.themeSwitcher.classList.contains("open") ? closeThemeMenu() : openThemeMenu();
-    });
-    dom.themeMenu.addEventListener("click", (e) => {
-      const opt = e.target.closest(".theme-opt");
-      if (!opt) return;
-      setThemeMode(opt.dataset.theme);
-    });
-    document.addEventListener("click", (e) => {
-      if (!dom.themeSwitcher.contains(e.target)) closeThemeMenu();
-    });
+    wireTheme();
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       closeThemeMenu();
@@ -360,8 +291,8 @@ import {
       if (room.queue) Q.applyRemote(room.queue);
       if (room.video && room.video.url) {
         S.currentItemId = room.video.itemId || null;
-        initialVideoState = { currentTime: room.video.currentTime, isPlaying: room.video.isPlaying };
-        needsSync = true;
+        S.initialVideoState = { currentTime: room.video.currentTime, isPlaying: room.video.isPlaying };
+        S.needsSync = true;
         loadVideo(room.video.url, true);
       }
     });
@@ -443,7 +374,7 @@ import {
       });
     });
     socket.on("video-sync-state", ({ currentTime, isPlaying }) => {
-      clearTimeout(syncFallbackTimer);
+      clearTimeout(S.syncFallbackTimer);
       markLocal(currentTime, isPlaying);
       if (!P.ready) return;
       P.remote(() => { P.seek(currentTime); if (isPlaying) P.play(currentTime); });
@@ -463,75 +394,6 @@ import {
     try { socket.disconnect(); } catch (_) {}
     window.location.replace("/dashboard");   // ← adjust if dashboard lives elsewhere
   }
-  /* ═══════ RENDER ═══════ */
-  function renderHeader() {
-    const r = S.room; if (!r) return;
-    const cfg = MODES[r.mode] || { label: r.mode || "Room", icon: "📺" };
-    const bc  = "badge-" + (MODES[r.mode] ? r.mode : "casual");
-    dom.hdrName.textContent  = r.roomName;
-    dom.hdrBadge.className   = "mode-badge " + bc;
-    dom.hdrBadge.textContent = cfg.icon + " " + cfg.label;
-    dom.hdrBadge.style.display = "";
-    dom.hdrDot.className = "status-dot status-" + (r.status || "active");
-    dom.hdrDot.style.display = "";
-  }
-  function toggleDetails() {
-    if (!S.room) return;                          // still showing the skeleton
-    S.detailsOpen = !S.detailsOpen;
-    dom.details.classList.toggle("expanded", S.detailsOpen);
-    dom.details.setAttribute("aria-expanded", String(S.detailsOpen));
-  }
-  function renderDetails() {
-    const r = S.room; if (!r) return;
-    if (S.detailsOpen === null) S.detailsOpen = window.innerWidth > 768;  // mobile → collapsed by default
-    const cfg   = MODES[r.mode] || { label: r.mode || "Room", icon: "📺" };
-    const bc    = "badge-" + (MODES[r.mode] ? r.mode : "casual");
-    const parts = r.participants || [];
-    dom.details.innerHTML =
-      /* ── always-visible header row ── */
-      '<div class="rd-head">' +
-        '<h2 class="rd-name">' + esc(r.roomName) + "</h2>" +
-        '<span class="mode-badge ' + bc + '">' + cfg.icon + " " + cfg.label + "</span>" +
-        '<span class="rd-count">👥 ' + parts.length + "/" + (r.maxParticipants || 10) + "</span>" +
-        '<svg class="rd-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>' +
-      "</div>" +
-      /* ── expandable body ── */
-      '<div class="rd-body"><div class="rd-body-in">' +
-        (r.description ? '<p class="rd-desc">' + esc(r.description) + "</p>" : "") +
-        '<div class="rd-meta">' +
-          '<span style="display:flex;align-items:center;gap:.3rem">' +
-            '<span class="status-dot status-' + (r.status || "active") + '"></span>' +
-            esc(r.status || "active") + "</span>" +
-          '<span class="rd-meta-sep">·</span>' +
-          "<span>Hosted by <strong>" + esc(r.admin ? r.admin.username : "—") + "</strong></span>" +
-        "</div>" +
-        (r.tags && r.tags.length
-          ? '<div class="rd-tags">' + r.tags.map((t) => '<span class="tag">#' + esc(t) + "</span>").join("") + "</div>"
-          : "") +
-        renderAvatars(parts) +
-      "</div></div>";
-    dom.details.classList.add("rd-loaded");
-    dom.details.classList.toggle("expanded", S.detailsOpen);
-    dom.details.setAttribute("aria-expanded", String(S.detailsOpen));
-    dom.chatOnline.textContent = parts.length + " in room";
-  }
-  // update everything together
-  function renderRoomDetails() {
-    renderHeader();
-    renderDetails();
-  }
-  function renderAvatars(list) {
-    if (!list.length) return "";
-    const MAX = 10, show = list.slice(0, MAX), extra = list.length - MAX;
-    let h = '<div class="rd-avatars">';
-    show.forEach((p) => {
-      const c = avColor(p.username), ini = (p.username || "?")[0].toUpperCase();
-      h += '<div class="avatar-sm" style="background:' + c + '" title="' + esc(p.username) + '">' + ini + "</div>";
-    });
-    if (extra > 0) h += '<div class="avatar-sm avatar-more">+' + extra + "</div>";
-    return h + "</div>";
-  }
-
   /* ══════════════════════════════════
    YT LETTERBOX/CROP — frontend only
    ══════════════════════════════════ */
@@ -609,7 +471,7 @@ import {
         aspect: (d.width && d.height) ? d.width / d.height : null,
       };
     } catch (_) {
-      return { title: "", author: "", thumb: fallbackThumb, aspect: null };
+      return { title: "", author: "", authorUrl: "", thumb: fallbackThumb, aspect: null };
     }
   }
   async function showVideoInfo(ytId) {
@@ -772,7 +634,7 @@ import {
       $("queueBar").hidden = !manage;
       $("queueLock").hidden = manage;
       $("qAutoplay").disabled = !manage;
-      if (st.items.length === 0 && manage && !videoLoaded) {
+      if (st.items.length === 0 && manage && !S.videoLoaded) {
         $("queueEmpty").querySelector(".q-empty-s").textContent =
           "Paste a URL below — the first video starts right away";
       }
@@ -962,7 +824,7 @@ import {
     $("vcCenter").style.display = "";
     startUITicker();
     if (dom.placeholder && dom.placeholder.parentNode) dom.placeholder.remove();
-    videoLoaded = true;
+    S.videoLoaded = true;
     Q.render();
   }
 
@@ -984,8 +846,8 @@ import {
     P.setVol(($("volBar").value || 100) / 100);
     P.setMuted(false);
     syncVolumeUI();
-    if (!needsSync) return;
-    needsSync = false;
+    if (!S.needsSync) return;
+    S.needsSync = false;
     /* auto-advance / play-now: the server told us to roll */
     if (pendingAutoplay) {
       pendingAutoplay = false;
@@ -995,12 +857,12 @@ import {
     }
     reportDuration();
     // 1) immediately apply the DB snapshot (best guess)
-    P.remote(() => P.seek(initialVideoState.currentTime));
+    P.remote(() => P.seek(S.initialVideoState.currentTime));
     // 2) ask peers for the *live* position — overrides DB if someone answers
     if (socket) socket.emit("video-sync-request");
     // 3) if nobody answers within 2 s, honour the DB isPlaying flag
-    syncFallbackTimer = setTimeout(() => {
-      if (initialVideoState.isPlaying) P.remote(() => P.play(initialVideoState.currentTime));
+    S.syncFallbackTimer = setTimeout(() => {
+      if (S.initialVideoState.isPlaying) P.remote(() => P.play(S.initialVideoState.currentTime));
     }, 2000);
   }
   /* YouTube state-change → emit play / pause */
