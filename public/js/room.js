@@ -1,50 +1,31 @@
-/* public/js/room.js */
+/* public/js/room.js — TRANSITIONAL.
+ * Leaf concerns now live in config.js / svg.js / state.js / dom.js / utils.js.
+ * Everything else is still in the IIFE below and will be extracted next. */
+import {
+  MODES, THEMES, THEME_STORAGE_KEY, AV_COLORS,
+  REACTIONS, REACT_COOLDOWN, MAX_BUBBLES, RAIL_AUTO_CLOSE,
+  SYNC_INTERVAL, DRIFT_THRESHOLD, REMOTE_COOLDOWN, SEEK_DEBOUNCE,
+  GROUP_WINDOW, UPNEXT_AT, BADGE_CAP, ROOM_CAP,
+  ROLE_LABEL, FIELD_LABEL, MOD_EVT, roomId,
+} from "./room/config.js";
+import {
+  CHEV_SVG, STEP_UP, STEP_DN, SEC_CLOSE,
+  playSVG, pauseSVG, bigPlay, bigPause, volSVG, mutedSVG,
+  fsExpandSVG, fsCollapseSVG,
+} from "./room/svg.js";
+import { S } from "./room/state.js";
+import { $, dom } from "./room/dom.js";
+import {
+  delay, esc, fmtTime, fmtMsgTs, avColor, fmtBadge, isMe,
+  extractYT, fillSlider, safeHttpUrl, fmtJoined, toast,
+} from "./room/utils.js";
+
 (function () {
   "use strict";
-  /* ═══════ CONFIG ═══════ */
-  const MODES = {
-    study:         { label: "Study",         icon: "📚" },
-    gaming:        { label: "Gaming",        icon: "🎮" },
-    entertainment: { label: "Entertainment", icon: "🎬" },
-    casual:        { label: "Casual",        icon: "☕" },
-  };
-  const THEMES = {
-    morning:   { icon: "🌅", label: "Morning"   },
-    afternoon: { icon: "☀️", label: "Afternoon" },
-    evening:   { icon: "🌆", label: "Evening"   },
-    night:     { icon: "🌙", label: "Night"     },
-  };
-  const THEME_STORAGE_KEY = "wt-theme-pref";
-  const AV_COLORS = [
-    "#e11d48","#eab308","#22c55e","#3b82f6","#8b5cf6",
-    "#ec4899","#f97316","#06b6d4","#6366f1","#14b8a6",
-  ];
-  /* ═══════ REACTIONS ═══════ */
-  const REACTIONS       = ["❤️","😂","😮","😢","🔥","👏","💀"];  // must match server whitelist
-  const REACT_COOLDOWN  = 280;   // ms — min gap between MY reactions
-  const MAX_BUBBLES     = 36;    // hard cap on live DOM bubbles
-  const RAIL_AUTO_CLOSE = 3500;  // ms (mobile popover)
+
   let lastReactAt   = 0;
   let railCloseTmr  = null;
 
-  // constants
-  const SYNC_INTERVAL   = 5000;
-  const DRIFT_THRESHOLD = 1.5;   // seconds
-  const REMOTE_COOLDOWN = 1000;  // ms
-  const SEEK_DEBOUNCE   = 300;   // ms
-  const GROUP_WINDOW = 3 * 60 * 1000; // Group messages from the same sender if they are sent within 3 minutes of each other
-  /* ═══════ STATE ═══════ */
-  const S = {
-    room: null, userId: null, username: "You", themeMode: "auto", detailsOpen: null,
-    perms: { isAdmin:false, isMod:false, role:"member",
-             syncMode:"host", queueMode:"host", autoplay:true,
-             canSync:false, canQueue:false, canChangeVideo:false,
-             canEditRoom:false, canManage:false, canGrantSync:false, canGrantQueue:false,
-             requestState:"none", queueRequestState:"none" },
-    members: [], requests: [],
-    video: { currentTime: 0, isPlaying: false, at: 0 },   // authoritative mirror
-  };
-  const roomId = location.pathname.replace(/.*\/room\//, "").replace(/\/$/, "");
   let socket = null;
   let videoLoaded = false;
   let startMarkerShown = false;
@@ -53,7 +34,6 @@
   let initialVideoState = { currentTime: 0, isPlaying: false };
   let syncFallbackTimer = null;
   /* ═══════ DOM ═══════ */
-  const $ = (id) => document.getElementById(id);
   const dom = {
     root: $("roomPage"), sky: $("skyBg"),
     details: $("roomDetails"), hdrName: $("hdrName"), hdrBadge: $("hdrBadge"), hdrDot: $("hdrDot"),
@@ -76,21 +56,6 @@
   /* ═══════════════════════════════════════════
      ROOM STATE / PERMISSIONS / CONFIG
      ═══════════════════════════════════════════ */
-    /* ── SVG fragments ── */
-  const CHEV_SVG =
-    '<svg width="12" height="12" viewBox="0 0 12 12" fill="none">' +
-    '<path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.6" ' +
-    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const STEP_UP =
-    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none">' +
-    '<path d="M2.5 6.5L5 4L7.5 6.5" stroke="currentColor" stroke-width="1.4" ' +
-    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  const STEP_DN =
-    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none">' +
-    '<path d="M2.5 3.5L5 6L7.5 3.5" stroke="currentColor" stroke-width="1.4" ' +
-    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  /* ── collapse bookkeeping (survives re-renders) ── */
-  S.cfgCollapsed = {};          // { people: true, room: false, … }
   /**
    * Opens a collapsible section.
    * @param {string}  id                 stored key in S.cfgCollapsed
@@ -109,7 +74,6 @@
         '<span class="cfg-chev">' + CHEV_SVG + "</span></h4>" +
       '<div class="cfg-sec-body"><div class="cfg-sec-inner">';
   }
-  const SEC_CLOSE = "</div></div></section>";
 
   /* ═══════════════════════════════════════════
      PLAYER ABSTRACTION  (direct <video> + YT)
@@ -725,7 +689,6 @@
      socket emit (BACKEND HOOK). Server should answer with `queue-update`
      carrying the authoritative list → applyRemote() reconciles.
      ═══════════════════════════════════════════ */
-  const UPNEXT_AT = 10;              // seconds before end → show card
   const Q = (() => {
     /* items[i] = { id, url, type:'youtube'|'direct', videoId, title, author,
                     thumb, duration, addedBy } ; index = currently playing */
@@ -981,7 +944,7 @@
         '<iframe id="ytPlayerDiv" title="YouTube player" frameborder="0"' +
         ' allow="autoplay; encrypted-media; picture-in-picture"' +
         ' src="https://www.youtube.com/embed/' + ytId + '?' + qs + '"></iframe>';
-      ytLetterbox.attach($("videoContainer"), $("ytPlayerDiv"), ytId);
+      ytLetterbox.attach($("videoContainer"), $("ytPlayerDiv"));
       showVideoInfo(ytId);
       P.yt = new YT.Player("ytPlayerDiv", {
         events: { onReady: onPlayerReady, onStateChange: onYTState },
@@ -1026,7 +989,6 @@
     /* auto-advance / play-now: the server told us to roll */
     if (pendingAutoplay) {
       pendingAutoplay = false;
-      needsSync = false;
       P.remote(() => P.play(0));
       reportDuration();
       return;
@@ -1110,12 +1072,6 @@
       fillSlider(volBar, volBar.value, 100);
       $("muteBtn").innerHTML = v === 0 ? mutedSVG : volSVG;
     });
-    volBar.addEventListener("input", () => {
-      const v = volBar.value / 100;
-      P.setVol(v); P.setMuted(v === 0);
-      $("muteBtn").innerHTML = v === 0 ? mutedSVG : volSVG;
-      fillSlider(volBar, volBar.value, 100);
-    });
     fillSlider(volBar, 100, 100);
     $("fsBtn").onclick = toggleFullscreen;
     $("cPlayBtn").onclick = () => { if (guardSync()) P.toggle(); };
@@ -1178,22 +1134,6 @@
   function revertToRoomState(state) {
     const v = state || expectedVideoState();
     P.remote(() => { P.seek(v.currentTime); v.isPlaying ? P.play(v.currentTime) : P.pause(v.currentTime); });
-  }
- 
-  function extractYT(url) {
-    const m = url.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
-    return m ? m[1] : null;
-  }
-  /* SVG icons */
-  const playSVG  = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
-  const pauseSVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-  const bigPlay  = '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
-  const bigPause = '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-  const volSVG   = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
-  const mutedSVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
-  function fillSlider(el, val, max) {
-    const pct = (val / max) * 100;
-    el.style.background = "linear-gradient(to right,#fff " + pct + "%,rgba(255,255,255,.25) " + pct + "%)";
   }
 
   /* ══════════════════════════════════════
@@ -1326,8 +1266,6 @@
     setFsIcon(isFs);
     if (!isFs) closeRail();
   }
-  const fsExpandSVG  = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
-  const fsCollapseSVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
   function setFsIcon(isFs) {
     const svg = isFs ? fsCollapseSVG : fsExpandSVG;
     const vcFs = $("fsBtn");
@@ -1336,10 +1274,7 @@
 
   /* ══════════════════════════════════════
      SIDE-PANEL BADGES (unread chat/room updates)
-     ══════════════════════════════════════ */
-  const BADGE_CAP = 10;                                    // 11 → "10+"
-  const fmtBadge  = (n) => (n > BADGE_CAP ? BADGE_CAP + "+" : String(n));
-  const isMe      = (id) => !!(id && S.userId && id.toString() === S.userId);
+     ══════════════════════════════════════ */                                   // 11 → "10+"
   const Unread = {
     n: 0,
     stick: true,            // should the log snap to the bottom next time it's shown?
@@ -1642,29 +1577,13 @@
     el.textContent = "✨ This is the beginning of the conversation";
     dom.chatMsgs.insertBefore(el, dom.chatMsgs.firstChild);
   }
-  /* ═══════ HELPERS ═══════ */
-  function delay(ms)     { return new Promise((r) => setTimeout(r, ms)); }
-  function esc(s)        { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
-  function fmtTime(s)    { if (isNaN(s)) return "0:00"; const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ":" + (sec < 10 ? "0" : "") + sec; }
-  function fmtMsgTs(ts)  { const d = ts ? new Date(ts) : new Date(); return d.getHours().toString().padStart(2, "0") + ":" + d.getMinutes().toString().padStart(2, "0"); }
-  function avColor(name) { if (!name) return AV_COLORS[0]; let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h); return AV_COLORS[Math.abs(h) % AV_COLORS.length]; }
-  function toast(msg, type) {
-    const el = document.createElement("div");
-    el.className = "toast toast-" + (type || "success");
-    el.innerHTML = '<span class="toast-ic">' + (type === "error" ? "⚠️" : "✓") + '</span><span>' + esc(msg) + '</span>';
-    dom.toasts.appendChild(el);
-    setTimeout(() => { el.classList.add("hiding"); setTimeout(() => el.remove(), 300); }, 3200);
-  }
 
   /* ══════════════════════════════════════
      PERMISSIONS UI + ROOM CONFIG SHEET
      ══════════════════════════════════════ */
 
-  const ROOM_CAP = 10;                                    // keep in step with the model
   const participantsHere = () => ((S.room && S.room.participants) || []).length;
   const participantFloor = () => Math.max(2, participantsHere());
-  S.banned     = [];      // admin-only, from room-permissions
-  S.cfgRowMenu = null;    // { id, confirm: null | 'ban' | 'remove' }
   /* first blocking problem with the room-details form, or null */
   function roomFormError() {
     if (!$("cfgMax")) return null;
@@ -1709,7 +1628,6 @@
     dom.cfgBackdrop.classList.remove("open");
     dom.cfgSheet.setAttribute("aria-hidden", "true");
   }
-  const ROLE_LABEL = { admin: "Host", mod: "Mod", member: "Member" };
   /* one access row + its request affordance */
   function accessRow(label, granted, state, scope, openToAll) {
     let h = '<div class="cfg-row"><span>' + label + "</span>" +
@@ -1966,10 +1884,6 @@
 
   S.roomDraft    = null;   // in-progress edits
   S.roomConflict = null;   // unacknowledged incoming change
-  const FIELD_LABEL = {
-    roomName: "Name", description: "Description", mode: "Mode",
-    tags: "Tags", isPublic: "Visibility", maxParticipants: "Max participants",
-  };
   /* canonical form of the six editable fields — mirrors the server's sanitizer */
   function normRoom(v) {
     const tags = String(v.tags == null ? "" : v.tags)
@@ -2062,7 +1976,6 @@
   /* anything that used to call refreshConfig() on a server broadcast
      (room-permissions, member list changes, participants changes) should call this */
   const refreshPanels  = () => { refreshConfig(); refreshProfile(); };
-  const MOD_EVT = { "do-kick": "member-kick", "do-ban": "member-ban", "do-remove": "member-remove" };
   function avatarHTML(name) {
     return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
   }
@@ -2213,7 +2126,6 @@
      MEMBER PROFILE PANEL
      identity = /api/users/:id · moderation = reused from the config sheet
      ══════════════════════════════════════ */
-  S.profile = null;                 // { userId, username, confirm, loading, error, data }
   const profCache = new Map();      // userId → { username, avatar, createdAt }
   const isProfileOpen = () => dom.profCard.classList.contains("open");
   function openProfile(userId, fallbackName) {
@@ -2283,17 +2195,6 @@
         S.profile.loading = false; S.profile.error = true; renderProfile();
       }
     }
-  }
-  /* only ever render http(s) images */
-  function safeHttpUrl(u) {
-    if (!u) return "";
-    try { const x = new URL(u, location.origin); return /^https?:$/.test(x.protocol) ? x.href : ""; }
-    catch (_) { return ""; }
-  }
-  function fmtJoined(iso) {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "";
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   }
   /* generated avatar underneath, optional <img> on top; the img removes itself on error */
   function profAvatarHTML(name, url) {
