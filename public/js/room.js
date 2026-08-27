@@ -24,14 +24,18 @@ import {
   setThemeMode, openThemeMenu, closeThemeMenu, wireTheme,
 } from "./room/theme.js";
 import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-details.js";
+import { getSocket, emit as sockEmit } from "./room/socket-ref.js";
+import {
+  connectSocket, leaveRoom, bounceToDashboard,
+  onRoomState, onParticipantsUpdate, onUserJoined, onUserLeft,
+} from "./room/socket-core.js";
 
 (function () {
   "use strict";
 
   let lastReactAt   = 0;
   let railCloseTmr  = null;
-
-  let socket = null;
+  
   let startMarkerShown = false;
   let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
   /* ═══════ DOM ═══════ */
@@ -158,7 +162,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
       clearInterval(this._syncInt);
       this._syncInt = setInterval(() => {
         if (!S.perms.canSync) return;                       // only controllers drive the clock
-        if (!this.paused() && socket) socket.emit("video-time-sync", { currentTime: this.time() });
+        if (!this.paused()) sockEmit("video-time-sync", { currentTime: this.time() });
       }, SYNC_INTERVAL);
     },
     stopLeader() { clearInterval(this._syncInt); },
@@ -171,7 +175,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
         const now = this.time();
         // if time jumped more than ±2 s in a single 500 ms tick → user seeked
         if (Math.abs(now - this._ytLast) > 2 && !this.paused())
-          socket && socket.emit("video-seek", { currentTime: now });
+          sockEmit("video-seek", { currentTime: now });
         this._ytLast = now;
       }, 500);
     },
@@ -215,6 +219,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     wireEvents();
     await fetchMe();
     connectSocket();
+    wireFeatureSockets();
   });
   /* ═══════ EVENT WIRING ═══════ */
   function wireEvents() {
@@ -271,35 +276,14 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     } catch (_) {}
   }
   /* ══════════════════════════════════════
-     SOCKET — presence / chat / video
+     SOCKET — feature listeners still living in room.js.
+     Registered once, right after socket-core has created the instance.
+     Centralized lifecycle events (connect / connect_error / room-state /
+     room-error / participants-update / room-kicked / user-joined /
+     user-left) now live in socket-core.js and reach us via subscriptions.
      ══════════════════════════════════════ */
-  function connectSocket() {
-    socket = io({ withCredentials: true });
-    socket.on("connect", () => socket.emit("join-room", { roomId }));
-    socket.on("connect_error", () => {
-      toast("Session expired", "error");
-      setTimeout(() => (location.href = "/"), 1500);
-    });
-    /* ── presence ── */
-    socket.on("room-state", async ({ room, perms }) => {
-      S.room = room;
-      if (perms) S.perms = perms;
-      applyPerms();
-      renderRoomDetails();
-      addSystemMsg("You joined the room", { silent: true });   // ← silenced
-      await loadInitialMessages();
-      if (room.queue) Q.applyRemote(room.queue);
-      if (room.video && room.video.url) {
-        S.currentItemId = room.video.itemId || null;
-        S.initialVideoState = { currentTime: room.video.currentTime, isPlaying: room.video.isPlaying };
-        S.needsSync = true;
-        loadVideo(room.video.url, true);
-      }
-    });
-    socket.on("room-error", ({ message }) => {
-      toast(message || "Error", "error");
-      setTimeout(() => (location.href = "/dashboard"), 1500);
-    });
+  function wireFeatureSockets() {
+    const socket = getSocket();
     socket.on("queue-update", (p) => Q.applyRemote(p));
     socket.on("queue-ended", () => {
       Q.resetUpNext();
@@ -307,7 +291,6 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
       toast("Queue finished 🎉", "success");
     });
     socket.on("chat-system", ({ text, byId }) => addSystemMsg(text, { silent: isMe(byId) }));
-
     /* ── permissions ── */
     socket.on("room-permissions", ({ perms, members, requests, banned }) => {
       S.perms    = perms;
@@ -333,22 +316,6 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     socket.on("perm-toast", ({ message, type }) => toast(message, type));
     socket.on("perm-notice", ({ text, byId }) => addSystemMsg(text, { silent: isMe(byId) }));
     socket.on("perm-request", ({ userId, username, scope }) => showRequestPrompt(userId, username, scope || "sync"));
-
-    /* presence moves the validation floor */
-    socket.on("participants-update", ({ participants, count }) => {
-      S.room = Object.assign({}, S.room, { participants: participants || [] });
-      renderRoomDetails();
-      if (isConfigOpen()) { refreshMaxHint(); syncDirtyUI(); }
-    });
-    socket.on("room-kicked", ({ message }) => {
-      bounceToDashboard(message || "You were removed from this room");
-    });
-    socket.on("room-error", ({ message, fatal }) => {
-      if (fatal) return bounceToDashboard(message || "You can't join this room");
-      toast(message, "error");           
-    });
-    socket.on("user-joined", ({ username }) => addSystemMsg(username + " joined"));
-    socket.on("user-left",   ({ username }) => addSystemMsg(username + " left"));
     /* ── chat ── */
     socket.on("chat-message", (msg) => appendMessage(msg, true));
     /* server is the only source of loads now */
@@ -385,15 +352,29 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
       spawnReaction(emoji, username);
     });
   }
-  function leaveRoom() {
-    if (socket) socket.emit("leave-room");
-    location.href = "/dashboard";
-  }
-  function bounceToDashboard(text) {
-    try { sessionStorage.setItem("wp:notice", JSON.stringify({ text, type: "error" })); } catch (_) {}
-    try { socket.disconnect(); } catch (_) {}
-    window.location.replace("/dashboard");   // ← adjust if dashboard lives elsewhere
-  }
+  /* ── subscriptions to the centralized lifecycle events ──
+     Registration order == the order the original room-state handler body ran in.
+     When these bodies move into their own modules (Steps 4-7) each module
+     registers its own slice here-equivalent call; keep this order. */
+  onRoomState(async ({ room }) => {
+    applyPerms();
+    renderRoomDetails();
+    addSystemMsg("You joined the room", { silent: true });   // ← silenced
+    await loadInitialMessages();
+    if (room.queue) Q.applyRemote(room.queue);
+    if (room.video && room.video.url) {
+      S.currentItemId = room.video.itemId || null;
+      S.initialVideoState = { currentTime: room.video.currentTime, isPlaying: room.video.isPlaying };
+      S.needsSync = true;
+      loadVideo(room.video.url, true);
+    }
+  });
+  onParticipantsUpdate(() => {
+    if (isConfigOpen()) { refreshMaxHint(); syncDirtyUI(); }
+  });
+  onUserJoined(({ username }) => addSystemMsg(username + " joined"));
+  onUserLeft(({ username }) => addSystemMsg(username + " left"));
+
   /* ══════════════════════════════════
    YT LETTERBOX/CROP — frontend only
    ══════════════════════════════════ */
@@ -585,7 +566,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     /* video finished → tell the server; IT decides what plays next (single authority) */
     function onEnded() {
       hideUpNext();
-      if (socket) socket.emit("video-ended", { itemId: S.currentItemId });
+      sockEmit("video-ended", { itemId: S.currentItemId });
     }
 
     /* ── UP NEXT card ───────────────────────────────────── */
@@ -686,7 +667,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
       }
       resetUpNext(); render();
     }
-    function emit(ev, data) { if (socket) socket.emit(ev, data); }
+    function emit(ev, data) { sockEmit(ev, data); }
     /* ── wiring ─────────────────────────────────────────── */
     function wire() {
       /* tabs */
@@ -829,10 +810,10 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
   }
 
   function reportDuration() {
-    if (!socket || !S.currentItemId || !S.perms.canSync) return;
+    if (!getSocket() || !S.currentItemId || !S.perms.canSync) return;
     const tryIt = () => {
       const d = P.dur();
-      if (d > 0) socket.emit("queue-duration", { id: S.currentItemId, duration: d });
+      if (d > 0) sockEmit("queue-duration", { id: S.currentItemId, duration: d });
       else setTimeout(tryIt, 700);
     };
     setTimeout(tryIt, 400);
@@ -859,7 +840,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     // 1) immediately apply the DB snapshot (best guess)
     P.remote(() => P.seek(S.initialVideoState.currentTime));
     // 2) ask peers for the *live* position — overrides DB if someone answers
-    if (socket) socket.emit("video-sync-request");
+    sockEmit("video-sync-request");
     // 3) if nobody answers within 2 s, honour the DB isPlaying flag
     S.syncFallbackTimer = setTimeout(() => {
       if (S.initialVideoState.isPlaying) P.remote(() => P.play(S.initialVideoState.currentTime));
@@ -872,8 +853,8 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     if (P.isRemote()) return;
     if (e.data !== 1 && e.data !== 2) return;
     if (!S.perms.canSync) return revertToRoomState();        // defensive (chrome is off)
-    if (e.data === 1) { socket && socket.emit("video-play",  { currentTime: P.time() }); markLocal(P.time(), true);  P.startLeader(); }
-    else              { socket && socket.emit("video-pause", { currentTime: P.time() }); markLocal(P.time(), false); P.stopLeader(); }
+    if (e.data === 1) { sockEmit("video-play",  { currentTime: P.time() }); markLocal(P.time(), true);  P.startLeader(); }
+    else              { sockEmit("video-pause", { currentTime: P.time() }); markLocal(P.time(), false); P.stopLeader(); }
   }
 
   /* ═══════ PLAYER CONTROLS (both player types, permission-gated) ═══════ */
@@ -956,14 +937,14 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     v.addEventListener("play", () => {
       if (P.isRemote()) return;
       if (!S.perms.canSync) return revertToRoomState();     // media keys / PiP / extensions
-      socket && socket.emit("video-play", { currentTime: P.time() });
+      sockEmit("video-play", { currentTime: P.time() });
       markLocal(P.time(), true);
       P.startLeader();
     });
     v.addEventListener("pause", () => {
       if (P.isRemote()) return;
       if (!S.perms.canSync) return revertToRoomState();
-      socket && socket.emit("video-pause", { currentTime: P.time() });
+      sockEmit("video-pause", { currentTime: P.time() });
       markLocal(P.time(), false);
       P.stopLeader();
     });
@@ -975,8 +956,8 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     v.addEventListener("ended", () => Q.onEnded());
   }
   function emitSeek(t) {
-    if (!S.perms.canSync || !socket) return;
-    socket.emit("video-seek", { currentTime: t });
+    if (!S.perms.canSync || !getSocket()) return;
+    sockEmit("video-seek", { currentTime: t });
     markLocal(t, !P.paused());
   }
   /* returns true if allowed; otherwise nudges the user */
@@ -1052,7 +1033,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     if (now - lastReactAt < REACT_COOLDOWN) return;   // client-side throttle
     lastReactAt = now;
     spawnReaction(emoji, S.username);
-    if (socket) socket.emit("video-reaction", { emoji });
+    sockEmit("video-reaction", { emoji });
   }
   /* render one floating bubble */
   function spawnReaction(emoji, username) {
@@ -1317,8 +1298,8 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
   /* ═══════ CHAT ═══════ */
   function sendMessage() {
     const text = dom.chatInput.value.trim();
-    if (!text || !socket) return;
-    socket.emit("chat-message", { text });
+    if (!text || !getSocket()) return;
+    sockEmit("chat-message", { text });
     dom.chatInput.value = "";
     dom.chatInput.focus();
     Unread.stick = true;
@@ -1881,10 +1862,10 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
       }
       return;
     }
-    if (act === "request") socket && socket.emit("perm-request", { scope: el.dataset.scope || "sync" });
-    if (act === "mode")    socket && socket.emit("perm-set-mode",       { mode: el.dataset.mode });
-    if (act === "qmode")   socket && socket.emit("perm-set-queue-mode", { mode: el.dataset.mode });
-    if (act === "respond") socket && socket.emit("perm-respond", {
+    if (act === "request") sockEmit("perm-request", { scope: el.dataset.scope || "sync" });
+    if (act === "mode")    sockEmit("perm-set-mode",       { mode: el.dataset.mode });
+    if (act === "qmode")   sockEmit("perm-set-queue-mode", { mode: el.dataset.mode });
+    if (act === "respond") sockEmit("perm-respond", {
       userId: el.dataset.id, approve: el.dataset.approve === "1", scope: el.dataset.scope || "sync",
     });
     if (act === "row-menu") {
@@ -1896,17 +1877,17 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     if (act === "ask-ban")     { S.cfgRowMenu = { id: el.dataset.id, confirm: "ban" };    renderConfig(); return; }
     if (act === "ask-remove")  { S.cfgRowMenu = { id: el.dataset.id, confirm: "remove" }; renderConfig(); return; }
     if (act === "do-kick" || act === "do-ban" || act === "do-remove") {
-      socket && socket.emit(MOD_EVT[act], { userId: el.dataset.id });
+      sockEmit(MOD_EVT[act], { userId: el.dataset.id });
       S.cfgRowMenu = null; renderConfig(); return;
     }
-    if (act === "unban") { socket && socket.emit("member-unban", { userId: el.dataset.id }); return; }
+    if (act === "unban") { sockEmit("member-unban", { userId: el.dataset.id }); return; }
     if (act === "save-room") {
-      if (!socket) return;
+      if (!getSocket()) return;
       if (S.roomConflict) return nudgeConflict();
       const payload = readRoomForm();
       S.roomDraft = payload;
       el.disabled = true;
-      socket.emit("room-update", payload);
+      sockEmit("room-update", payload);
       setTimeout(() => { el.disabled = false; }, 1200);
       return;
     }
@@ -1944,9 +1925,9 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     if (!el) return;
     const a = el.dataset.act;
     if (a === "sync" || a === "queue")
-      socket && socket.emit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id, scope: a });
+      sockEmit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id, scope: a });
     if (a === "role")
-      socket && socket.emit("perm-set-role", { userId: el.dataset.id, role: el.value });
+      sockEmit("perm-set-role", { userId: el.dataset.id, role: el.value });
   }
   /* remember room-detail edits so a perms broadcast doesn't wipe the form */
   function onCfgRoomInput(e) {
@@ -1978,8 +1959,8 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
       '<div class="pp-txt"><strong>' + esc(username) + "</strong> wants to " + label + "</div>" +
       '<div class="pp-acts"><button class="cfg-mini ok">Approve</button><button class="cfg-mini no">Deny</button></div>';
     const [ok, no] = el.querySelectorAll("button");
-    ok.onclick = () => { socket.emit("perm-respond", { userId, scope, approve: true  }); el.remove(); };
-    no.onclick = () => { socket.emit("perm-respond", { userId, scope, approve: false }); el.remove(); };
+    ok.onclick = () => { sockEmit("perm-respond", { userId, scope, approve: true  }); el.remove(); };
+    no.onclick = () => { sockEmit("perm-respond", { userId, scope, approve: false }); el.remove(); };
     dom.toasts.appendChild(el);
     setTimeout(() => el.remove(), 30000);
   }
@@ -2166,7 +2147,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
     if (a === "ask-remove") { S.profile.confirm = "remove"; renderProfile(); return; }
     if (a === "menu-close") { S.profile.confirm = null;     renderProfile(); return; }
     if (MOD_EVT[a]) {                                   // do-kick | do-ban | do-remove
-      socket && socket.emit(MOD_EVT[a], { userId: el.dataset.id });
+      sockEmit(MOD_EVT[a], { userId: el.dataset.id });
       S.profile.confirm = null;
       if (a === "do-remove") { closeProfile(); return; } // membership gone, nothing to undo here
       if (a === "do-ban")    setPending("ban");          // ← stay open, flips to the Unban card
@@ -2174,7 +2155,7 @@ import { renderRoomDetails, toggleDetails, wireRoomDetails } from "./room/room-d
       return;
     }
     if (a === "unban") {                                 // same event the config sheet emits
-      socket && socket.emit("member-unban", { userId: el.dataset.id });
+      sockEmit("member-unban", { userId: el.dataset.id });
       setPending("unban");
       renderProfile();
       return;
