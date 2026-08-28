@@ -40,25 +40,35 @@ import { S } from "./state.js";
 import { toast } from "./utils.js";
 import { renderRoomDetails } from "./room-details.js";
 import { setSocket, getSocket } from "./socket-ref.js";
-/* ═══════ tiny ordered pub/sub ═══════ */
+/* ═══════ tiny ordered pub/sub ═══════
+  `order` makes the fan-out sequence independent of module import order.
+  Lower runs first; equal orders keep registration order (stable sort).
+  Phases used for room-state:
+    10 → permissions / room-details render
+    20 → chat (joined notice + message history; async, awaited)
+    30 → queue + video load
+  Anything that doesn't care omits it and lands on the default 50. */
 function channel() {
   const subs = [];
-  const on = (fn) => {
-    if (typeof fn === "function") subs.push(fn);
-    return () => {                         // unsubscribe (unused today, cheap to keep)
-      const i = subs.indexOf(fn);
+  let seq = 0;
+  const on = (fn, order) => {
+    if (typeof fn !== "function") return () => {};
+    const entry = { fn, order: order == null ? 50 : order, seq: seq++ };
+    subs.push(entry);
+    subs.sort((a, b) => (a.order - b.order) || (a.seq - b.seq));   // stable
+    return () => {
+      const i = subs.indexOf(entry);
       if (i > -1) subs.splice(i, 1);
     };
   };
-  /* fire-and-forget, registration order, one bad subscriber can't kill the rest */
   const fire = (payload) => {
-    subs.slice().forEach((fn) => {
+    subs.slice().forEach(({ fn }) => {
       try { fn(payload); } catch (e) { console.error(e); }
     });
   };
   /* sequential + awaited — preserves the original "await loadInitialMessages()" gate */
   const fireSeq = async (payload) => {
-    for (const fn of subs.slice()) {
+    for (const { fn } of subs.slice()) {
       try { await fn(payload); } catch (e) { console.error(e); }
     }
   };

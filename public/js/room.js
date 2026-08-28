@@ -29,6 +29,12 @@ import {
   connectSocket, leaveRoom, bounceToDashboard,
   onRoomState, onParticipantsUpdate, onUserJoined, onUserLeft,
 } from "./room/socket-core.js";
+import {
+  Unread, SYS, addSystemMsg, appendMessage, sendMessage,
+  loadInitialMessages, onChatScroll, buildMsgEl, regroupChat,
+  showTopLoader, hideTopLoader, markStartReached,
+  wireChatInput, wireChatUnread,
+} from "./room/chat.js";
 
 (function () {
   "use strict";
@@ -36,8 +42,6 @@ import {
   let lastReactAt   = 0;
   let railCloseTmr  = null;
   
-  let startMarkerShown = false;
-  let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
   /* ═══════ DOM ═══════ */
   const dom = {
     root: $("roomPage"), sky: $("skyBg"),
@@ -225,11 +229,6 @@ import {
   function wireEvents() {
     $("backBtn").onclick  = leaveRoom;
     $("leaveBtn").onclick = leaveRoom;
-    $("sendBtn").onclick = sendMessage;
-    dom.chatInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    });
-    dom.chatMsgs.addEventListener("scroll", onChatScroll);
     dom.container.addEventListener("touchstart", () => {
       dom.controls.classList.add("show");
       clearTimeout(dom.controls._t);
@@ -253,15 +252,8 @@ import {
     dom.configBtn.onclick = openConfig;
     $("cfgClose").onclick = closeConfig;
     dom.cfgBackdrop.onclick = closeConfig;
-    /* ── side-panel unread ── */
-    dom.chatJump.onclick = () => Unread.jump();
-    /* the click fires before/after Q.switchTab depending on order — defer a frame so the
-       pane's .active class is already settled */
-    dom.tabChat.addEventListener("click", () =>
-      requestAnimationFrame(() => { Unread.onChatShown(), SYS.sweep(); }));
-    document.addEventListener("visibilitychange", () => { Unread.sync(); SYS.sweep(); });
-    window.addEventListener("focus", () => Unread.sync());
-    Unread.paint();
+
+    wireChatUnread();
     // add the queue functionality
     Q.wire();
   }
@@ -290,7 +282,6 @@ import {
       addSystemMsg("Queue finished 🎉");
       toast("Queue finished 🎉", "success");
     });
-    socket.on("chat-system", ({ text, byId }) => addSystemMsg(text, { silent: isMe(byId) }));
     /* ── permissions ── */
     socket.on("room-permissions", ({ perms, members, requests, banned }) => {
       S.perms    = perms;
@@ -316,8 +307,6 @@ import {
     socket.on("perm-toast", ({ message, type }) => toast(message, type));
     socket.on("perm-notice", ({ text, byId }) => addSystemMsg(text, { silent: isMe(byId) }));
     socket.on("perm-request", ({ userId, username, scope }) => showRequestPrompt(userId, username, scope || "sync"));
-    /* ── chat ── */
-    socket.on("chat-message", (msg) => appendMessage(msg, true));
     /* server is the only source of loads now */
     socket.on("video-load", ({ url, itemId, play }) => {
       S.currentItemId = itemId || null;
@@ -359,8 +348,6 @@ import {
   onRoomState(async ({ room }) => {
     applyPerms();
     renderRoomDetails();
-    addSystemMsg("You joined the room", { silent: true });   // ← silenced
-    await loadInitialMessages();
     if (room.queue) Q.applyRemote(room.queue);
     if (room.video && room.video.url) {
       S.currentItemId = room.video.itemId || null;
@@ -372,8 +359,6 @@ import {
   onParticipantsUpdate(() => {
     if (isConfigOpen()) { refreshMaxHint(); syncDirtyUI(); }
   });
-  onUserJoined(({ username }) => addSystemMsg(username + " joined"));
-  onUserLeft(({ username }) => addSystemMsg(username + " left"));
 
   /* ══════════════════════════════════
    YT LETTERBOX/CROP — frontend only
@@ -1114,313 +1099,6 @@ import {
     const vcFs = $("fsBtn");
     if (vcFs) vcFs.innerHTML = svg;
   }
-
-  /* ══════════════════════════════════════
-     SIDE-PANEL BADGES (unread chat/room updates)
-     ══════════════════════════════════════ */                                   // 11 → "10+"
-  const Unread = {
-    n: 0,
-    stick: true,            // should the log snap to the bottom next time it's shown?
-    _title: document.title,
-    _raf: 0,
-    chatOnScreen() { return dom.paneChat.classList.contains("active"); },
-    atBottom(slack) {
-      const el = dom.chatMsgs;
-      return el.scrollHeight - el.scrollTop - el.clientHeight <= (slack == null ? 120 : slack);
-    },
-    /* "the user is demonstrably looking at the newest line" */
-    watching() { return !document.hidden && this.chatOnScreen() && this.atBottom(); },
-    toEnd() { dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight; },
-    /* ── called for every NEW line appended to the log (never for history) ── */
-    note(opts) {
-      opts = opts || {};
-      if (opts.stick !== undefined) this.stick = !!opts.stick;
-      if (opts.silent) return false;                 // my own message / my own action
-      if (this.watching()) return false;             // already on screen at the bottom
-      this.n++;
-      this.paint();
-      return true;                                     // user should be notified
-    },
-    /* an unseen notice expired → give the badge its point back */
-    drop(k) {
-      if (!this.n) return;
-      this.n = Math.max(0, this.n - (k || 1));
-      this.paint();
-    },
-    /* once the user has seen everything, no element may claim "unread" later */
-    _forget() {
-      dom.chatMsgs.querySelectorAll("[data-unread]").forEach((el) => delete el.dataset.unread);
-    },
-    clear() { this.n = 0; this._forget(); this.paint(); },
-    sync()  { if (this.watching()) { this.n = 0; this._forget(); } this.paint(); },
-    /* chat pane just became visible */
-    onChatShown() {
-      if (this.stick) this.toEnd();            // content added while display:none loses scrollTop
-      this.sync();
-    },
-    onScroll() {
-      if (this._raf) return;
-      this._raf = requestAnimationFrame(() => {
-        this._raf = 0;
-        if (this.chatOnScreen()) this.stick = this.atBottom();
-        this.sync();
-      });
-    },
-    jump() { this.toEnd(); this.clear(); },
-    paint() {
-      const n = this.n, label = fmtBadge(n);
-      dom.chatUnread.hidden      = n === 0;
-      dom.chatUnread.textContent = label;
-      dom.chatUnread.title       = n === 1 ? "1 new update" : n + " new updates";
-      dom.tabChat.classList.toggle("has-unread", n > 0);
-      dom.tabChat.setAttribute("aria-label", n ? "Chat, " + label + " new updates" : "Chat");
-      /* pill only makes sense while the chat is on screen but scrolled away */
-      const showPill = n > 0 && this.chatOnScreen() && !this.atBottom();
-      dom.chatJump.hidden = !showPill;
-      dom.chatJumpN.textContent = label;
-      document.title = n > 0 ? "(" + label + ") " + this._title : this._title;
-    },
-  };
-
-  /* ══════════════════════════════════════
-     EPHEMERAL SYSTEM LOG — notices self-destruct so chat stays readable
-     ══════════════════════════════════════ */
-  const SYS = {
-    TTL:      5 * 1000,  // lifetime of a notice
-    GAP:      1000,           // min *stillness* between two animated removals
-    OUT_MS:   560,            // must be ≥ the CSS exit duration (500ms) + slack
-    SCROLL_HOLD: 1200,        // never animate right after the user scrolled
-    MAX_LIVE: 15,             // burst guard: pull in expiry when notices pile up
-    EARLY:    8000,
-    items: [],                // [{el, exp}] — insertion order == expiry order
-    timer: 0, lastOut: 0, holdUntil: 0, animating: false,
-    /* ── register a notice ── */
-    track(el, ttl) {
-      this.items.push({ el, exp: Date.now() + (ttl || this.TTL) });
-      this.trim();
-      this.schedule();
-    },
-    /* a wall of notices shouldn't sit around for the full 5 min */
-    trim() {
-      const over = this.items.length - this.MAX_LIVE;
-      if (over <= 0) return;
-      const soon = Date.now() + this.EARLY;
-      for (let i = 0; i < over; i++)
-        if (this.items[i].exp > soon) this.items[i].exp = soon;
-    },
-    hold(ms) { this.holdUntil = Math.max(this.holdUntil, Date.now() + ms); },
-    schedule() {
-      clearTimeout(this.timer); this.timer = 0;
-      if (this.animating || !this.items.length) return;
-      this.timer = setTimeout(() => this.sweep(), Math.max(this.items[0].exp - Date.now(), 50));
-    },
-    sweep() {
-      clearTimeout(this.timer); this.timer = 0;
-      if (this.animating) return;                       // the callback re-arms us
-      const now = Date.now();
-      let pending = null;
-      /* everything the user can't see goes instantly & silently */
-      while (this.items.length) {
-        const it = this.items[0];
-        if (!it.el.isConnected) { this.items.shift(); continue; }
-        if (it.exp > now) break;                        // ordered ⇒ nothing else is due
-        if (this.visible(it.el)) { pending = it; break; }
-        this.items.shift();
-        this.yank(it.el);
-      }
-      /* at most ONE animated removal, and only when the view is calm */
-      if (pending) {
-        const wait = Math.max(this.GAP - (now - this.lastOut), this.holdUntil - now);
-        if (wait > 0) { this.timer = setTimeout(() => this.sweep(), wait); return; }
-        this.items.shift();
-        this.animating = true;
-        this.fade(pending.el, () => {
-          this.animating = false;
-          this.lastOut  = Date.now();                   // 2s of stillness AFTER the collapse
-          this.schedule();
-        });
-        return;
-      }
-      this.schedule();
-    },
-    /* is this notice actually on screen *and* being looked at? */
-    visible(el) {
-      if (document.hidden) return false;
-      if (!dom.paneChat.classList.contains("active")) return false;
-      const c = dom.chatMsgs;
-      if (!c.clientHeight || !el.offsetParent) return false;   // display:none ⇒ not rendered
-      const r = el.getBoundingClientRect(), cr = c.getBoundingClientRect();
-      return r.bottom > cr.top + 4 && r.top < cr.bottom - 4;
-    },
-    /* instant removal, scroll-stable, badge-accurate */
-    yank(el) {
-      const c = dom.chatMsgs;
-      const shown  = dom.paneChat.classList.contains("active") && c.clientHeight > 0;
-      const above  = shown && el.getBoundingClientRect().bottom <= c.getBoundingClientRect().top;
-      const before = shown ? c.scrollHeight : 0;
-      const top    = c.scrollTop;
-      this.uncount(el);
-      el.remove();
-      if (above) {                                      // content above the viewport vanished →
-        const delta = before - c.scrollHeight;          // pull scrollTop back by exactly that much
-        if (delta > 0) c.scrollTop = Math.max(0, top - delta);
-      }
-    },
-    /* animated removal: fade, then collapse the gap */
-    fade(el, done) {
-      const c = dom.chatMsgs;
-      const pinned = Unread.atBottom(8);
-      el.style.height   = el.offsetHeight + "px";       // height:auto can't transition
-      el.style.overflow = "hidden";
-      void el.offsetHeight;                             // commit the start height
-      el.classList.add("sys-out");
-      el.style.height   = "0px";                        // …now the delayed collapse runs
-      /* hold the bottom while the gap closes so the log never "drops" */
-      let stop = false;
-      if (pinned) {
-        const keep = () => { if (stop) return; c.scrollTop = c.scrollHeight; requestAnimationFrame(keep); };
-        requestAnimationFrame(keep);
-      }
-      setTimeout(() => {
-        stop = true;
-        this.uncount(el);
-        el.remove();
-        if (pinned) c.scrollTop = c.scrollHeight;
-        done && done();
-      }, this.OUT_MS);
-    },
-    /* a notice that dies unseen must not leave a ghost on the tab badge */
-    uncount(el) {
-      if (el.dataset.unread === "1") { delete el.dataset.unread; Unread.drop(1); }
-    },
-  };
-
-  /* ═══════ CHAT ═══════ */
-  function sendMessage() {
-    const text = dom.chatInput.value.trim();
-    if (!text || !getSocket()) return;
-    sockEmit("chat-message", { text });
-    dom.chatInput.value = "";
-    dom.chatInput.focus();
-    Unread.stick = true;
-    Unread.clear();
-  }
-  async function loadInitialMessages() {
-    try {
-      const r = await fetch("/api/rooms/" + roomId + "/messages?limit=20", { credentials: "include" });
-      if (!r.ok) return;
-      const d = await r.json();
-      hasMoreMsgs = d.hasMore;
-      oldestMsgId = d.messages.length ? d.messages[0].id : null;
-      const frag = document.createDocumentFragment();
-      d.messages.forEach((m) => frag.appendChild(buildMsgEl(m)));
-      dom.chatMsgs.appendChild(frag);
-      regroupChat();
-      dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight;
-      if (!hasMoreMsgs) markStartReached();
-    } catch (_) {}
-  }
-  async function onChatScroll() {
-    Unread.onScroll();
-    SYS.hold(SYS.SCROLL_HOLD);            // ← never collapse under a moving finger
-    if (dom.chatMsgs.scrollTop > 40 || !hasMoreMsgs || loadingOlder || !oldestMsgId) return;
-    loadingOlder = true;
-    const prev = dom.chatMsgs.scrollHeight;
-    showTopLoader();
-    try {
-      const fp = fetch("/api/rooms/" + roomId + "/messages?limit=20&before=" + oldestMsgId, { credentials: "include" }).then((r) => r.json());
-      const d = (await Promise.all([fp, delay(450)]))[0];
-      hasMoreMsgs = d.hasMore;
-      hideTopLoader();
-      if (d.messages.length) {
-        oldestMsgId = d.messages[0].id;
-        const frag = document.createDocumentFragment();
-        d.messages.forEach((m) => frag.appendChild(buildMsgEl(m)));
-        dom.chatMsgs.insertBefore(frag, dom.chatMsgs.firstChild);
-        regroupChat();
-        dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight - prev;
-      }
-      if (!hasMoreMsgs) markStartReached();
-    } catch (_) { hideTopLoader(); }
-    loadingOlder = false;
-  }
-   function buildMsgEl(msg) {
-    const self = msg.senderId && S.userId && msg.senderId.toString() === S.userId;
-    const c = avColor(msg.username), ini = (msg.username || "?")[0].toUpperCase();
-    const uid = msg.senderId ? msg.senderId.toString() : "";
-    const div = document.createElement("div");
-    div.className = "chat-msg" + (self ? " self" : "");
-    div.dataset.sender = msg.senderId || msg.username;
-    div.dataset.ts = new Date(msg.timestamp || Date.now()).getTime();
-    const av = uid
-      ? '<button type="button" class="msg-av" style="background:' + c + '" ' +
-          'data-uid="' + esc(uid) + '" data-uname="' + esc(msg.username || "") + '" ' +
-          'title="View profile" aria-label="View profile of ' + esc(msg.username || "user") + '">' +
-          ini + "</button>"
-      : '<div class="msg-av" style="background:' + c + '">' + ini + "</div>";
-    div.innerHTML =
-      av +
-      '<div class="msg-body">' +
-        '<div class="msg-head">' +
-          '<span class="msg-name' + (self ? " self" : "") + '">' + esc(msg.username) + "</span>" +
-          '<span class="msg-ts">' + fmtMsgTs(msg.timestamp) + "</span>" +
-        "</div>" +
-        '<div class="msg-text">' + esc(msg.text) + "</div>" +
-      "</div>";
-    return div;
-  }
-  function appendMessage(msg, auto) {
-    const self = isMe(msg.senderId);
-    const stick = self || Unread.atBottom();          // measure BEFORE inserting
-    dom.chatMsgs.appendChild(buildMsgEl(msg));
-    regroupChat();
-    if (auto && stick) Unread.toEnd();
-    Unread.note({ silent: self, stick });
-  }
-  /* opts.silent → this line describes something *I* just did */
-  function addSystemMsg(text, opts) {
-    opts = opts || {};
-    const stick = Unread.atBottom();
-    const div = document.createElement("div");
-    div.className = "chat-sys" + (opts.cls ? " " + opts.cls : "");
-    div.textContent = text;
-    dom.chatMsgs.appendChild(div);
-    if (stick) Unread.toEnd();
-    if (Unread.note({ silent: !!opts.silent, stick })) div.dataset.unread = "1";
-    if (!opts.persist) SYS.track(div, opts.ttl);        // ← auto-expires
-    return div;
-  }
-
-  // Marks consecutive same-sender messages as grouped
-  function regroupChat() {
-    let prev = null;
-    Array.from(dom.chatMsgs.children).forEach((el) => {
-      if (!el.classList.contains("chat-msg")) { prev = null; return; } // sys msgs / loaders break grouping
-      const sender = el.dataset.sender, ts = parseInt(el.dataset.ts, 10);
-      const grouped = prev && prev.sender === sender && !isNaN(ts) && (ts - prev.ts) < GROUP_WINDOW;
-      el.classList.toggle("grouped", grouped);
-      prev = { sender, ts };
-    });
-  }
-
-  // "Loading earlier messages…" loader at the top of the chat
-  function showTopLoader() {
-    if (dom.chatMsgs.querySelector(".chat-loader")) return;
-    const el = document.createElement("div");
-    el.className = "chat-loader";
-    el.innerHTML = '<span class="chat-spinner"></span><span>Loading earlier messages…</span>';
-    dom.chatMsgs.insertBefore(el, dom.chatMsgs.firstChild);
-  }
-  function hideTopLoader() { const el = dom.chatMsgs.querySelector(".chat-loader"); if (el) el.remove(); }
-  function markStartReached() {
-    if (startMarkerShown) return;
-    startMarkerShown = true;
-    const el = document.createElement("div");
-    el.className = "chat-start";
-    el.textContent = "✨ This is the beginning of the conversation";
-    dom.chatMsgs.insertBefore(el, dom.chatMsgs.firstChild);
-  }
-
   /* ══════════════════════════════════════
      PERMISSIONS UI + ROOM CONFIG SHEET
      ══════════════════════════════════════ */
