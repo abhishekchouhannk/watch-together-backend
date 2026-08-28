@@ -229,6 +229,7 @@ import {
   function wireEvents() {
     $("backBtn").onclick  = leaveRoom;
     $("leaveBtn").onclick = leaveRoom;
+    wireChatInput();
     dom.container.addEventListener("touchstart", () => {
       dom.controls.classList.add("show");
       clearTimeout(dom.controls._t);
@@ -252,7 +253,6 @@ import {
     dom.configBtn.onclick = openConfig;
     $("cfgClose").onclick = closeConfig;
     dom.cfgBackdrop.onclick = closeConfig;
-
     wireChatUnread();
     // add the queue functionality
     Q.wire();
@@ -345,9 +345,14 @@ import {
      Registration order == the order the original room-state handler body ran in.
      When these bodies move into their own modules (Steps 4-7) each module
      registers its own slice here-equivalent call; keep this order. */
-  onRoomState(async ({ room }) => {
+     
+  /* phase 10 — perms + header/details render (runs before chat's phase 20) */
+  onRoomState(() => {
     applyPerms();
     renderRoomDetails();
+  }, 10);
+  /* phase 30 — queue + video, after chat's awaited history fetch */
+  onRoomState(({ room }) => {
     if (room.queue) Q.applyRemote(room.queue);
     if (room.video && room.video.url) {
       S.currentItemId = room.video.itemId || null;
@@ -355,7 +360,7 @@ import {
       S.needsSync = true;
       loadVideo(room.video.url, true);
     }
-  });
+  }, 30);
   onParticipantsUpdate(() => {
     if (isConfigOpen()) { refreshMaxHint(); syncDirtyUI(); }
   });
