@@ -17,6 +17,8 @@ const KICK_COOLDOWN = 10000;
 const MAX_QUEUE   = 100;
 const YT_RE       = /(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/;
 const advanceLock = new Map();              // roomId → ts; de-dupes concurrent "video-ended" reports
+const pendingSeeks = new Map();             // roomId → { seq, currentTime, waiting: Set, ready: Set, timer }
+const roomSeekSeqs = new Map();             // roomId → number
 const newItemId = () => crypto.randomBytes(8).toString("hex");
 function validUrl(u) {
   try { const x = new URL(u); return /^https?:$/.test(x.protocol) && u.length <= 2048; }
@@ -87,6 +89,50 @@ function emitLoad(io, roomId, it, by, play) {
 const findItem = (room, id) => (room.queue || []).findIndex((i) => i.itemId === id);
 function sysMsg(io, roomId, text, byId = null) {
   io.to(roomId).emit("chat-system", { text, byId: byId ? String(byId) : null });
+}
+function clearSeekBarrier(roomId) {
+  const ps = pendingSeeks.get(roomId);
+  if (ps) { clearTimeout(ps.timer); pendingSeeks.delete(roomId); }
+}
+async function finishSeekBarrier(io, roomId) {
+  const ps = pendingSeeks.get(roomId);
+  if (!ps) return;
+  clearTimeout(ps.timer);
+  pendingSeeks.delete(roomId);
+  // Un-freeze the room in the DB
+  await Room.updateOne({ roomId }, { $set: {
+    "video.isPlaying": true, "video.currentTime": ps.currentTime, "video.updatedAt": new Date(),
+  }});
+  io.to(roomId).emit("video-seek-go", { currentTime: ps.currentTime, seq: ps.seq });
+}
+async function checkSeekBarrier(io, roomId) {
+  const ps = pendingSeeks.get(roomId);
+  if (!ps) return;
+  const sockets = await io.in(roomId).fetchSockets();
+  const present = new Set(sockets.map((s) => s.data.user && String(s.data.user.id)).filter(Boolean));
+  for (const uid of ps.waiting) {
+    if (present.has(uid) && !ps.ready.has(uid)) return; // someone is still buffering
+  }
+  await finishSeekBarrier(io, roomId);
+}
+async function startSeekBarrier(io, roomId, currentTime) {
+  clearSeekBarrier(roomId);
+  const seq = (roomSeekSeqs.get(roomId) || 0) + 1;
+  roomSeekSeqs.set(roomId, seq);
+  
+  const sockets = await io.in(roomId).fetchSockets();
+  const waiting = new Set(sockets.map((s) => s.data.user && String(s.data.user.id)).filter(Boolean));
+  
+  pendingSeeks.set(roomId, {
+    seq, currentTime, waiting, ready: new Set(),
+    timer: setTimeout(() => finishSeekBarrier(io, roomId), 8000) // 8s max wait
+  });
+  
+  // Freeze the room in the DB so late joiners see it paused
+  await Room.updateOne({ roomId }, { $set: {
+    "video.isPlaying": false, "video.currentTime": currentTime, "video.updatedAt": new Date(),
+  }});
+  io.to(roomId).emit("video-seek-hold", { currentTime, seq });
 }
 function serializeRoom(room) {
   const v = room.video || {};
@@ -192,6 +238,7 @@ async function handleLeave(io, socket) {
     count: room.participants.length,
   });
   io.to(roomId).emit("user-left", { username: user.username });
+  checkSeekBarrier(io, roomId);
 }
 /* a kick must survive the client's auto-reconnect for a few seconds,
    otherwise a reconnecting socket walks straight back in */
@@ -322,6 +369,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     const roomId = socket.data.roomId;
     if (!roomId) return;
     if (!maySync()) return denySync("play");
+    clearSeekBarrier(roomId); // <--- Clear barrier on explicit play
     await Room.updateOne({ roomId }, { $set: {
       "video.isPlaying": true, "video.currentTime": currentTime, "video.updatedAt": new Date(),
     }});
@@ -331,6 +379,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     const roomId = socket.data.roomId;
     if (!roomId) return;
     if (!maySync()) return denySync("pause");
+    clearSeekBarrier(roomId); // <--- Clear barrier on explicit pause
     await Room.updateOne({ roomId }, { $set: {
       "video.isPlaying": false, "video.currentTime": currentTime, "video.updatedAt": new Date(),
     }});
@@ -340,10 +389,26 @@ module.exports = function registerRoomHandlers(io, socket) {
     const roomId = socket.data.roomId;
     if (!roomId) return;
     if (!maySync()) return denySync("seek");
-    await Room.updateOne({ roomId }, { $set: {
-      "video.currentTime": currentTime, "video.updatedAt": new Date(),
-    }});
-    socket.to(roomId).emit("video-seek", { currentTime, by: user.username });
+    
+    const room = await Room.findOne({ roomId }).lean();
+    if (!room) return;
+
+    if (room.video?.isPlaying || pendingSeeks.has(roomId)) {
+      await startSeekBarrier(io, roomId, currentTime);     // seek-while-playing → barrier
+    } else {
+      await Room.updateOne({ roomId }, { $set: {           // paused seek → plain relay
+        "video.currentTime": currentTime, "video.updatedAt": new Date(),
+      }});
+      socket.to(roomId).emit("video-seek", { currentTime, by: user.username });
+    }
+  });
+  socket.on("video-buffer-ready", ({ seq }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    const ps = pendingSeeks.get(roomId);
+    if (!ps || ps.seq !== seq) return;
+    ps.ready.add(String(user.id));
+    checkSeekBarrier(io, roomId);
   });
   /* drift correction — only controllers may drive the clock
      (these three were MISSING before: the client emits them, nobody relayed them) */
@@ -658,6 +723,8 @@ module.exports = function registerRoomHandlers(io, socket) {
   socket.on("queue-play", queueAction(async (room, roomId, { id } = {}) => {
     const i = findItem(room, id);
     if (i < 0) return;
+
+    clearSeekBarrier(roomId);
     const it = applyCurrent(room, i, true);
     advanceLock.set(roomId, Date.now());                     // suppress a stale "ended" from the old video
     await room.save();
@@ -700,6 +767,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     advanceLock.set(roomId, Date.now());
     const nextIdx = room.queueIndex + 1;
     if (room.settings.autoplay !== false && nextIdx < room.queue.length) {
+      clearSeekBarrier(roomId);
       const it = applyCurrent(room, nextIdx, true);
       await room.save();
       io.to(roomId).emit("queue-update", serializeQueue(room));

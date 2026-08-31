@@ -95,6 +95,12 @@ export const P = {
       try { return this.yt.getPlayerState() !== 1; } catch (_) { return true; }
     return !this.el || this.el.paused;
   },
+  buffering() {
+    if (this.type === "youtube" && this.yt)
+      try { return this.yt.getPlayerState() === 3; } catch (_) { return false; } // 3 = BUFFERING
+    // direct: "playing but stalled"
+    return this.el ? (!this.el.paused && this.el.readyState < 3) : false;
+  },
   /* ── actions ── */
   play(t) {
     if (this.type === "youtube" && this.yt) {
@@ -148,8 +154,10 @@ export const P = {
   startLeader() {
     clearInterval(this._syncInt);
     this._syncInt = setInterval(() => {
-      if (!S.perms.canSync) return;                       // only controllers drive the clock
-      if (!this.paused()) sockEmit("video-time-sync", { currentTime: this.time() });
+      if (!S.perms.canSync) return;
+      if (barrier.active) return;                         // room is held — no heartbeat
+      if (!this.paused() && !this.buffering())
+        sockEmit("video-time-sync", { currentTime: this.time() });
     }, SYNC_INTERVAL);
   },
   stopLeader() { clearInterval(this._syncInt); },
@@ -176,6 +184,73 @@ export const P = {
     this.type = null; this.ready = false; this._rc = 0;
   },
 };
+
+/* ══════════════════════════════════════
+   SYNC BARRIER — pause everywhere → buffer → play in tandem
+   Breaks the seek→buffer→drift→re-seek loop: nobody plays until
+   every player has the target position buffered.
+   ══════════════════════════════════════ */
+const READY_POLL_MS  = 200;
+const BARRIER_SAFETY = 10000;   // client-side deadlock escape if 'go' never arrives
+const BUFFER_AHEAD   = 2;       // seconds that must be buffered past the target
+const barrier = { active: false, seq: 0, target: 0, poll: null, safety: null, reported: false };
+/* "do I have the target position + a little runway in the buffer?" */
+function isBufferedAt(t) {
+  if (!P.ready) return false;
+  if (P.type === "youtube" && P.yt) {
+    try {
+      const st = P.yt.getPlayerState();
+      if (st === 3) return false;                        // actively BUFFERING
+      const d = P.yt.getDuration() || 0;
+      if (!d) return st === 2 || st === 5;               // no metadata yet → trust the state
+      const loadedEnd = (P.yt.getVideoLoadedFraction() || 0) * d;
+      return loadedEnd >= Math.min(d - 0.25, t + BUFFER_AHEAD) &&
+             Math.abs(P.yt.getCurrentTime() - t) < BUFFER_AHEAD;
+    } catch (_) { return true; }                         // API hiccup → don't deadlock the room
+  }
+  const el = P.el;
+  if (!el) return false;
+  const need = Math.min((el.duration || t + BUFFER_AHEAD) - 0.25, t + BUFFER_AHEAD);
+  try {
+    for (let i = 0; i < el.buffered.length; i++)
+      if (el.buffered.start(i) <= t + 0.25 && el.buffered.end(i) >= need) return true;
+  } catch (_) {}
+  return el.readyState >= 4;                             // HAVE_ENOUGH_DATA fallback
+}
+export function enterBarrier(seq, target) {
+  cancelBarrier();
+  barrier.active = true; barrier.seq = seq; barrier.target = target; barrier.reported = false;
+  P.stopLeader();
+  P.remote(() => { P.pause(); P.seek(target); });
+  markLocal(target, false);                              // held = authoritatively paused
+  dom.container.classList.add("is-syncing");             // CSS hook for a spinner (optional)
+  barrier.poll = setInterval(() => {
+    if (barrier.reported) return;
+    if (isBufferedAt(barrier.target)) {
+      barrier.reported = true;
+      clearInterval(barrier.poll); barrier.poll = null;
+      sockEmit("video-buffer-ready", { seq: barrier.seq });
+    }
+  }, READY_POLL_MS);
+  /* if 'go' is lost (server restart, dropped packet), don't stay frozen forever */
+  barrier.safety = setTimeout(() => finishBarrier(barrier.target), BARRIER_SAFETY);
+}
+export function cancelBarrier() {
+  clearInterval(barrier.poll);  barrier.poll = null;
+  clearTimeout(barrier.safety); barrier.safety = null;
+  barrier.active = false; barrier.reported = false;
+  dom.container.classList.remove("is-syncing");
+}
+function finishBarrier(currentTime) {
+  cancelBarrier();
+  markLocal(currentTime, true);
+  P.remote(() => P.play(currentTime));
+  if (S.perms.canSync) P.startLeader();
+}
+
+/* ═══════════════════════════════════ */
+
+
 let volDragging = false;
 export function isSilent() { return P.isMuted() || P.vol() === 0; }
 export function syncVolumeUI() {
@@ -354,6 +429,7 @@ let pendingAutoplay = false;
 export async function loadVideo(url, fromRemote, opts) {
   opts = opts || {};
   if (!url) return;
+  cancelBarrier();
   P.destroy();
   ytLetterbox.detach();
   settingsUI.reset();
@@ -620,12 +696,27 @@ onConnect(() => {
     S.currentItemId = itemId || null;
     loadVideo(url, true, { play: !!play });
   });
-  socket.on("video-play",  ({ currentTime }) => { markLocal(currentTime, true);  P.remote(() => P.play(currentTime));  P.stopLeader(); });
-  socket.on("video-pause", ({ currentTime }) => { markLocal(currentTime, false); P.remote(() => P.pause(currentTime)); P.stopLeader(); });
-  socket.on("video-seek",  ({ currentTime }) => { markLocal(currentTime, !P.paused()); P.remote(() => P.seek(currentTime)); });
+  /* play/pause from a controller overrides any pending barrier */
+  socket.on("video-play",  ({ currentTime }) => { cancelBarrier(); markLocal(currentTime, true);  P.remote(() => P.play(currentTime));  P.stopLeader(); });
+  socket.on("video-pause", ({ currentTime }) => { cancelBarrier(); markLocal(currentTime, false); P.remote(() => P.pause(currentTime)); P.stopLeader(); });
+  /* plain relay now only happens for PAUSED seeks (server decides) */
+  socket.on("video-seek",  ({ currentTime }) => {
+    if (barrier.active) return;
+    markLocal(currentTime, !P.paused());
+    P.remote(() => P.seek(currentTime));
+  });
+  /* ── the barrier itself ── */
+  socket.on("video-seek-hold", ({ currentTime, seq }) => enterBarrier(seq, currentTime));
+  socket.on("video-seek-go",   ({ currentTime, seq }) => {
+    if (barrier.active && seq !== barrier.seq) return;    // stale go from an older barrier
+    finishBarrier(currentTime);                           // also handles late-joiners who missed the hold
+  });
+  /* heartbeat: never drift-correct a player that's mid-barrier or mid-buffer —
+   seeking a buffering player just restarts its buffering (this WAS the loop) */
   socket.on("video-time-sync", ({ currentTime }) => {
+    if (barrier.active) return;
     markLocal(currentTime, true);
-    if (P.paused() || P.isRemote()) return;
+    if (P.paused() || P.isRemote() || P.buffering()) return;
     if (Math.abs(P.time() - currentTime) > DRIFT_THRESHOLD) P.remote(() => P.seek(currentTime));
   });
   /* late-joiner peer sync */
