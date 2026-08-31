@@ -50,7 +50,6 @@ export const RAIL_AUTO_CLOSE = 3500;  // ms (mobile popover)
 export const SYNC_INTERVAL   = 5000;
 export const DRIFT_THRESHOLD = 1.5;   // seconds
 export const REMOTE_COOLDOWN = 1000;  // ms
-export const SEEK_DEBOUNCE   = 300;   // ms
 export const GROUP_WINDOW = 3 * 60 * 1000; // Group messages from the same sender if they are sent within 3 minutes of each other
 export const UPNEXT_AT = 10;              // seconds before end → show card
 export const BADGE_CAP = 10;              // 11 → "10+"
@@ -62,3 +61,5 @@ export const FIELD_LABEL = {
 };
 export const MOD_EVT = { "do-kick": "member-kick", "do-ban": "member-ban", "do-remove": "member-remove" };
 export const roomId = location.pathname.replace(/.*\/room\//, "").replace(/\/$/, "");
+export const SETTLE_CAP = 12000;   // hard ceiling for a remote action to settle (ms)
+export const ACK_TTL    = 3000;    // how long an explicit act() swallows its own echo (ms)

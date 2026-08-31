@@ -49,7 +49,7 @@
  * Globals: YT (IFrame API, loaded on demand by loadYTAPI)
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { SYNC_INTERVAL, DRIFT_THRESHOLD, REMOTE_COOLDOWN, SEEK_DEBOUNCE } from "./config.js";
+import { SYNC_INTERVAL, DRIFT_THRESHOLD, REMOTE_COOLDOWN, SETTLE_CAP, ACK_TTL } from "./config.js";
 import { playSVG, pauseSVG, bigPlay, bigPause, volSVG, mutedSVG,
          fsExpandSVG, fsCollapseSVG } from "./svg.js";
 import { S } from "./state.js";
@@ -79,6 +79,14 @@ export const P = {
   _syncInt: null,
   _ytPoll: null,
   _ytLast: 0,
+
+  /* settlement gag (replaces the pure-timer gag) */
+  _settling: false, _settleTick: null, _settleGrace: null,
+  _inRemote: false, _settleKind: null, _settleTarget: null,
+
+  /* one-shot echo swallower for explicit UI actions */
+  _ack: null,
+
   /* ── getters ── */
   time() {
     if (this.type === "youtube" && this.yt)
@@ -103,6 +111,7 @@ export const P = {
   },
   /* ── actions ── */
   play(t) {
+    if (this._inRemote) { this._settleKind = "play"; if (t != null) this._settleTarget = t; }
     if (this.type === "youtube" && this.yt) {
       if (t != null) this.yt.seekTo(t, true);
       this.yt.playVideo();
@@ -112,6 +121,7 @@ export const P = {
     }
   },
   pause(t) {
+    if (this._inRemote) { this._settleKind = "pause"; if (t != null) this._settleTarget = t; }
     if (this.type === "youtube" && this.yt) {
       this.yt.pauseVideo();
       if (t != null) this.yt.seekTo(t, true);
@@ -121,16 +131,92 @@ export const P = {
     }
   },
   seek(t) {
+    if (this._inRemote) { this._settleTarget = t; if (!this._settleKind) this._settleKind = "seek"; }
     if (this.type === "youtube" && this.yt) this.yt.seekTo(t, true);
     else if (this.el) this.el.currentTime = t;
   },
-  /* ── remote-action guard ── */
+  /* ── remote-action guard ──
+     Gag stays up until the action has SETTLED (buffer filled, target reached,
+     desired state achieved) + a grace period, not for a fixed number of ms. */
   remote(fn) {
     this._rc++;
-    fn();
+    this._inRemote = true; this._settleKind = null; this._settleTarget = null;
+    try { fn(); } finally { this._inRemote = false; }
+    this._beginSettle();
     setTimeout(() => (this._rc = Math.max(0, this._rc - 1)), REMOTE_COOLDOWN);
   },
-  isRemote() { return this._rc > 0; },
+  isRemote() { return this._rc > 0 || this._settling; },
+
+  _beginSettle() {
+    this._endSettle();
+    this._settling = true;
+    const started = Date.now();
+    this._settleTick = setInterval(() => {
+      if (!this.ready) return;
+      if (!this._isSettled() && Date.now() - started < SETTLE_CAP) return;
+      clearInterval(this._settleTick); this._settleTick = null;
+      /* grace: the events that accompany settling (YT 3→1, 'playing', 'seeked'…)
+         fire in the same tick region — let them drain before lifting the gag */
+      this._settleGrace = setTimeout(() => { this._settling = false; }, REMOTE_COOLDOWN);
+    }, 100);
+  },
+  _endSettle() {
+    clearInterval(this._settleTick); this._settleTick = null;
+    clearTimeout(this._settleGrace); this._settleGrace = null;
+    this._settling = false;
+  },
+  _isSettled() {
+    if (this.buffering()) return false;
+    const kind = this._settleKind, tgt = this._settleTarget;
+    if (this.type === "youtube" && this.yt) {
+      let st = -1; try { st = this.yt.getPlayerState(); } catch (_) { return true; }
+      if (st === 3 || st === -1) return false;                  // still buffering / unstarted
+      if (kind === "play"  && st !== 1) return false;            // asked to play, not playing yet
+      if (kind === "pause" && st === 1) return false;
+    } else if (this.el) {
+      if (this.el.seeking || this.el.readyState < 3) return false;
+      if (kind === "play"  && this.el.paused)  return false;
+      if (kind === "pause" && !this.el.paused) return false;
+    }
+    /* target not reached yet (clock still sitting before the seek point) */
+    if (tgt != null && this.time() < tgt - 1.5) return false;
+    return true;
+  },
+
+  /* ── EXPLICIT USER INTENT ──
+     Broadcast NOW, override any remote gag, and arm a one-shot ack so the
+     native echo of this very action isn't emitted a second time. */
+  act(kind, t) {
+    if (!this.ready) return;
+    this._endSettle(); this._rc = 0;                            // manual intent beats suppression
+    const time = t != null ? t : this.time();
+    if (kind === "play") {
+      cancelBarrier();
+      sockEmit("video-play", { currentTime: time });
+      markLocal(time, true);
+      this._ack = { kind: "play", at: Date.now() };
+      this.play(t); this.startLeader();
+    } else if (kind === "pause") {
+      cancelBarrier();
+      sockEmit("video-pause", { currentTime: time });
+      markLocal(time, false);
+      this._ack = { kind: "pause", at: Date.now() };
+      this.pause(t); this.stopLeader();
+    } else if (kind === "seek") {
+      this.seek(t);
+      emitSeek(t);                                              // server → barrier if playing
+    }
+  },
+  toggleUser() { this.act(this.paused() ? "play" : "pause"); },
+  /* consume the echo of an act(); returns true if this native event was ours */
+  _consumeAck(kind) {
+    const a = this._ack;
+    if (!a) return false;
+    this._ack = null;
+    return a.kind === kind && Date.now() - a.at < ACK_TTL;
+  },
+
+
   /* -- volume/toggle helpers, */
   setVol(v) {  // 0..1
     if (this.type === "youtube" && this.yt) { try { this.yt.setVolume(Math.round(v*100)); if (v > 0) this.yt.unMute(); } catch(_){} }
@@ -161,27 +247,27 @@ export const P = {
     }, SYNC_INTERVAL);
   },
   stopLeader() { clearInterval(this._syncInt); },
-  /* ── YT seek-detection poll (no native seeked event) ── */
+  /* ── YT seek-detection poll: always track _ytLast, never emit while gagged.
+     (Previously _ytLast froze during the gag, so the first post-buffer tick
+     saw a giant "jump" and reported a phantom seek.) ── */
   startYTPoll() {
     clearInterval(this._ytPoll);
     this._ytLast = this.time();
     this._ytPoll = setInterval(() => {
-      if (!this.yt || !this.ready || this.isRemote()) return;
-      const now = this.time();
-      // if time jumped more than ±2 s in a single 500 ms tick → user seeked
-      if (Math.abs(now - this._ytLast) > 2 && !this.paused())
-        sockEmit("video-seek", { currentTime: now });
+      if (!this.yt || !this.ready) return;
+      const now = this.time(), last = this._ytLast;
       this._ytLast = now;
+      if (this.isRemote() || this._settling) return;
+      if (Math.abs(now - last) > 2 && !this.paused()) sockEmit("video-seek", { currentTime: now });
     }, 500);
   },
   stopYTPoll() { clearInterval(this._ytPoll); },
   /* ── cleanup ── */
   destroy() {
-    this.stopLeader();
-    this.stopYTPoll();
+    this.stopLeader(); this.stopYTPoll(); this._endSettle();
     if (this.type === "youtube" && this.yt) try { this.yt.destroy(); } catch (_) {}
     this.yt = null; this.el = null;
-    this.type = null; this.ready = false; this._rc = 0;
+    this.type = null; this.ready = false; this._rc = 0; this._ack = null;
   },
 };
 
@@ -507,18 +593,20 @@ export function onPlayerReady() {
     if (S.initialVideoState.isPlaying) P.remote(() => P.play(S.initialVideoState.currentTime));
   }, 2000);
 }
-/* YouTube state-change → emit play / pause */
+/* YouTube state-change: only external inputs get here as "manual" */
 export function onYTState(e) {
-  if (e.data === 0) return playerHooks.queueOnEnded();   // ENDED  ← was Q.onEnded()
-  if (e.data === 2) flashInfoBar();                   // show title card on pause
-  if (P.isRemote()) return;
+  if (e.data === 0) return playerHooks.queueOnEnded();
+  if (e.data === 2) flashInfoBar();
   if (e.data !== 1 && e.data !== 2) return;
-  if (!S.perms.canSync) return revertToRoomState();        // defensive (chrome is off)
+  if (P.isRemote()) return;                                   // remote action still settling
+  if (P._consumeAck(e.data === 1 ? "play" : "pause")) return; // echo of an explicit act()
+  if (!S.perms.canSync) return revertToRoomState();
+  /* genuinely unexpected (shouldn't happen with chrome off) — treat as manual */
   if (e.data === 1) { sockEmit("video-play",  { currentTime: P.time() }); markLocal(P.time(), true);  P.startLeader(); }
   else              { sockEmit("video-pause", { currentTime: P.time() }); markLocal(P.time(), false); P.stopLeader(); }
 }
 /* ═══════ PLAYER CONTROLS (both player types, permission-gated) ═══════ */
-let uiTick = null, progDragging = false, seekTimer = null;
+let uiTick = null, progDragging = false;
 export function startUITicker() { clearInterval(uiTick); uiTick = setInterval(updateProgressUI, 250); }
 export function updateProgressUI() {
   if (!P.ready) return;
@@ -537,24 +625,22 @@ export function updateProgressUI() {
 }
 export function wirePlayerControls() {
   const prog = $("progressBar"), volBar = $("volBar");
-  $("playBtn").onclick = () => { if (guardSync()) P.toggle(); };
+  $("playBtn").onclick  = () => { if (guardSync()) P.toggleUser(); };
+  $("cPlayBtn").onclick = () => { if (guardSync()) P.toggleUser(); };
+  dom.shield.addEventListener("click", () => { if (guardSync()) P.toggleUser(); });
   if (P.type !== "youtube") $("cPlayBtn").innerHTML = P.paused() ? bigPlay : bigPause;
-  dom.shield.addEventListener("click", () => { if (guardSync()) P.toggle(); });
-  /* dom.vcLock.onclick → openConfig() lives in wireEvents() (room.js) now — see header */
   prog.addEventListener("input", () => {
     if (!S.perms.canSync) return;
     progDragging = true;
     const t = prog.value / 100;
     $("curTime").textContent = fmtTime(t);
     fillSlider(prog, prog.value, prog.max);
-    if (P.type === "direct") P.seek(t);                   // live scrub
+    if (P.type === "direct") P.seek(t);                        // local-only live scrub
   });
   prog.addEventListener("change", () => {
     progDragging = false;
     if (!S.perms.canSync) { updateProgressUI(); return; }
-    const t = prog.value / 100;
-    P.seek(t);
-    if (P.type === "youtube") emitSeek(t);                // direct emits via its "seeked" event
+    P.act("seek", prog.value / 100);                           // both player types, broadcast now
   });
   $("muteBtn").onclick = () => {
     const silent = isSilent();
@@ -585,35 +671,34 @@ export function wirePlayerControls() {
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
     if (e.metaKey || e.ctrlKey || e.altKey || !P.ready) return;
     const k = e.key.toLowerCase();
-    if (k === " " || k === "k")       { e.preventDefault(); if (guardSync()) P.toggle(); }
-    else if (k === "arrowright")      { if (guardSync()) { const t2 = P.time() + 5; P.seek(t2); emitSeek(t2); } }
-    else if (k === "arrowleft")       { if (guardSync()) { const t2 = Math.max(0, P.time() - 5); P.seek(t2); emitSeek(t2); } }
+    if (k === " " || k === "k")  { e.preventDefault(); if (guardSync()) P.toggleUser(); }
+    else if (k === "arrowright") { if (guardSync()) P.act("seek", P.time() + 5); }
+    else if (k === "arrowleft")  { if (guardSync()) P.act("seek", Math.max(0, P.time() - 5)); }
     else if (k === "m") { P.setMuted(!isSilent()); syncVolumeUI(); }
   });
 }
-/* element-level listeners for the direct <video> (fresh element each load) */
 export function wireDirectVideoEvents() {
   const v = P.el;
   v.addEventListener("play", () => {
     if (P.isRemote()) return;
-    if (!S.perms.canSync) return revertToRoomState();     // media keys / PiP / extensions
+    if (P._consumeAck("play")) return;
+    if (!S.perms.canSync) return revertToRoomState();         // media keys / PiP / extensions
     sockEmit("video-play", { currentTime: P.time() });
     markLocal(P.time(), true);
     P.startLeader();
   });
   v.addEventListener("pause", () => {
     if (P.isRemote()) return;
+    if (P._consumeAck("pause")) return;
     if (!S.perms.canSync) return revertToRoomState();
     sockEmit("video-pause", { currentTime: P.time() });
     markLocal(P.time(), false);
     P.stopLeader();
   });
-  v.addEventListener("seeked", () => {
-    if (P.isRemote() || !S.perms.canSync) return;
-    clearTimeout(seekTimer);
-    seekTimer = setTimeout(() => emitSeek(P.time()), SEEK_DEBOUNCE);
-  });
-  v.addEventListener("ended", () => playerHooks.queueOnEnded());   // ← was Q.onEnded()
+  /* 'seeked' no longer emits. All seeks originate from our own controls (the
+     native chrome is off) and those broadcast immediately via P.act('seek').
+     A late 'seeked' after a slow remote buffer was the #1 storm trigger. */
+  v.addEventListener("ended", () => playerHooks.queueOnEnded());
 }
 export function emitSeek(t) {
   if (!S.perms.canSync || !getSocket()) return;
