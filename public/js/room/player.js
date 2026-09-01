@@ -50,7 +50,7 @@
  * ───────────────────────────────────────────────────────────── */
 "use strict";
 import { SYNC_INTERVAL, DRIFT_THRESHOLD, REMOTE_COOLDOWN, SETTLE_CAP, ACK_TTL } from "./config.js";
-import { playSVG, pauseSVG, bigPlay, bigPause, volSVG, mutedSVG,
+import { playSVG, pauseSVG, bigPlay, bigPause, spinnerSVG, volSVG, mutedSVG,
          fsExpandSVG, fsCollapseSVG } from "./svg.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
@@ -519,6 +519,8 @@ export async function loadVideo(url, fromRemote, opts) {
   P.destroy();
   ytLetterbox.detach();
   settingsUI.reset();
+  lastVisual = null;
+  dom.container.classList.remove("is-loading");
   volDragging = false;
   playerHooks.queueResetUpNext();                 // ← was Q.resetUpNext()
   $("viBar").style.display = "none";
@@ -606,8 +608,25 @@ export function onYTState(e) {
   else              { sockEmit("video-pause", { currentTime: P.time() }); markLocal(P.time(), false); P.stopLeader(); }
 }
 /* ═══════ PLAYER CONTROLS (both player types, permission-gated) ═══════ */
-let uiTick = null, progDragging = false;
+let uiTick = null, progDragging = false, lastVisual = null;
 export function startUITicker() { clearInterval(uiTick); uiTick = setInterval(updateProgressUI, 250); }
+/* What should the chrome SHOW right now?
+   'loading' — a sync event (barrier / remote seek / remote play) is in flight and
+               the player hasn't reached a steady state yet. Shown as a spinner so
+               nobody mistakes "someone seeked, I'm buffering" for "it paused".
+   'playing' / 'paused' — steady state, icon derived from the player as before. */
+export function visualState() {
+  if (!P.ready) return "loading";
+  if (barrier.active) return "loading";               // whole room is held, waiting on buffers
+  if (P.buffering()) return "loading";                // YT state 3 / stalled direct <video>
+  if (P._settling) {
+    /* a remote action is still landing. Does the room intend to be playing? */
+    const kind = P._settleKind;
+    const wantsPlay = kind === "play" || (kind !== "pause" && !!S.video.isPlaying);
+    if (wantsPlay && P.paused()) return "loading";    // asked to play, hasn't started yet
+  }
+  return P.paused() ? "paused" : "playing";
+}
 export function updateProgressUI() {
   if (!P.ready) return;
   const prog = $("progressBar"), t = P.time() || 0, d = P.dur() || 0;
@@ -617,18 +636,38 @@ export function updateProgressUI() {
     fillSlider(prog, prog.value, prog.max);
     $("curTime").textContent = fmtTime(t);
   }
-  syncVolumeUI();   // YT can mute itself (autoplay policy, ads, etc.)
+  syncVolumeUI();
   $("durTime").textContent = fmtTime(d);
-  $("playBtn").innerHTML = P.paused() ? playSVG : pauseSVG;
-  $("cPlayBtn").innerHTML = P.paused() ? bigPlay : bigPause;
-  playerHooks.queueTick(t, d);                    // ← was Q.tick(t, d)
+  renderPlayState(visualState());
+  playerHooks.queueTick(t, d);
+}
+function renderPlayState(vs) {
+  if (vs === lastVisual) return;
+  lastVisual = vs;
+  const c = $("cPlayBtn"), b = $("playBtn");
+  const loading = vs === "loading";
+  c.classList.toggle("is-loading", loading);
+  dom.container.classList.toggle("is-loading", loading);
+  if (loading) {
+    c.innerHTML = spinnerSVG;
+    c.setAttribute("aria-label", "Syncing…");
+    b.innerHTML = pauseSVG;            // the room is (about to be) playing — offer "pause"
+  } else if (vs === "playing") {
+    c.innerHTML = bigPause;
+    c.setAttribute("aria-label", "Pause");
+    b.innerHTML = pauseSVG;
+  } else {
+    c.innerHTML = bigPlay;
+    c.setAttribute("aria-label", "Play");
+    b.innerHTML = playSVG;
+  }
 }
 export function wirePlayerControls() {
   const prog = $("progressBar"), volBar = $("volBar");
   $("playBtn").onclick  = () => { if (guardSync()) P.toggleUser(); };
   $("cPlayBtn").onclick = () => { if (guardSync()) P.toggleUser(); };
   dom.shield.addEventListener("click", () => { if (guardSync()) P.toggleUser(); });
-  if (P.type !== "youtube") $("cPlayBtn").innerHTML = P.paused() ? bigPlay : bigPause;
+  renderPlayState(visualState());
   prog.addEventListener("input", () => {
     if (!S.perms.canSync) return;
     progDragging = true;

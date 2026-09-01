@@ -315,6 +315,19 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   min-width:0;
 }
 
+.vc-spin { animation: vc-spin 0.9s linear infinite; transform-origin: 50% 50%; }
+@keyframes vc-spin { to { transform: rotate(360deg); } }
+
+/* center button while loading: no hover/press affordance, it's a status now */
+#cPlayBtn.is-loading { opacity: .9; cursor: default; }
+
+/* optional caption under the spinner (uses the is-loading class set on the container) */
+.is-loading #vcCenter::after {
+  content: "Syncing…";
+  display: block; margin-top: 8px; text-align: center;
+  font-size: 12px; color: rgba(255,255,255,.75);
+}
+
 /* ── ≤1000px: progress bar on its own full-width row ── */
 @media (max-width:1000px){
   .vc{
