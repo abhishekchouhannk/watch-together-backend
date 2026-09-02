@@ -994,6 +994,34 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .cfg-field .invalid{border-color:#ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.15)}
 .cfg-dirty.nudge{animation:cfgShake .45s ease}
 
+
+/* clickable avatar + name in the people list — same affordance as chat */
+button.cfg-av-btn{
+  border:0;padding:0;font:inherit;cursor:pointer;
+  transition:transform .12s ease, box-shadow .12s ease;
+}
+button.cfg-av-btn:hover{transform:scale(1.1);box-shadow:0 0 0 2px var(--acc-glow)}
+button.cfg-av-btn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--acc)}
+button.cfg-uname-btn{
+  background:transparent;border:0;padding:0;cursor:pointer;
+  text-decoration:underline transparent;text-underline-offset:2px;
+  transition:text-decoration-color .15s;
+}
+button.cfg-uname-btn:hover{text-decoration-color:#fff}
+/* toggleable role tag — tag look preserved, ⇄ hints it switches */
+button.role-toggle{
+  border:0;cursor:pointer;display:inline-flex;align-items:center;gap:.2rem;
+  transition:filter .15s, box-shadow .15s;
+}
+button.role-toggle:hover{filter:brightness(1.15);box-shadow:0 0 0 2px var(--acc-glow)}
+.role-swap{font-size:.62rem;opacity:.65;line-height:1}
+/* perms popover under a row (reuses .cfg-rowmenu chrome) */
+.cfg-permmenu{justify-content:space-around}
+.perm-item{display:inline-flex;align-items:center;gap:.4rem;font-size:.74rem;color:var(--t2)}
+@media (prefers-reduced-motion:reduce){
+  button.cfg-av-btn:hover{transform:none}
+}
+
 /* ======== 16. YouTube letterbox / crop mode ======== */
 /* Applied to .video-container only while a YouTube video is loaded.
    The iframe is deliberately oversized (taller than its video) so YT's

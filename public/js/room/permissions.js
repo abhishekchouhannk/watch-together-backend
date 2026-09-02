@@ -114,6 +114,8 @@ export function applyPerms() {
 // Check if the config sheet is open
 export const isConfigOpen = () => dom.cfgSheet.classList.contains("open");
 export function openConfig() {
+  S.cfgCollapsed = {};          // wipe any per-session toggles → defaults apply
+  S.cfgRowMenu   = null;
   renderConfig();
   dom.cfgSheet.classList.add("open");
   dom.cfgBackdrop.classList.add("open");
@@ -203,42 +205,27 @@ export function renderConfig() {
   }
   /* ── people (host + mods) ── */
   if (p.canManage) {
-    h += secOpen(
-      "people",
-      'People <span class="cnt">' + S.members.length + "</span>",
-      S.members.length > 8          // auto-collapse when the list is long
-    );
+    h += secOpen("people", 'People <span class="cnt">' + S.members.length + "</span>", true);
     S.members.forEach((m) => {
       const isHostRow = m.role === "admin";
-      const isModRow  = m.role === "mod";
-      const locked = isHostRow || isModRow || p.syncMode === "everyone" || !p.canGrantSync;
-      const showRoleSelect = p.canSetRoles && !isHostRow;
-      const menuOpen = !!(S.cfgRowMenu && S.cfgRowMenu.id === m.userId);
-      const canAct   = !!p.canBan && !isHostRow;
-      const syncLocked  = isHostRow || isModRow || p.syncMode  === "everyone" || !p.canGrantSync;
-      const queueLocked = isHostRow || isModRow || p.queueMode === "everyone" || !p.canGrantQueue;
-      h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
-              '<span class="cfg-uname">' + esc(m.username) +
+      const menuOpen  = !!(S.cfgRowMenu && S.cfgRowMenu.id === m.userId);
+      const canPerm   = (p.canGrantSync || p.canGrantQueue) && !isHostRow;
+      h += '<div class="cfg-row"><span class="cfg-user">' +
+              memberAvBtnHTML(m) +
+              '<button class="cfg-uname cfg-uname-btn" data-act="profile" data-uid="' + m.userId +
+                '" data-uname="' + esc(m.username) + '" title="View profile">' + esc(m.username) +
                 (online.has(m.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
-              "</span>" +
-              '<span class="role-tag role-' + m.role + '">' + ROLE_LABEL[m.role] + "</span>" +
+              "</button>" +
             "</span>" +
             '<span class="cfg-acts">' +
-              (showRoleSelect
-                ? '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
-                    '<option value="member"' + (m.role === "member" ? " selected" : "") + ">Member</option>" +
-                    '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
-                  "</select>"
+              roleTagHTML(m, p.canSetRoles) +
+              (canPerm
+                ? '<button class="cfg-more' + (menuOpen ? " on" : "") + '" data-act="row-menu" ' +
+                    'data-id="' + m.userId + '" aria-expanded="' + menuOpen + '" ' +
+                    'title="Permissions" aria-label="Permissions for ' + esc(m.username) + '">⋯</button>'
                 : "") +
-              swHTML("sync",  m.userId, m.canSync,  syncLocked,  "Can play / pause / seek") +    // ← replaces the old <label>
-              swHTML("queue", m.userId, m.canQueue, queueLocked, "Can manage the queue") +        // ← new
-            (canAct
-              ? '<button class="cfg-more' + (menuOpen ? " on" : "") + '" data-act="row-menu" ' +
-                  'data-id="' + m.userId + '" aria-expanded="' + menuOpen + '" ' +
-                  'title="More actions" aria-label="More actions for ' + esc(m.username) + '">⋯</button>'
-              : "") +
-          "</span></div>";
-      if (canAct && menuOpen) h += rowMenuHTML(m, online.has(m.userId));
+            "</span></div>";
+      if (canPerm && menuOpen) h += permMenuHTML(m, p);
     });
     h += '<p class="cfg-note">Hosts and mods get playback control automatically.' +
           (p.canSetRoles
@@ -262,7 +249,7 @@ export function renderConfig() {
   /* ── room details (host + mods → editable) ── */
   if (p.canEditRoom) {
     const f = roomFormValues();
-    h += secOpen("room", "Room details", false, 'data-sec="room"');
+    h += secOpen("room", "Room details", true, 'data-sec="room"');
     if (S.roomConflict) h += conflictHTML(S.roomConflict);
     h += '<label class="cfg-field"><span>Name</span>' +
             '<input id="cfgName" data-room-field type="text" maxlength="60" ' +
@@ -474,6 +461,34 @@ const refreshPanels  = () => { refreshConfig(); refreshProfile(); };
 function avatarHTML(name) {
   return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
 }
+/* avatar as a button — same look, opens the existing profile panel */
+function memberAvBtnHTML(m) {
+  return '<button class="cfg-av cfg-av-btn" data-act="profile" data-uid="' + m.userId +
+    '" data-uname="' + esc(m.username) + '" style="background:' + avColor(m.username) +
+    '" title="View profile">' + (m.username || "?")[0].toUpperCase() + "</button>";
+}
+/* role tag — static for host row / non-role-setters, toggleable otherwise */
+function roleTagHTML(m, canSetRoles) {
+  if (!canSetRoles || m.role === "admin")
+    return '<span class="role-tag role-' + m.role + '">' + ROLE_LABEL[m.role] + "</span>";
+  const next = m.role === "mod" ? "member" : "mod";
+  return '<button class="role-tag role-' + m.role + ' role-toggle" data-act="role-toggle" ' +
+    'data-id="' + m.userId + '" data-role="' + next + '" ' +
+    'title="Switch to ' + ROLE_LABEL[next] + '">' + ROLE_LABEL[m.role] +
+    '<span class="role-swap">⇄</span></button>';
+}
+/* ellipsis menu now holds the perm switches (rowMenuHTML stays as-is for the profile panel) */
+function permMenuHTML(m, p) {
+  const isModRow    = m.role === "mod";
+  const syncLocked  = isModRow || p.syncMode  === "everyone" || !p.canGrantSync;
+  const queueLocked = isModRow || p.queueMode === "everyone" || !p.canGrantQueue;
+  return '<div class="cfg-rowmenu cfg-permmenu">' +
+    '<span class="perm-item"><span>Playback</span>' +
+      swHTML("sync",  m.userId, m.canSync,  syncLocked,  "Can play / pause / seek") + "</span>" +
+    '<span class="perm-item"><span>Queue</span>' +
+      swHTML("queue", m.userId, m.canQueue, queueLocked, "Can manage the queue") + "</span>" +
+  "</div>";
+}
 function swHTML(scope, id, on, locked, title) {
   const ic = scope === "sync" ? "▶" : "☰";
   return '<label class="sw sw-ic' + (locked ? " sw-lock" : "") + '" title="' + title + '">' +
@@ -492,6 +507,11 @@ function onCfgClick(e) {
       const id = sec.dataset.secId;
       sec.classList.toggle("collapsed");
       S.cfgCollapsed[id] = sec.classList.contains("collapsed");
+      if (id === "room" && !S.cfgCollapsed[id]) {          // opening room details
+        dom.cfgBody.querySelectorAll("[data-collapsible]").forEach((s) => {
+          if (s !== sec) { s.classList.add("collapsed"); S.cfgCollapsed[s.dataset.secId] = true; }
+        });
+      }
       return;
     }
   }
@@ -514,6 +534,11 @@ function onCfgClick(e) {
     }
     return;
   }
+  if (act === "profile") { openProfile(el.dataset.uid, el.dataset.uname); return; }
+  if (act === "role-toggle") {
+    sockEmit("perm-set-role", { userId: el.dataset.id, role: el.dataset.role });
+    return;   // 'room-permissions' broadcast re-renders with the new tag
+  }
   if (act === "request") sockEmit("perm-request", { scope: el.dataset.scope || "sync" });
   if (act === "mode")    sockEmit("perm-set-mode",       { mode: el.dataset.mode });
   if (act === "qmode")   sockEmit("perm-set-queue-mode", { mode: el.dataset.mode });
@@ -526,12 +551,6 @@ function onCfgClick(e) {
     renderConfig(); return;
   }
   if (act === "menu-close")  { S.cfgRowMenu = null; renderConfig(); return; }
-  if (act === "ask-ban")     { S.cfgRowMenu = { id: el.dataset.id, confirm: "ban" };    renderConfig(); return; }
-  if (act === "ask-remove")  { S.cfgRowMenu = { id: el.dataset.id, confirm: "remove" }; renderConfig(); return; }
-  if (act === "do-kick" || act === "do-ban" || act === "do-remove") {
-    sockEmit(MOD_EVT[act], { userId: el.dataset.id });
-    S.cfgRowMenu = null; renderConfig(); return;
-  }
   if (act === "unban") { sockEmit("member-unban", { userId: el.dataset.id }); return; }
   if (act === "save-room") {
     if (!getSocket()) return;
