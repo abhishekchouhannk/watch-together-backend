@@ -324,8 +324,16 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 /* optional caption under the spinner (uses the is-loading class set on the container) */
 .is-loading #vcCenter::after {
   content: "Syncing…";
-  display: block; margin-top: 8px; text-align: center;
-  font-size: 12px; color: rgba(255,255,255,.75);
+  position: absolute;
+  top: 100%;             
+  left: 50%;             
+  transform: translateX(-50%); 
+  /* Space scales from 8px up to 16px */
+  margin-top: clamp(8px, 1.5vw, 16px);  
+  /* Font scales from 11px up to 16px */
+  font-size: clamp(11px, 1.5vw, 16px); 
+  color: rgba(255,255,255,.75);
+  white-space: nowrap;   
 }
 
 /* ── ≤1000px: progress bar on its own full-width row ── */
