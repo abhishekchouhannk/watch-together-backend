@@ -1,14 +1,13 @@
 Ongoing Development:
 1. Fix the conjusted people's look in the room details (too many radio buttons in a small space).
 2. Make it such that the form sections open up closed instead of open by default.
-3. 
+3. Remove the excessive descriptive texts in the UI and make it more minimalistic.
 
 Need to work on:
 1. Make the flexbox of the arrows be percentage width of the video container instead of a fixed pixel width or gap.
 2. Add a fullscreen custom mode where the user can bring in the chatbox from the side and can see messages from the user's either the whole chat box or floating transparent bubbles
 3. Make the UI more optimistic instead of waiting for stuff to happen. Make the application more responsive.
 4. Fix the volume button not being responsive (only the volume button does not work).
-5. Remove the excessive descriptive texts in the UI and make it more minimalistic.
 6. Extract strings into a single file and make it easier to translate the application into other languages.
 7. Fix the video in mobile view, add chatroom slide in functional while viewing video in mobile (fullscreen mode). 
 8. Add option to change profile pictures and modify user details in general like name etc. 
