@@ -1,0 +1,45 @@
+Ongoing Development:
+1. Fix the conjusted people's look in the room details (too many radio buttons in a small space).
+2. Make it such that the form sections open up closed instead of open by default.
+3. 
+
+Need to work on:
+1. Make the flexbox of the arrows be percentage width of the video container instead of a fixed pixel width or gap.
+2. Add a fullscreen custom mode where the user can bring in the chatbox from the side and can see messages from the user's either the whole chat box or floating transparent bubbles
+3. Make the UI more optimistic instead of waiting for stuff to happen. Make the application more responsive.
+4. Fix the volume button not being responsive (only the volume button does not work).
+5. Remove the excessive descriptive texts in the UI and make it more minimalistic.
+6. Extract strings into a single file and make it easier to translate the application into other languages.
+7. Fix the video in mobile view, add chatroom slide in functional while viewing video in mobile (fullscreen mode). 
+8. Add option to change profile pictures and modify user details in general like name etc. 
+    - Add a profile modal in general for the user to change their profile picture.
+    - Add a functionality to click on a user avatar and see their profile, including their name, email, and other details.
+9. Add feature to delete messages in the chatroom.
+    - Let users delete their own messages
+    - Let moderators delete any messages.
+    - Let admins clear the whole chat.
+    - Let messages be editable by the user who sent them.
+    - Add a feature to report messages in the chatroom. (TOO MANY FEATURES, WILL BE DONE LATER)
+10. Add feature in chatroom to access giphy (sending gifs in chatroom) and maybe other media like images (not videos for now).
+
+Completed:
+1. (DONE) Add a queue and then move to next video or prev button.
+2. (NOT FEASIBLE) Bring back buttons for subtitles, quality of the youtube video etc.
+3. (DONE) Make the youtube branding and other disabled buttons like watch later, share, and more videos disappear by using the ingenious method of using a taller aspect ratio and then making the buttons fall on the letter box (black video borders) and then crop them out.
+4. (DONE) Fix chat messages panel not showing updates number like queue does. Also, add a unread messages functionality. 
+5. (DONE) MAKE THE system messages actually ephemeral (if the user has seen them, fade them out after some time).
+6. (DONE) Add functionality to click a user avatar and promote, kick, remove or ban them permanently
+7. (DONE) Add a functionality to click on a user avatar and see their profile, including their name, email, and other details.
+8. (DONE) Fix the performance issue, make the two videos wait properly and not continue at all unless both are ready to play. (This is a big one and needs to be fixed, as it is the main reason for the sync issues)
+    Basically, added a SYNC BARRIER.
+9. (DONE) Make files modular while keeping functionality intact.
+    room.js split into modules in /js/room folder and renamed to room-main.js
+
+
+Other important but later -
+1. Fix register page functionality - specifically an email such as dev.abhishekchouhan@gmail.com
+Gets registered as devabhishekchouhan@gmail.com, it takes out the dot (.) In the emails.
+
+Optional -
+1. Optimize performance and make it such that buffering does not destroy the sync.
+2. Add voice chat if possible
