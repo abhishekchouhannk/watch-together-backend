@@ -1,25 +1,23 @@
 Ongoing Development:
-1. Fix the conjusted people's look in the room details (too many radio buttons in a small space).
-2. Make it such that the form sections open up closed instead of open by default.
-3. Remove the excessive descriptive texts in the UI and make it more minimalistic.
+
 
 Need to work on:
 1. Make the flexbox of the arrows be percentage width of the video container instead of a fixed pixel width or gap.
-2. Add a fullscreen custom mode where the user can bring in the chatbox from the side and can see messages from the user's either the whole chat box or floating transparent bubbles
+2. Add a fullscreen custom mode where the user can bring in the chatbox from the side and can see messages from the user's either the whole chat box or floating transparent bubbles.
 3. Make the UI more optimistic instead of waiting for stuff to happen. Make the application more responsive.
 4. Fix the volume button not being responsive (only the volume button does not work).
-6. Extract strings into a single file and make it easier to translate the application into other languages.
-7. Fix the video in mobile view, add chatroom slide in functional while viewing video in mobile (fullscreen mode). 
-8. Add option to change profile pictures and modify user details in general like name etc. 
+5. Extract strings into a single file and make it easier to translate the application into other languages.
+6. Fix the video in mobile view, add chatroom slide in functional while viewing video in mobile (fullscreen mode). 
+7. Add option to change profile pictures and modify user details in general like name etc. 
     - Add a profile modal in general for the user to change their profile picture.
     - Add a functionality to click on a user avatar and see their profile, including their name, email, and other details.
-9. Add feature to delete messages in the chatroom.
+8. Add feature to delete messages in the chatroom.
     - Let users delete their own messages
     - Let moderators delete any messages.
     - Let admins clear the whole chat.
     - Let messages be editable by the user who sent them.
     - Add a feature to report messages in the chatroom. (TOO MANY FEATURES, WILL BE DONE LATER)
-10. Add feature in chatroom to access giphy (sending gifs in chatroom) and maybe other media like images (not videos for now).
+9. Add feature in chatroom to access giphy (sending gifs in chatroom) and maybe other media like images (not videos for now).
 
 Completed:
 1. (DONE) Add a queue and then move to next video or prev button.
@@ -33,6 +31,9 @@ Completed:
     Basically, added a SYNC BARRIER.
 9. (DONE) Make files modular while keeping functionality intact.
     room.js split into modules in /js/room folder and renamed to room-main.js
+10. (DONE) Fix the conjusted people's look in the room details (too many radio buttons in a small space).
+11. (DONE) Make it such that the form sections open up closed instead of open by default.
+12. (DONE) Remove the excessive descriptive texts in the UI and make it more minimalistic.
 
 
 Other important but later -
