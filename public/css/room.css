@@ -1021,6 +1021,37 @@ button.role-toggle:hover{filter:brightness(1.15);box-shadow:0 0 0 2px var(--acc-
 @media (prefers-reduced-motion:reduce){
   button.cfg-av-btn:hover{transform:none}
 }
+/* ── bigger tap target on section headers — pseudo-element, so zero layout shift ── */
+[data-collapsible] > .cfg-sec-head{position:relative;z-index:1}
+[data-collapsible] > .cfg-sec-head::before{
+  content:"";position:absolute;inset:-.55rem -.6rem -.45rem;
+}
+/* ── let hover-scaled avatars breathe: same visual width, but a gutter to overflow into ── */
+.cfg-sec-inner{padding:0 .35rem;margin:0 -.35rem}
+/* ── people section: role tag fills the row height ── */
+[data-sec-id="people"] .cfg-row,
+[data-sec-id="people"] .cfg-acts{align-items:stretch}
+[data-sec-id="people"] .cfg-user{align-items:center}
+[data-sec-id="people"] .role-tag{
+  display:inline-flex;align-items:center;padding:0 .4rem;border-radius:6px;
+}
+[data-sec-id="people"] .cfg-more{align-self:center}
+/* ── tag chips in room details ── */
+.tag-add{display:flex;gap:.35rem}
+.tag-add input{flex:1;min-width:0}
+.tag-add .cfg-mini{flex-shrink:0;padding:0 .7rem}
+.tag-list{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem}
+.tag-list:empty{display:none}
+.tag-chip{
+  display:inline-flex;align-items:center;gap:.15rem;
+  padding:.12rem .2rem .12rem .45rem;border-radius:6px;
+  font-size:.7rem;font-weight:700;background:var(--tag-bg);color:var(--tag-t);
+}
+.tag-x{
+  background:transparent;border:0;padding:0 .25rem;line-height:1;
+  font-size:.6rem;color:inherit;opacity:.6;cursor:pointer;
+}
+.tag-x:hover{opacity:1}
 
 /* ======== 16. YouTube letterbox / crop mode ======== */
 /* Applied to .video-container only while a YouTube video is loaded.

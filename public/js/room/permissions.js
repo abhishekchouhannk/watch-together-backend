@@ -134,10 +134,10 @@ function accessRow(label, granted, state, scope, openToAll) {
     '<span class="pill ' + (granted ? "pill-ok" : "pill-no") + '">' +
     (granted ? (openToAll ? "Everyone" : "Allowed") : "Host-controlled") + "</span></div>";
   if (granted || !scope) return h;
-  if (state === "pending")     h += '<p class="cfg-note">⏳ Request sent — waiting for a host or mod.</p>';
-  else if (state === "denied") h += '<p class="cfg-note">🚫 Declined. A host or mod can still grant it.</p>';
-  else h += '<button class="cfg-btn primary" data-act="request" data-scope="' + scope + '">Request ' +
-            label.toLowerCase() + "</button>";
+  if (state === "pending")     h += '<p class="cfg-note">⏳ Requested</p>';
+  else if (state === "denied") h += '<p class="cfg-note">🚫 Declined</p>';
+  else h += '<button class="cfg-btn primary" data-act="request" data-scope="' + scope +
+            '">Request ' + label.toLowerCase() + "</button>";
   return h;
 }
 export function renderConfig() {
@@ -150,16 +150,12 @@ export function renderConfig() {
     h += secOpen("access", "Your access");
     if (mod) {
       h += '<div class="cfg-banner"><span class="role-tag role-mod">🛡️ MOD</span>' +
-           "<span>You're a moderator of this room</span></div>" +
+           "<span>You're a mod here</span></div>" +
            accessRow("Playback control", true, null, null) +
-           accessRow("Queue control",    true, null, null) +
-           '<p class="cfg-note">You can edit the room, manage the queue and grant ' +
-           "control to others. Only the host can change roles.</p>";
+           accessRow("Queue control",    true, null, null);
     } else {
-      h += accessRow("Playback control", p.canSync,  p.requestState,      "sync",
-                     p.syncMode  === "everyone");
-      h += accessRow("Queue control",    p.canQueue, p.queueRequestState, "queue",
-                     p.queueMode === "everyone");
+      h += accessRow("Playback control", p.canSync,  p.requestState,      "sync",  p.syncMode  === "everyone");
+      h += accessRow("Queue control",    p.canQueue, p.queueRequestState, "queue", p.queueMode === "everyone");
     }
     h += SEC_CLOSE;
   }
@@ -167,16 +163,11 @@ export function renderConfig() {
   if (p.canGrantSync) {
     h += secOpen("sync", "Who can play / pause / seek");
     h += '<div class="seg">' +
-            '<button class="seg-btn' + (p.syncMode === "host" ? " on" : "") +
-              '" data-act="mode" data-mode="host">🔒 Host only</button>' +
-            '<button class="seg-btn' + (p.syncMode === "everyone" ? " on" : "") +
-              '" data-act="mode" data-mode="everyone">👥 Everyone</button>' +
-          "</div>" +
-          '<p class="cfg-note">' +
-            (host ? "Only you can change the video, regardless of this setting."
-                  : "Only the host can change the video, regardless of this setting.") +
-          "</p>" + SEC_CLOSE;
-    /* ── pending requests ── */
+           '<button class="seg-btn' + (p.syncMode === "host" ? " on" : "") +
+             '" data-act="mode" data-mode="host">🔒 Host only</button>' +
+           '<button class="seg-btn' + (p.syncMode === "everyone" ? " on" : "") +
+             '" data-act="mode" data-mode="everyone">👥 Everyone</button>' +
+         "</div>" + SEC_CLOSE;
     if (S.requests.length) {
       h += secOpen("requests", 'Requests <span class="cnt">' + S.requests.length + "</span>");
       S.requests.forEach((m) => {
@@ -185,14 +176,14 @@ export function renderConfig() {
                '<span class="cfg-uname">' + esc(m.username) + "</span>" +
                '<span class="scope-tag scope-' + lbl + '">' + lbl + "</span></span>" +
              '<span class="cfg-acts">' +
-               '<button class="cfg-mini ok"  data-act="respond" data-approve="1" data-scope="' + m.scope + '" data-id="' + m.userId + '">Approve</button>' +
+               '<button class="cfg-mini ok" data-act="respond" data-approve="1" data-scope="' + m.scope + '" data-id="' + m.userId + '">Approve</button>' +
                '<button class="cfg-mini no" data-act="respond" data-approve="0" data-scope="' + m.scope + '" data-id="' + m.userId + '">Deny</button>' +
              "</span></div>";
       });
       h += SEC_CLOSE;
     }
   }
-  // ── queue mode (host + mods) ──
+  /* ── queue mode (host + mods) ── */
   if (p.canGrantQueue) {
     h += secOpen("queuemode", "Who can manage the queue");
     h += '<div class="seg">' +
@@ -200,8 +191,7 @@ export function renderConfig() {
              '" data-act="qmode" data-mode="host">🔒 Host &amp; mods</button>' +
            '<button class="seg-btn' + (p.queueMode === "everyone" ? " on" : "") +
              '" data-act="qmode" data-mode="everyone">👥 Everyone</button>' +
-         "</div>" +
-         '<p class="cfg-note">Controls adding, removing, reordering and skipping videos.</p>' + SEC_CLOSE;
+         "</div>" + SEC_CLOSE;
   }
   /* ── people (host + mods) ── */
   if (p.canManage) {
@@ -227,11 +217,7 @@ export function renderConfig() {
             "</span></div>";
       if (canPerm && menuOpen) h += permMenuHTML(m, p);
     });
-    h += '<p class="cfg-note">Hosts and mods get playback control automatically.' +
-          (p.canSetRoles
-            ? " Mods can edit room details and grant playback control, but can't change roles."
-            : " Only the host can change roles.") +
-          "</p>" + SEC_CLOSE;
+    h += SEC_CLOSE;
   }
   /* ── banned (host only) ── */
   if (p.canBan && S.banned.length) {
@@ -242,57 +228,58 @@ export function renderConfig() {
            '<span class="cfg-acts">' +
              '<button class="cfg-mini ok" data-act="unban" data-id="' + b.userId + '">Unban</button>' +
            "</span></div>" +
-           (b.reason ? '<p class="cfg-note" style="margin-top:0">"' + esc(b.reason) + "\"</p>" : "");
+           (b.reason ? '<p class="cfg-note" style="margin-top:0">"' + esc(b.reason) + '"</p>' : "");
     });
-    h += '<p class="cfg-note">Banned people can\'t rejoin and won\'t see this room in Discover.</p>' + SEC_CLOSE;
+    h += '<p class="cfg-note">Can\'t rejoin until unbanned.</p>' + SEC_CLOSE;
   }
   /* ── room details (host + mods → editable) ── */
   if (p.canEditRoom) {
-    const f = roomFormValues();
+    const f    = roomFormValues();
+    const tags = parseTags(f.tags);
+    const full = tags.length >= 8;
     h += secOpen("room", "Room details", true, 'data-sec="room"');
     if (S.roomConflict) h += conflictHTML(S.roomConflict);
     h += '<label class="cfg-field"><span>Name</span>' +
-            '<input id="cfgName" data-room-field type="text" maxlength="60" ' +
-              'value="' + esc(f.roomName) + '"></label>' +
-          '<label class="cfg-field"><span>Description</span>' +
-            '<textarea id="cfgDesc" data-room-field rows="2" maxlength="200">' +
-              esc(f.description) + "</textarea></label>" +
-          '<label class="cfg-field"><span>Mode</span>' +
+            '<input id="cfgName" data-room-field type="text" maxlength="60" value="' + esc(f.roomName) + '"></label>' +
+         '<label class="cfg-field"><span>Description</span>' +
+            '<textarea id="cfgDesc" data-room-field rows="2" maxlength="200">' + esc(f.description) + "</textarea></label>" +
+         '<label class="cfg-field"><span>Mode</span>' +
             '<select id="cfgMode" data-room-field>' +
               Object.keys(MODES).map((k) =>
                 '<option value="' + k + '"' + (f.mode === k ? " selected" : "") + ">" +
                 MODES[k].icon + " " + MODES[k].label + "</option>").join("") +
             "</select></label>" +
-          '<label class="cfg-field"><span>Tags ' +
-            '<span class="cfg-note" style="margin:0">(comma separated, max 8)</span>' +
-            "</span>" +
-            '<input id="cfgTags" data-room-field type="text" ' +
-              'value="' + esc(f.tags) + '"></label>' +
-          '<label class="cfg-field"><span>Visibility</span>' +
+         /* tags: <div>, not <label> — a label would hijack clicks on the chip ✕ buttons */
+         '<div class="cfg-field"><span>Tags ' +
+            '<span class="cfg-note" id="cfgTagCnt" style="margin:0">' + tags.length + "/8</span></span>" +
+            '<input id="cfgTags" data-room-field type="hidden" value="' + esc(tags.join(",")) + '">' +
+            '<div class="tag-add">' +
+              '<input id="cfgTagIn" type="text" maxlength="24" placeholder="Add a tag" autocomplete="off"' +
+                (full ? " disabled" : "") + ">" +
+              '<button type="button" class="cfg-mini alt" data-act="tag-add"' + (full ? " disabled" : "") + ">Add</button>" +
+            "</div>" +
+            '<div class="tag-list" id="cfgTagList">' + tagChipsHTML(tags) + "</div>" +
+         "</div>" +
+         '<label class="cfg-field"><span>Visibility</span>' +
             '<select id="cfgVis" data-room-field>' +
               '<option value="public"'  + (f.isPublic  ? " selected" : "") + ">Public</option>" +
               '<option value="private"' + (!f.isPublic ? " selected" : "") + ">Private</option>" +
             "</select></label>" +
-          '<label class="cfg-field"><span>Max participants ' +
-           '<span class="cfg-note" id="cfgMaxHint" style="margin:0">(' + participantsHere() +
-             " here now · " + participantFloor() + "–" + ROOM_CAP + ")</span></span>" +
-           '<div class="num-stepper">' +
-             '<input id="cfgMax" data-room-field type="number" step="1" ' +
-               'min="' + participantFloor() + '" max="' + ROOM_CAP + '" ' +
-               'value="' + f.maxParticipants + '">' +
-             '<span class="num-btns">' +
-               '<button type="button" class="num-btn" data-act="step-up" tabindex="-1">' + STEP_UP + "</button>" +
-               '<button type="button" class="num-btn" data-act="step-down" tabindex="-1">' + STEP_DN + "</button>" +
-             "</span></div></label>" +
-          '<div class="cfg-actions">' +
-            '<button class="cfg-btn primary" id="cfgSave" data-act="save-room">' +
-              "Save changes</button>" +
-            '<button class="cfg-btn" id="cfgReset" data-act="reset-room" disabled>' +
-              "Reset</button>" +
-          "</div>" +
-          '<p class="cfg-dirty is-hidden" id="cfgDirtyNote"></p>' +
-          (host ? ""
-            : '<p class="cfg-note">Changes are visible to everyone in the room.</p>');
+         '<label class="cfg-field"><span>Max participants ' +
+            '<span class="cfg-note" id="cfgMaxHint" style="margin:0">(' + participantsHere() +
+              " here now · " + participantFloor() + "–" + ROOM_CAP + ")</span></span>" +
+            '<div class="num-stepper">' +
+              '<input id="cfgMax" data-room-field type="number" step="1" min="' + participantFloor() +
+                '" max="' + ROOM_CAP + '" value="' + f.maxParticipants + '">' +
+              '<span class="num-btns">' +
+                '<button type="button" class="num-btn" data-act="step-up" tabindex="-1">' + STEP_UP + "</button>" +
+                '<button type="button" class="num-btn" data-act="step-down" tabindex="-1">' + STEP_DN + "</button>" +
+              "</span></div></label>" +
+         '<div class="cfg-actions">' +
+            '<button class="cfg-btn primary" id="cfgSave" data-act="save-room">Save changes</button>' +
+            '<button class="cfg-btn" id="cfgReset" data-act="reset-room" disabled>Reset</button>' +
+         "</div>" +
+         '<p class="cfg-dirty is-hidden" id="cfgDirtyNote"></p>';
     h += SEC_CLOSE;
   }
   dom.cfgBody.innerHTML = h;
@@ -366,18 +353,50 @@ function rowMenuHTML(m, isOnline, state) {
       ' title="Remove and block them from rejoining">🚫 Ban</button>' +
   "</div>";
 }
+/* "a, #B,b ,c" → ["a","b","c"] — dedupes, strips #, lowercases, caps at 8 */
+const parseTags = (v) => [...new Set(
+  String(v == null ? "" : v).split(",")
+    .map((t) => t.trim().replace(/^#/, "").toLowerCase()).filter(Boolean)
+)].slice(0, 8);
 /* canonical form of the six editable fields — mirrors the server's sanitizer */
 function normRoom(v) {
-  const tags = String(v.tags == null ? "" : v.tags)
-    .split(",").map((t) => t.trim().replace(/^#/, "").toLowerCase()).filter(Boolean);
   return {
     roomName:        String(v.roomName || "").trim().replace(/\s+/g, " "),
     description:     String(v.description || "").trim(),
     mode:            v.mode || "casual",
-    tags:            [...new Set(tags)].slice(0, 8).join(","),
+    tags:            parseTags(v.tags).join(","),
     isPublic:        !!v.isPublic,
     maxParticipants: parseInt(v.maxParticipants, 10) || 0,
   };
+}
+function tagChipsHTML(tags) {
+  return tags.map((t) =>
+    '<span class="tag-chip">#' + esc(t) +
+      '<button type="button" class="tag-x" data-act="tag-del" data-tag="' + esc(t) +
+        '" aria-label="Remove ' + esc(t) + '">✕</button></span>').join("");
+}
+/* the hidden #cfgTags keeps the comma string, so readRoomForm / isRoomDirty /
+   roomDraft work exactly as before — only the visible UI changed */
+function setTags(tags) {
+  const hid = $("cfgTags");
+  if (!hid) return;
+  hid.value = tags.join(",");
+  $("cfgTagList").innerHTML = tagChipsHTML(tags);
+  const full = tags.length >= 8;
+  const inp = $("cfgTagIn"), cnt = $("cfgTagCnt");
+  const btn = dom.cfgBody.querySelector('[data-act="tag-add"]');
+  if (inp) inp.disabled = full;
+  if (btn) btn.disabled = full;
+  if (cnt) cnt.textContent = tags.length + "/8";
+  S.roomDraft = readRoomForm();
+  syncDirtyUI();
+}
+function addTagFromInput() {
+  const inp = $("cfgTagIn");
+  if (!inp || !inp.value.trim()) return;
+  setTags(parseTags($("cfgTags").value + "," + inp.value));   // "a, b" adds both
+  inp.value = "";
+  inp.focus();
 }
 /* what's in the DB right now (S.room is kept in sync by room-saved/room-updated) */
 function serverRoomVals() {
@@ -504,14 +523,22 @@ function onCfgClick(e) {
   if (head) {
     const sec = head.closest("[data-collapsible]");
     if (sec) {
-      const id = sec.dataset.secId;
-      sec.classList.toggle("collapsed");
-      S.cfgCollapsed[id] = sec.classList.contains("collapsed");
-      if (id === "room" && !S.cfgCollapsed[id]) {          // opening room details
+      const id      = sec.dataset.secId;
+      const opening = sec.classList.contains("collapsed");
+      if (opening) {
+        /* room details never shares the sheet: opening it closes the rest,
+          opening anything else closes it */
         dom.cfgBody.querySelectorAll("[data-collapsible]").forEach((s) => {
-          if (s !== sec) { s.classList.add("collapsed"); S.cfgCollapsed[s.dataset.secId] = true; }
+          if (s === sec) return;
+          const sid = s.dataset.secId;
+          if (id === "room" || sid === "room") {
+            s.classList.add("collapsed");
+            S.cfgCollapsed[sid] = true;
+          }
         });
       }
+      sec.classList.toggle("collapsed", !opening);
+      S.cfgCollapsed[id] = !opening;
       return;
     }
   }
@@ -555,6 +582,7 @@ function onCfgClick(e) {
   if (act === "save-room") {
     if (!getSocket()) return;
     if (S.roomConflict) return nudgeConflict();
+    addTagFromInput();  // don't lose a half-entered tag
     const payload = readRoomForm();
     S.roomDraft = payload;
     el.disabled = true;
@@ -573,6 +601,11 @@ function onCfgClick(e) {
     const b = dom.cfgBody.querySelector(".cfg-conflict");
     if (b) b.remove();
     syncDirtyUI();
+    return;
+  }
+  if (act === "tag-add") { addTagFromInput(); return; }
+  if (act === "tag-del") {
+    setTags(parseTags($("cfgTags").value).filter((t) => t !== el.dataset.tag));
     return;
   }
 }
@@ -606,11 +639,16 @@ function onCfgRoomInput(e) {
   S.roomDraft = readRoomForm();
   syncDirtyUI();                       // Reset lights up immediately
 }
+function onCfgKeydown(e) {
+  if (e.target.id !== "cfgTagIn") return;
+  if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTagFromInput(); }
+}
 function dom_cfgDelegate() {
   dom.cfgBody.addEventListener("click",  onCfgClick);
   dom.cfgBody.addEventListener("change", onCfgChange);
   dom.cfgBody.addEventListener("input",  onCfgRoomInput);
   dom.cfgBody.addEventListener("change", onCfgRoomInput);          // selects
+  dom.cfgBody.addEventListener("keydown", onCfgKeydown);
   dom.cfgBody.addEventListener("wheel",  onCfgWheel, { passive: false });
 }
 if (document.readyState === "loading") {
