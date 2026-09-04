@@ -184,6 +184,13 @@
               </div>
             </div>
 
+            <!-- ===== VOICE: "Speaking to" status pill (top-centre, below the title) ===== -->
+            <div class="voice-pill" id="voicePill" data-state="all" hidden aria-live="polite">
+              <span class="vpill-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              <span class="vpill-text" id="voicePillText">Speaking to All</span>
+              <span class="vpill-avatars" id="voicePillAvatars"></span>
+            </div>
+
             <!-- ===== SETTINGS MENU ===== -->
             <div class="vc-menu" id="vcMenu" role="menu" aria-label="Player settings"></div>
 
@@ -265,6 +272,59 @@
                   >
                     💀
                   </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ===== VOICE RAIL — left border, vertically centred (mirrors .react-rail) ===== -->
+            <div class="voice-rail" id="voiceRail" data-state="off">
+              <div class="voice-hub" id="voiceHub">
+                <button class="voice-toggle" id="voiceToggle" type="button"
+                        aria-haspopup="true" aria-expanded="false" aria-label="Voice chat">
+                  <svg class="vt-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+                  </svg>
+                  <span class="vt-dot" aria-hidden="true"></span>
+                </button>
+                <div class="voice-strip" id="voiceStrip" role="group" aria-label="Voice controls">
+                  <button class="voice-btn vb-power" id="voicePowerBtn" type="button" title="Join voice">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>
+                    </svg>
+                  </button>
+                  <button class="voice-btn vb-mic is-off" id="voiceMicBtn" type="button"
+                          title="Mute / unmute (N)" disabled>
+                    <svg class="vb-ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+                    </svg>
+                    <svg class="vb-ic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="1" y1="1" x2="23" y2="23"/>
+                      <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V5a3 3 0 0 0-5.94-.6"/>
+                      <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
+                      <line x1="12" y1="19" x2="12" y2="23"/>
+                    </svg>
+                    <span class="vb-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+                  </button>
+                  <button class="voice-btn vb-deaf" id="voiceDeafenBtn" type="button" title="Deafen (H)" disabled>
+                    <svg class="vb-ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 14v-3a9 9 0 0 1 18 0v3"/>
+                      <path d="M21 14a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z"/>
+                      <path d="M3 14a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z"/>
+                    </svg>
+                    <svg class="vb-ic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 14v-3a9 9 0 0 1 14.32-7.26"/><path d="M3 14a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z"/>
+                      <path d="M21 14a2 2 0 0 1-2 2h-1v-6h1"/><line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                  </button>
+                  <div class="voice-peers" id="voicePeers" aria-label="Whisper targets"></div>
                 </div>
               </div>
             </div>

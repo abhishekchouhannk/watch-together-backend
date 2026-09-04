@@ -63,3 +63,12 @@ export const MOD_EVT = { "do-kick": "member-kick", "do-ban": "member-ban", "do-r
 export const roomId = location.pathname.replace(/.*\/room\//, "").replace(/\/$/, "");
 export const SETTLE_CAP = 12000;   // hard ceiling for a remote action to settle (ms)
 export const ACK_TTL    = 3000;    // how long an explicit act() swallows its own echo (ms)
+/* ── VOICE CHAT (LiveKit) ─────────────────────────────────── */
+export const VOICE_TOKEN_ENDPOINT = "/api/voice-token";
+// ESM build, lazily imported on first use. Pin the version you test against;
+// self-host it for production/CSP and just change this URL.
+export const VOICE_SDK_URL =
+  "https://cdn.jsdelivr.net/npm/livekit-client@2.7.2/dist/livekit-client.esm.mjs";
+export const VOICE_MAX_SLOTS       = 9;                 // Alt+1 … Alt+9  (ROOM_CAP − 1)
+export const VOICE_AUTOCONNECT     = false;             // true → join voice (muted) on load
+export const VOICE_RAIL_AUTO_CLOSE = RAIL_AUTO_CLOSE;   // reuse the reaction-rail timing

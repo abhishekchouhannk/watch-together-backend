@@ -32,4 +32,9 @@ export const dom = {
   paneChat: $("paneChat"), paneQueue: $("paneQueue"),
   chatUnread: $("chatUnread"), chatJump: $("chatJump"), chatJumpN: $("chatJumpN"),
   profCard: $("profCard"), profBackdrop: $("profBackdrop"), profBody: $("profBody"), profClose: $("profClose"),
+  // voice chat
+  voiceRail: $("voiceRail"), voiceHub: $("voiceHub"), voiceToggle: $("voiceToggle"),
+  voiceStrip: $("voiceStrip"), voicePowerBtn: $("voicePowerBtn"),
+  voiceMicBtn: $("voiceMicBtn"), voiceDeafenBtn: $("voiceDeafenBtn"), voicePeers: $("voicePeers"),
+  voicePill: $("voicePill"), voicePillText: $("voicePillText"), voicePillAvatars: $("voicePillAvatars"),
 };

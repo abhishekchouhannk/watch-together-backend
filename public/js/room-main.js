@@ -18,6 +18,7 @@
  *   socket-core      → config, state, utils, room-details, socket-ref
  *   chat             → config, state, dom, utils, socket-ref, socket-core
  *   player           → config, svg, state, dom, utils, socket-ref, socket-core
+ *   voice            → config, dom, player
  *   reactions        → config, state, dom, socket-ref, socket-core, player
  *   queue            → config, state, dom, utils, socket-ref, socket-core,
  *                      player, chat
@@ -43,6 +44,7 @@ import { wirePlayerControls, onFullscreenChange, setPseudoFs } from "./room/play
 import { wireReactions, closeRail } from "./room/reactions.js";
 import { Q } from "./room/queue.js";
 import { wirePermissions, closeConfig } from "./room/permissions.js";
+import { wireVoice } from "./room/voice.js";
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {
   initTheme();
@@ -70,6 +72,7 @@ function wireEvents() {
     if (dom.container.classList.contains("pseudo-fs")) setPseudoFs(false);
   });
   wireReactions();
+  wireVoice();
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
   wirePlayerControls();

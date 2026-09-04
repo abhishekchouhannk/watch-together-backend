@@ -1455,3 +1455,192 @@ button.msg-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .prof-ban .pp-txt{font-size:.78rem;line-height:1.4;color:var(--t1)}
 .prof-ban .pp-acts{display:flex;gap:.4rem}
 .prof-reason{margin:0;font-style:italic}
+
+/* ======== 14. Voice Chat ======== */
+#roomPage{ --voice-whisper:#22d3ee; --voice-whisper-glow:rgba(34,211,238,.42); }
+/* --- 14a. the rail — inside the player, LEFT border, vertically centred --- */
+.voice-rail{
+  position:absolute;z-index:6;left:.6rem;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:.4rem;
+  max-height:calc(100% - 1.2rem);opacity:.42;transition:opacity .2s ease;--vlevel:0;
+}
+.video-container:hover .voice-rail,
+.voice-rail:focus-within,.voice-rail.open,
+.voice-rail[data-state="live"],.voice-rail[data-state="whisper"]{opacity:1}
+@media(hover:none){.voice-rail{opacity:.88}}
+.voice-hub{position:relative;display:flex;align-items:center;justify-content:center}
+.voice-strip{
+  display:flex;flex-direction:column;align-items:center;gap:.16rem;
+  padding:.28rem .2rem;border-radius:999px;
+  background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.16);
+  box-shadow:0 4px 18px rgba(0,0,0,.3);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+}
+.voice-btn{
+  position:relative;width:31px;height:31px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;background:transparent;color:#fff;
+  transition:transform .14s cubic-bezier(.2,1.5,.4,1),background .15s,color .15s;
+}
+.voice-btn:hover{background:rgba(255,255,255,.18);transform:scale(1.12)}
+.voice-btn:active{transform:scale(.86)}
+.voice-btn[disabled]{opacity:.32;pointer-events:none}
+.voice-btn svg{width:16px;height:16px;display:block}
+.vb-power.is-on{color:#34d399}
+.vb-power.is-busy{opacity:.6;animation:vc-spin .9s linear infinite}
+.vb-mic .vb-ic-off{display:none}
+.vb-mic.is-off .vb-ic-on{display:none}
+.vb-mic.is-off .vb-ic-off{display:block}
+.vb-mic.is-off{color:#f87171}
+.vb-mic.is-live{color:var(--acc);background:rgba(255,255,255,.1)}
+.vb-mic.is-whisper{color:var(--voice-whisper);background:rgba(34,211,238,.16)}
+.vb-eq{
+  position:absolute;inset:0;display:none;align-items:flex-end;justify-content:center;
+  gap:2px;padding:8px 9px;pointer-events:none;
+}
+.vb-mic.is-live .vb-eq,.vb-mic.is-whisper .vb-eq{display:flex}
+.vb-mic.is-live .vb-ic-on,.vb-mic.is-whisper .vb-ic-on{opacity:0}
+.vb-eq i{
+  width:2.5px;border-radius:2px;background:currentColor;
+  height:calc(3px + var(--vlevel,0) * 11px * var(--m,1));transition:height .06s linear;
+}
+.vb-eq i:nth-child(1){--m:.6}.vb-eq i:nth-child(2){--m:1}.vb-eq i:nth-child(3){--m:.72}
+.vb-deaf .vb-ic-off{display:none}
+.vb-deaf.is-off .vb-ic-on{display:none}
+.vb-deaf.is-off .vb-ic-off{display:block}
+.vb-deaf.is-off{color:#f87171}
+/* --- 14b. whisper targets --- */
+.voice-peers{display:flex;flex-direction:column;align-items:center;gap:.16rem;margin-top:.06rem;max-height:44vh}
+.voice-peers:empty{display:none}
+.vp-peer{
+  position:relative;width:26px;height:26px;flex-shrink:0;border-radius:50%;
+  padding:0;background:transparent;cursor:pointer;transition:transform .12s ease;
+}
+.vp-peer:hover{transform:scale(1.14)}
+.vp-av{
+  width:100%;height:100%;border-radius:50%;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.62rem;font-weight:800;color:#fff;box-shadow:0 0 0 1.5px rgba(255,255,255,.25);
+}
+.vp-av img{width:100%;height:100%;object-fit:cover;display:block}
+.vp-slot{
+  position:absolute;right:-3px;bottom:-3px;min-width:13px;height:13px;padding:0 2px;
+  border-radius:7px;font-size:.56rem;font-weight:800;line-height:13px;text-align:center;
+  background:rgba(0,0,0,.72);color:#fff;border:1px solid rgba(255,255,255,.22);
+}
+.vp-peer.is-target .vp-av{box-shadow:0 0 0 2px var(--voice-whisper),0 0 10px var(--voice-whisper-glow)}
+.vp-peer.is-target .vp-slot{background:var(--voice-whisper);color:#042f35}
+/* --- 14c. collapsed trigger — mobile only (mirrors .react-toggle) --- */
+.voice-toggle{
+  display:none;position:relative;width:34px;height:34px;border-radius:50%;
+  align-items:center;justify-content:center;
+  background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18);color:#fff;
+  box-shadow:0 4px 14px rgba(0,0,0,.3);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  transition:background .2s,transform .12s;
+}
+.voice-toggle:active{transform:scale(.9)}
+.voice-toggle .vt-ic{width:16px;height:16px}
+.vt-dot{
+  position:absolute;right:3px;top:3px;width:7px;height:7px;border-radius:50%;
+  background:#6b7280;box-shadow:0 0 0 1.5px rgba(0,0,0,.45);
+}
+.voice-rail[data-state="listen"]  .vt-dot{background:#34d399}
+.voice-rail[data-state="live"]    .vt-dot{background:var(--acc)}
+.voice-rail[data-state="whisper"] .vt-dot{background:var(--voice-whisper)}
+.voice-rail.open .voice-toggle{background:var(--acc);border-color:var(--acc)}
+/* --- 14d. "Speaking to" status pill (top-centre, below the title bar) --- */
+.voice-pill{
+  position:absolute;z-index:6;left:50%;top:clamp(2.4rem,7.5%,3.3rem);
+  transform:translateX(-50%);display:flex;align-items:center;gap:.4rem;
+  max-width:min(78%,420px);padding:.26rem .6rem .26rem .5rem;border-radius:999px;
+  background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+  box-shadow:0 3px 14px rgba(0,0,0,.22);
+  color:rgba(255,255,255,.94);font-size:.72rem;font-weight:700;letter-spacing:.01em;
+  white-space:nowrap;pointer-events:none;animation:voicePillIn .18s ease both;
+  --whisper-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 11l18-5v12L3 14v-3z'/><path d='M11.6 16.8a3 3 0 0 1-5.8-1.6'/></svg>");
+}
+.voice-pill[hidden]{display:none}
+.voice-pill[data-state="whisper"]{
+  background:rgba(8,51,68,.42);border-color:var(--voice-whisper-glow);color:#cffafe;
+}
+@keyframes voicePillIn{from{opacity:0;transform:translate(-50%,-4px)}to{opacity:1;transform:translate(-50%,0)}}
+.vpill-wave{display:flex;align-items:center;gap:2px;height:12px}
+.vpill-wave i{
+  width:2.5px;border-radius:2px;background:var(--acc);
+  height:calc(3px + var(--vlevel,0) * 9px * var(--m,1));transition:height .07s linear;
+}
+.vpill-wave i:nth-child(1){--m:.55}.vpill-wave i:nth-child(2){--m:.85}
+.vpill-wave i:nth-child(3){--m:1}.vpill-wave i:nth-child(4){--m:.6}
+.voice-pill[data-state="whisper"] .vpill-wave{display:none}
+.voice-pill[data-state="whisper"]::before{
+  content:"";width:13px;height:13px;flex-shrink:0;background:currentColor;
+  -webkit-mask:var(--whisper-mask) center/contain no-repeat;
+  mask:var(--whisper-mask) center/contain no-repeat;
+}
+.vpill-text{overflow:hidden;text-overflow:ellipsis}
+.vpill-avatars{display:flex;align-items:center}
+.vpill-avatars:empty{display:none}
+.vpill-av{
+  width:18px;height:18px;border-radius:50%;overflow:hidden;margin-left:-5px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.56rem;font-weight:800;color:#fff;box-shadow:0 0 0 1.5px rgba(8,51,68,.65);
+}
+.vpill-av:first-child{margin-left:2px}
+.vpill-av img{width:100%;height:100%;object-fit:cover;display:block}
+/* --- 14e. glowing player border while transmitting (inset → survives overflow:hidden) --- */
+.video-container.voice-live::after,
+.video-container.voice-whisper::after{
+  content:"";position:absolute;inset:0;z-index:5;border-radius:inherit;
+  pointer-events:none;border:1.5px solid transparent;
+  transition:box-shadow .12s linear,border-color .2s ease;
+}
+.video-container.voice-live::after{
+  border-color:var(--acc);
+  box-shadow:inset 0 0 0 1px var(--acc-glow),
+             inset 0 0 calc(14px + var(--vlevel,0) * 40px) var(--acc-glow);
+}
+.video-container.voice-whisper::after{
+  border-color:var(--voice-whisper);
+  box-shadow:inset 0 0 0 1px var(--voice-whisper-glow),
+             inset 0 0 calc(14px + var(--vlevel,0) * 40px) var(--voice-whisper-glow);
+}
+/* --- 14f. fullscreen (real or pseudo) — mirror the react-rail rules --- */
+.video-container.is-fs .voice-rail{left:1.1rem;gap:.5rem;opacity:.55}
+.video-container.is-fs .voice-btn{width:37px;height:37px}
+.video-container.is-fs .voice-btn svg{width:18px;height:18px}
+.video-container.is-fs .vp-peer{width:30px;height:30px}
+.video-container.is-fs .voice-pill{font-size:.8rem;top:clamp(3rem,6%,4rem)}
+@media(min-width:769px) and (max-height:640px){
+  .voice-btn{width:27px;height:27px}
+  .voice-btn svg{width:14px;height:14px}
+  .vp-peer{width:23px;height:23px}
+}
+/* --- 14g. mobile: collapse into a bubble, pop the strip out rightwards --- */
+@media(max-width:768px){
+  .voice-rail{left:.45rem;gap:.3rem}
+  .voice-toggle{display:flex}
+  .voice-strip{
+    position:absolute;top:50%;left:calc(100% + .45rem);
+    flex-direction:row;gap:.14rem;padding:.2rem .26rem;
+    transform:translate(-8px,-50%) scale(.95);transform-origin:left center;
+    opacity:0;visibility:hidden;
+    transition:opacity .16s ease,transform .16s ease,visibility 0s linear .16s;
+  }
+  .voice-rail.open .voice-strip{
+    opacity:1;visibility:visible;transform:translate(0,-50%) scale(1);
+    transition:opacity .16s ease,transform .16s ease;
+  }
+  .voice-peers{flex-direction:row;max-height:none}
+  .voice-btn{width:29px;height:29px}
+  .vp-peer{width:25px;height:25px}
+  .voice-pill{font-size:.68rem;top:clamp(2rem,9%,2.9rem);max-width:86%}
+}
+/* --- 14h. reduced motion --- */
+@media (prefers-reduced-motion:reduce){
+  .voice-pill{animation:none}
+  .vb-power.is-busy{animation:none}
+  .vb-eq i,.vpill-wave i{transition:none}
+  .video-container.voice-live::after,
+  .video-container.voice-whisper::after{transition:none}
+}
