@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Voice Room (prototype)</title>
+</head>
+<body>
+  <h1>Voice Room (prototype)</h1>
+  <p>Status: <span id="status">…</span></p>
+  <p>Room: <span id="roomId"></span></p>
+  <p>You: <span id="me"></span></p>
+  <p>
+    <button id="micBtn" disabled>Unmute mic (M)</button>
+    <button id="deafenBtn" disabled>Deafen (D)</button>
+    <button id="leaveBtn" disabled>Leave</button>
+  </p>
+  <p id="whisperState">Speaking to: ALL</p>
+  <h3>Participants</h3>
+  <p>Hold <b>Alt</b> and press a slot number (1–9) to whisper. Keep Alt held to stay in whisper; release Alt to go back to ALL.</p>
+  <ul id="participants"><li>(connecting…)</li></ul>
+  <h3>Log</h3>
+  <pre id="log"></pre>
+  <!-- LiveKit browser SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+  <!-- your app already exposes the socket.io client here -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/voice-room.js"></script>
+</body>
+</html>

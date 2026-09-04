@@ -32,6 +32,7 @@ app.set("trust proxy", true);
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/rooms", require("./routes/rooms"));
 app.use("/api/users", require("./routes/users"));
+app.use('/api/voice-token', require('./routes/voice'));
 
 const path = require("path");
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -60,6 +61,8 @@ app.get(
     res.sendFile(path.join(__dirname, "public", "dashboard.html"));
   },
 );
+app.get('/voice-room', (req, res) =>
+  res.sendFile(require('path').join(__dirname, 'public', 'voice-room.html')));
 app.get("/room/:roomId", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "room.html"));
 });
