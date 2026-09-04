@@ -1,7 +1,7 @@
 // routes/voice.js
 const express = require('express');
 const router = express.Router();
-const { AccessToken } = require('livekit-server-sdk');
+const { AccessToken, TrackSource } = require('livekit-server-sdk');
 const Room = require('../models/Room');
 const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
@@ -69,7 +69,7 @@ router.post('/', authenticateToken, async (req, res) => {
       canSubscribe:         true,
       canPublishData:       true,
       canUpdateOwnMetadata: true,
-      canPublishSources:    ['microphone'],        // audio only – no camera/screen
+      canPublishSources:  [TrackSource.MICROPHONE],       // audio‑only: SFU rejects cam/screen
     });
     const token = await at.toJwt();                // async in server-sdk v2
     res.json({
