@@ -36,5 +36,6 @@ export const dom = {
   voiceRail: $("voiceRail"), voiceHub: $("voiceHub"), voiceToggle: $("voiceToggle"),
   voiceStrip: $("voiceStrip"), voicePowerBtn: $("voicePowerBtn"),
   voiceMicBtn: $("voiceMicBtn"), voiceDeafenBtn: $("voiceDeafenBtn"), voicePeers: $("voicePeers"),
-  voicePill: $("voicePill"), voicePillText: $("voicePillText"), voicePillAvatars: $("voicePillAvatars"),
+  voicePill: $("voicePill"), voicePillText: $("voicePillText"),
+  voicePillAvatars: $("voicePillAvatars"), voicePillClose: $("voicePillClose"),
 };

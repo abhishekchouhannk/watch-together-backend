@@ -6,9 +6,11 @@
  * Keybinds (ignored while typing / in fullscreen too):
  *   N                 mute / unmute
  *   H                 deafen / undeafen
- *   Alt + [1-9]       whisper to that slot. Keep Alt held to stay in whisper
- *                     even after releasing the digit; release Alt → back to All.
- *   click a peer dot  sticky whisper (toggle; Esc also clears it)
+ *   Alt + [1-9]       whisper to that slot. Hold Alt and tap more digits to
+ *                     ADD more people (speak to several at once). Release Alt
+ *                     → back to All.
+ *   click a peer dot  sticky whisper — toggles that peer in/out of the set.
+ *                     Click the pill's ✕ (or Esc) to leave whisper entirely.
  */
 import {
   roomId, VOICE_TOKEN_ENDPOINT, VOICE_SDK_URL,
@@ -23,7 +25,7 @@ let connecting = false, connected = false;
 let micLive = false, deafened = false;
 let analyser = null, rafId = 0;
 let altDown = false;
-let whisperId = null;          // identity we're whispering to, or null = everyone
+const whisperIds = new Set();  // identities we're whispering to; empty = everyone
 let whisperMode = "none";      // "none" | "alt" | "sticky"
 let micBeforeWhisper = null;
 const orderIds = [];           // remote identities in join order → Alt slots
@@ -51,6 +53,7 @@ export function wireVoice() {
   });
   dom.voiceMicBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleMic(); });
   dom.voiceDeafenBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDeafen(); });
+  dom.voicePillClose.addEventListener("click", (e) => { e.stopPropagation(); stopWhisper(); });
   document.addEventListener("click", (e) => {
     if (!dom.voiceRail.contains(e.target)) closeVoiceRail();
   });
@@ -89,7 +92,6 @@ async function connect() {
     room = new LK.Room({ adaptiveStream: true, dynacast: true });
     bindRoomEvents();
     await room.connect(url, token);
-    // await room.localParticipant.setMicrophoneEnabled(false); // listen only, no mic prompt
     connected = true; micLive = false;
     applyDeafen();
     refreshPeers();
@@ -106,7 +108,7 @@ async function connect() {
 }
 async function disconnect() {
   stopVisualizer();
-  whisperId = null; whisperMode = "none"; micBeforeWhisper = null;
+  whisperIds.clear(); whisperMode = "none"; micBeforeWhisper = null;
   try { await room?.disconnect(); } catch {}
   room = null; connected = false; micLive = false;
   orderIds.length = 0;
@@ -130,7 +132,7 @@ function bindRoomEvents() {
   const E = LK.RoomEvent;
   room
     .on(E.ParticipantConnected,    (p) => { if (deafened) p.setVolume?.(0); refreshPeers(); })
-    .on(E.ParticipantDisconnected, (p) => { if (p.identity === whisperId) stopWhisper(); refreshPeers(); })
+    .on(E.ParticipantDisconnected, (p) => { if (whisperIds.has(p.identity)) removeWhisper(p.identity); refreshPeers(); })
     .on(E.ParticipantMetadataChanged, refreshPeers)
     .on(E.TrackSubscribed, (track, _pub, p) => {
       if (track.kind === LK.Track.Kind.Audio) {
@@ -179,40 +181,54 @@ function toggleDeafen() {
   renderState();
 }
 /* ── whisper (server-enforced via track subscription permissions) ── */
-function applyPerms(id) {
-  if (id) {
-    room.localParticipant.setTrackSubscriptionPermissions(false, [
-      { participantIdentity: id, allowAll: true },
-    ]);
+function applyPerms(ids) {
+  if (ids && ids.length) {
+    // only these participants may subscribe to our mic track
+    room.localParticipant.setTrackSubscriptionPermissions(
+      false,
+      ids.map((id) => ({ participantIdentity: id, allowAll: true })),
+    );
   } else {
     room.localParticipant.setTrackSubscriptionPermissions(true, []);
   }
 }
+function syncPerms() {
+  try { applyPerms([...whisperIds]); } catch (e) { console.error("[voice] perms:", e); }
+}
 async function setSpeakToAll() {
-  whisperId = null; whisperMode = "none";
-  try { applyPerms(null); } catch (e) { console.error("[voice] perms:", e); }
+  whisperIds.clear(); whisperMode = "none";
+  syncPerms();
   renderState();
 }
-async function startWhisper(id, mode) {
+/* add one identity to the whisper set (keeps anyone already selected) */
+async function addWhisper(id, mode) {
   if (!connected || !orderIds.includes(id)) return;
-  const fresh = whisperId === null;
-  whisperId = id; whisperMode = mode;
-  try { applyPerms(id); } catch (e) { console.error("[voice] perms:", e); }   // restrict BEFORE mic opens
-  if (fresh) micBeforeWhisper = micLive;
+  const fresh = whisperIds.size === 0;
+  whisperIds.add(id); whisperMode = mode;
+  syncPerms();                               // restrict BEFORE the mic opens
+  if (fresh) micBeforeWhisper = micLive;     // remember state at the very first target
   if (!micLive) await setMic(true);
   renderState();
 }
+/* remove one identity; if that empties the set, leave whisper entirely */
+async function removeWhisper(id) {
+  if (!whisperIds.has(id)) return;
+  whisperIds.delete(id);
+  if (whisperIds.size === 0) { await stopWhisper(); return; }
+  syncPerms();
+  renderState();
+}
 async function stopWhisper() {
-  if (whisperId === null) return;
-  whisperId = null; whisperMode = "none";
-  try { applyPerms(null); } catch (e) { console.error("[voice] perms:", e); }
+  if (whisperMode === "none" && whisperIds.size === 0) return;
+  whisperIds.clear(); whisperMode = "none";
+  syncPerms();
   if (micBeforeWhisper === false && micLive) await setMic(false);
   micBeforeWhisper = null;
   renderState();
 }
 function toggleStickyWhisper(id) {
   if (!connected) return;
-  (whisperId === id && whisperMode === "sticky") ? stopWhisper() : startWhisper(id, "sticky");
+  whisperIds.has(id) ? removeWhisper(id) : addWhisper(id, "sticky");
 }
 /* ── keybinds ───────────────────────────────────────────── */
 function typing(t) {
@@ -231,7 +247,7 @@ function onKeyDown(e) {
     e.preventDefault();
     if (e.repeat) return;
     const id = orderIds[n - 1];
-    if (id) startWhisper(id, "alt");
+    if (id) addWhisper(id, "alt");           // additive: tap more digits to add more people
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
@@ -316,6 +332,12 @@ function avatarNode(meta, cls) {
 function refreshPeers() {
   const remotes = sortedRemotes();
   orderIds.length = 0;
+  // drop any whisper targets that are no longer present
+  const present = new Set(remotes.map((p) => p.identity));
+  let changed = false;
+  whisperIds.forEach((id) => { if (!present.has(id)) { whisperIds.delete(id); changed = true; } });
+  if (changed && whisperIds.size === 0 && whisperMode !== "none") { stopWhisper(); }
+  else if (changed) { syncPerms(); }
   const frag = document.createDocumentFragment();
   remotes.forEach((p, i) => {
     orderIds.push(p.identity);
@@ -343,21 +365,22 @@ function refreshPeers() {
 }
 /* ── single source of truth for all visuals ─────────────── */
 function computeState() {
-  if (!connected) return "off";
-  if (whisperId)  return "whisper";
-  if (micLive)    return "live";
+  if (!connected)        return "off";
+  if (whisperIds.size)   return "whisper";
+  if (micLive)           return "live";
   return "listen";
 }
 function renderState() {
   const st = computeState();
+  const whispering = whisperIds.size > 0;
   dom.voiceRail.dataset.state = st;
   dom.voiceToggle.title = LABELS[st];
   dom.voiceToggle.setAttribute("aria-label", LABELS[st]);
   dom.voiceMicBtn.disabled    = !connected;
   dom.voiceDeafenBtn.disabled = !connected;
   dom.voiceMicBtn.classList.toggle("is-off", !micLive);
-  dom.voiceMicBtn.classList.toggle("is-live", micLive && !whisperId);
-  dom.voiceMicBtn.classList.toggle("is-whisper", micLive && !!whisperId);
+  dom.voiceMicBtn.classList.toggle("is-live", micLive && !whispering);
+  dom.voiceMicBtn.classList.toggle("is-whisper", micLive && whispering);
   dom.voiceDeafenBtn.classList.toggle("is-off", deafened);
   dom.voicePowerBtn.classList.toggle("is-on", connected);
   dom.voicePowerBtn.classList.toggle("is-busy", connecting);
@@ -365,18 +388,23 @@ function renderState() {
   dom.container.classList.toggle("voice-live", st === "live");
   dom.container.classList.toggle("voice-whisper", st === "whisper");
   dom.voicePeers.querySelectorAll(".vp-peer").forEach((el) =>
-    el.classList.toggle("is-target", el.dataset.id === whisperId));
+    el.classList.toggle("is-target", whisperIds.has(el.dataset.id)));
   updatePill(st);
 }
 function updatePill(st) {
   const pill = dom.voicePill;
   if (st !== "live" && st !== "whisper") { pill.hidden = true; return; }
   pill.hidden = false;
-  pill.dataset.state = (st === "whisper") ? "whisper" : "all";
-  if (st === "whisper") {
-    const p = room?.remoteParticipants?.get(whisperId);
-    dom.voicePillText.textContent = "Speaking to";
-    dom.voicePillAvatars.replaceChildren(avatarNode(peerMeta(p), "vpill-av"));
+  const whispering = st === "whisper";
+  pill.dataset.state = whispering ? "whisper" : "all";
+  dom.voicePillClose.hidden = !whispering;
+  if (whispering) {
+    const map = room?.remoteParticipants || room?.participants;
+    const ids = orderIds.filter((id) => whisperIds.has(id));   // keep join-order
+    dom.voicePillText.textContent = ids.length > 1 ? "Speaking to" : "Speaking to";
+    dom.voicePillAvatars.replaceChildren(
+      ...ids.map((id) => avatarNode(peerMeta(map?.get(id)), "vpill-av")),
+    );
   } else {
     dom.voicePillText.textContent = "Speaking to All";
     dom.voicePillAvatars.replaceChildren();

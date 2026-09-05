@@ -1588,6 +1588,21 @@ button.msg-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 }
 .vpill-av:first-child{margin-left:2px}
 .vpill-av img{width:100%;height:100%;object-fit:cover;display:block}
+/* --- 14d+. pill "exit whisper" button --- */
+.vpill-close{
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  width:16px;height:16px;margin-left:.2rem;border-radius:50%;
+  background:rgba(255,255,255,.16);color:currentColor;
+  pointer-events:auto;cursor:pointer;
+  transition:background .15s ease,transform .12s ease;
+}
+.vpill-close[hidden]{display:none}
+.vpill-close:hover{background:rgba(255,255,255,.3);transform:scale(1.14)}
+.vpill-close:active{transform:scale(.86)}
+.vpill-close svg{width:10px;height:10px;display:block}
+.voice-pill[data-state="whisper"] .vpill-close{
+  background:rgba(207,250,254,.18);
+}
 /* --- 14e. glowing player border while transmitting (inset → survives overflow:hidden) --- */
 .video-container.voice-live::after,
 .video-container.voice-whisper::after{
