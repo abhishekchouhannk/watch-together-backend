@@ -34,6 +34,8 @@ Completed:
 10. (DONE) Fix the conjusted people's look in the room details (too many radio buttons in a small space).
 11. (DONE) Make it such that the form sections open up closed instead of open by default.
 12. (DONE) Remove the excessive descriptive texts in the UI and make it more minimalistic.
+13. (DONE) Added voice chat to the application. Added a selective whisper mode to allow users to speak to select a select user.
+    - Also, added feature to use keybinds to push to talk (PTT) and also added a toggle button to enable/disable voice chat.
 
 
 Other important but later -
