@@ -168,7 +168,17 @@ async function setMic(on) {
 async function toggleMic() {
   if (!connected) return;
   if (whisperMode === "alt") return;         // push-to-talk owns the mic
-  await setMic(!micLive);
+
+  if (micLive) {
+    // Manually muting: turn off the mic and drop active whispers
+    await setMic(false);
+    if (whisperIds.size > 0) {
+      await stopWhisper();
+    }
+  } else {
+    // Unmuting: simply turn the mic on
+    await setMic(true);
+  }
 }
 function applyDeafen() {
   (room?.remoteParticipants || room?.participants)?.forEach((p) =>
@@ -401,7 +411,7 @@ function updatePill(st) {
   if (whispering) {
     const map = room?.remoteParticipants || room?.participants;
     const ids = orderIds.filter((id) => whisperIds.has(id));   // keep join-order
-    dom.voicePillText.textContent = ids.length > 1 ? "Speaking to" : "Speaking to";
+    dom.voicePillText.textContent = ids.length > 1 ? "Speaking to" : "Whispering to";
     dom.voicePillAvatars.replaceChildren(
       ...ids.map((id) => avatarNode(peerMeta(map?.get(id)), "vpill-av")),
     );
