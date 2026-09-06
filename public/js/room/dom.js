@@ -38,4 +38,11 @@ export const dom = {
   voiceMicBtn: $("voiceMicBtn"), voiceDeafenBtn: $("voiceDeafenBtn"), voicePeers: $("voicePeers"),
   voicePill: $("voicePill"), voicePillText: $("voicePillText"),
   voicePillAvatars: $("voicePillAvatars"), voicePillClose: $("voicePillClose"),
+  // voice — side-panel pane (3rd tab)
+  tabVoice: $("tabVoice"), paneVoice: $("paneVoice"), voiceCount: $("voiceCount"),
+  voicePaneStatus: $("voicePaneStatus"), voicePanePower: $("voicePanePower"),
+  voicePaneMicBtn: $("voicePaneMicBtn"), voicePaneMicLabel: $("voicePaneMicLabel"),
+  voicePaneDeafenBtn: $("voicePaneDeafenBtn"), voicePaneClearWhisper: $("voicePaneClearWhisper"),
+  voicePaneTarget: $("voicePaneTarget"), voicePaneTargetAvs: $("voicePaneTargetAvs"),
+  voicePaneList: $("voicePaneList"), voicePaneEmpty: $("voicePaneEmpty"),
 };

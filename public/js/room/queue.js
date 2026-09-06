@@ -184,8 +184,8 @@ export const Q = (() => {
   /* ── wiring ─────────────────────────────────────────── */
   function wire() {
     /* tabs */
-    [dom.tabChat, dom.tabQueue].forEach((b) =>
-      b.addEventListener("click", () => switchTab(b.dataset.tab))
+    [dom.tabChat, dom.tabQueue, dom.tabVoice].forEach((b) =>
+      b && b.addEventListener("click", () => switchTab(b.dataset.tab))
     );
     /* add */
     $("queueAddBtn").onclick = () => {
@@ -257,14 +257,18 @@ export const Q = (() => {
     render();
   }
   function switchTab(which) {
-    const chat = which === "chat";
-    dom.tabChat.classList.toggle("active", chat);
-    dom.tabQueue.classList.toggle("active", !chat);
-    dom.tabChat.setAttribute("aria-selected", String(chat));
-    dom.tabQueue.setAttribute("aria-selected", String(!chat));
-    dom.paneChat.classList.toggle("active", chat);
-    dom.paneQueue.classList.toggle("active", !chat);
-    if (chat) Unread.onChatShown();
+    const tabs  = { chat: dom.tabChat,  queue: dom.tabQueue,  voice: dom.tabVoice  };
+    const panes = { chat: dom.paneChat, queue: dom.paneQueue, voice: dom.paneVoice };
+    if (!tabs[which]) which = "chat";
+    for (const [k, el] of Object.entries(tabs)) {
+      if (!el) continue;
+      const on = k === which;
+      el.classList.toggle("active", on);
+      el.setAttribute("aria-selected", String(on));
+    }
+    for (const [k, el] of Object.entries(panes))
+      if (el) el.classList.toggle("active", k === which);
+    if (which === "chat") Unread.onChatShown();
   }
   return { wire, add, render, refreshNav, applyRemote,
            onEnded, tick, resetUpNext, next, prev, hasNext, hasPrev, canManage, switchTab };

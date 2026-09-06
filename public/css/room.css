@@ -1293,6 +1293,105 @@ button.role-toggle:hover{filter:brightness(1.15);box-shadow:0 0 0 2px var(--acc-
 .btn-sm[disabled]{opacity:.4;pointer-events:none}
 /* disabled player buttons */
 .vc-btn[disabled]{opacity:.3;pointer-events:none}
+/* ═══════════ SIDE PANEL — VOICE PANE (3rd tab) ═══════════ */
+.sp-tabs{flex-wrap:wrap;row-gap:.3rem}              /* 3 tabs + online pill can wrap now */
+#tabVoice.has-voice-live{color:var(--t1)}
+#tabVoice.has-voice-live:not(.active){background:var(--surf)}
+#tabVoice.has-voice-live:not(.active) .sp-badge{animation:spPulse 1.9s ease-in-out infinite}
+#paneVoice .q-head{gap:.5rem}
+.vpane-status{
+  margin-left:auto;min-width:0;max-width:11rem;
+  font-size:.72rem;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#paneVoice[data-state="live"]    .vpane-status{color:var(--acc)}
+#paneVoice[data-state="whisper"] .vpane-status{color:var(--voice-whisper)}
+.vpane-power{
+  flex-shrink:0;font-size:.72rem;font-weight:600;padding:.3rem .62rem;border-radius:7px;
+  background:var(--acc);color:var(--acc-t);transition:background .15s,color .15s,opacity .15s;
+}
+.vpane-power:hover{background:var(--acc-h)}
+.vpane-power.is-on{background:var(--surf);color:var(--surf-t)}
+.vpane-power.is-on:hover{background:rgba(225,29,72,.18);color:#f87171}
+.vpane-power.is-busy{opacity:.6;pointer-events:none}
+/* toolbar */
+.vpane-toolbar{
+  display:flex;align-items:center;gap:.4rem;flex-shrink:0;
+  padding:.55rem .7rem;border-bottom:1px solid var(--card-bdr);
+}
+.vpane-ctl{
+  display:flex;align-items:center;gap:.35rem;min-width:0;
+  padding:.38rem .58rem;border-radius:8px;font-size:.74rem;font-weight:600;
+  background:var(--surf);color:var(--surf-t);transition:background .15s,color .15s,opacity .15s;
+}
+.vpane-ctl svg{width:14px;height:14px;flex-shrink:0}
+.vpane-ctl span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vpane-ctl:hover{background:var(--surf-h);color:var(--t1)}
+.vpane-ctl[disabled]{opacity:.4;pointer-events:none}
+.vpane-ctl.is-live{background:var(--acc);color:var(--acc-t)}
+.vpane-ctl.is-whisper{background:rgba(34,211,238,.16);color:var(--voice-whisper)}
+.vpane-ctl.is-off{background:rgba(225,29,72,.14);color:#f87171}
+.vpane-clearw{margin-left:auto}
+.vpane-clearw[hidden]{display:none}
+/* "whispering to" strip */
+.vpane-target{
+  display:flex;align-items:center;gap:.45rem;flex-shrink:0;
+  padding:.45rem .7rem;border-bottom:1px solid var(--card-bdr);
+  font-size:.72rem;font-weight:700;color:var(--voice-whisper);
+  background:rgba(34,211,238,.07);
+}
+.vpane-target[hidden]{display:none}
+.vpane-target-l{white-space:nowrap}
+.vpane-target-avs{display:flex;align-items:center}
+.vpane-target-avs .vpane-av{width:20px;height:20px;margin-left:-5px;font-size:.56rem}
+.vpane-target-avs .vpane-av:first-child{margin-left:0}
+/* participant list */
+.vpane-list{
+  flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;
+  list-style:none;margin:0;padding:.45rem;display:flex;flex-direction:column;gap:.2rem;
+}
+.vpane-list:empty{display:none}
+.vpane-peer{
+  position:relative;display:flex;align-items:center;gap:.5rem;min-width:0;
+  padding:.4rem .45rem;border-radius:10px;cursor:pointer;
+  transition:background .15s,box-shadow .15s;
+}
+.vpane-peer:hover{background:var(--surf)}
+.vpane-peer.is-target{background:rgba(34,211,238,.12);box-shadow:inset 2px 0 0 var(--voice-whisper)}
+.vpane-av{
+  width:30px;height:30px;border-radius:50%;flex-shrink:0;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.72rem;font-weight:800;color:#fff;box-shadow:0 0 0 1.5px var(--card-bdr);
+}
+.vpane-av img{width:100%;height:100%;object-fit:cover;display:block}
+.vpane-peer.is-speaking .vpane-av{box-shadow:0 0 0 2px var(--acc),0 0 10px var(--acc-glow)}
+.vpane-peer-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:.05rem}
+.vpane-name{font-size:.8rem;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vpane-sub{font-size:.66rem;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vpane-peer.is-target .vpane-sub{color:var(--voice-whisper)}
+.vpane-mutedic{flex-shrink:0;display:none;color:#f87171}
+.vpane-mutedic svg{width:14px;height:14px;display:block}
+.vpane-peer.is-muted .vpane-mutedic{display:block}
+.vpane-eq{display:none;gap:2px;align-items:flex-end;height:13px;flex-shrink:0}
+.vpane-peer.is-speaking .vpane-eq{display:flex}
+.vpane-eq i{width:2.5px;background:var(--acc);border-radius:1px;animation:qEq .9s ease-in-out infinite}
+.vpane-eq i:nth-child(2){animation-delay:.15s}.vpane-eq i:nth-child(3){animation-delay:.3s}
+.vpane-wbtn{
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border-radius:8px;background:transparent;color:var(--t3);
+  transition:background .14s,color .14s,transform .12s;
+}
+.vpane-wbtn svg{width:15px;height:15px}
+.vpane-wbtn:hover{background:var(--surf-h);color:var(--t1);transform:scale(1.08)}
+.vpane-wbtn:active{transform:scale(.9)}
+.vpane-peer.is-target .vpane-wbtn{background:var(--voice-whisper);color:#042f35}
+.vpane-empty[hidden]{display:none}
+.vpane-hint{gap:.4rem;text-align:left}
+.vpane-hint b{color:var(--t2)}
+@media (prefers-reduced-motion:reduce){
+  #tabVoice.has-voice-live:not(.active) .sp-badge{animation:none}
+  .vpane-eq i{animation:none}
+}
+
 /* ═══════════ UP NEXT CARD ═══════════ */
 .upnext{
   position:absolute;right:.75rem;bottom:3.6rem;z-index:8;width:min(300px,62%);

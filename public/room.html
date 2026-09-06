@@ -468,6 +468,9 @@
             <button class="sp-tab" id="tabQueue" data-tab="queue" role="tab" aria-selected="false">
               📺 Queue <span class="sp-badge" id="queueCount">0</span>
             </button>
+            <button class="sp-tab" id="tabVoice" data-tab="voice" role="tab" aria-selected="false">
+              🎙️ Voice <span class="sp-badge" id="voiceCount" data-zero="1">0</span>
+            </button>
             <span class="sp-online" id="chatOnline"></span>
           </div>
           <div class="sp-panes">
@@ -521,6 +524,55 @@
                   <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
                 <span>Only the host &amp; moderators can edit the queue</span>
+              </div>
+            </section>
+            <!-- ── VOICE ── -->
+            <section class="sp-pane" id="paneVoice" role="tabpanel" aria-labelledby="tabVoice" data-state="off">
+              <div class="q-head">
+                <span class="q-head-title">Voice chat</span>
+                <span class="vpane-status" id="voicePaneStatus">Not connected</span>
+                <button class="vpane-power" id="voicePanePower" type="button">Join</button>
+              </div>
+              <div class="vpane-toolbar">
+                <button class="vpane-ctl" id="voicePaneMicBtn" type="button" disabled aria-pressed="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+                  </svg>
+                  <span id="voicePaneMicLabel">Mic off</span>
+                </button>
+                <button class="vpane-ctl" id="voicePaneDeafenBtn" type="button" disabled aria-pressed="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 14v-3a9 9 0 0 1 18 0v3"/>
+                    <path d="M21 14a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z"/>
+                    <path d="M3 14a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z"/>
+                  </svg>
+                  <span>Deafen</span>
+                </button>
+                <button class="vpane-ctl vpane-clearw" id="voicePaneClearWhisper" type="button" hidden>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                    <line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/>
+                  </svg>
+                  <span>Exit whisper</span>
+                </button>
+              </div>
+              <div class="vpane-target" id="voicePaneTarget" hidden>
+                <span class="vpane-target-l">Whispering to</span>
+                <span class="vpane-target-avs" id="voicePaneTargetAvs"></span>
+              </div>
+              <ul class="vpane-list" id="voicePaneList"></ul>
+              <div class="q-empty vpane-empty" id="voicePaneEmpty">
+                <div class="q-empty-icon">🎙️</div>
+                <p class="q-empty-t">No one else in voice</p>
+                <p class="q-empty-s">Join and others will show up here to talk to</p>
+              </div>
+              <div class="q-lock vpane-hint">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 0 1-5.8-1.6"/>
+                </svg>
+                <span>Hold <b>Alt</b> + a number to whisper — add more numbers for a group, or tap a person to lock it on.</span>
               </div>
             </section>
           </div>

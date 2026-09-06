@@ -18,6 +18,7 @@ import {
 } from "./config.js";
 import { dom } from "./dom.js";
 import { playerHooks } from "./player.js";
+import { SVG_MIC_OFF, SVG_WHISPER } from "./svg.js";
 /* ── module state ───────────────────────────────────────── */
 let LK = null;                 // lazily-imported livekit-client module
 let room = null;
@@ -54,6 +55,10 @@ export function wireVoice() {
   dom.voiceMicBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleMic(); });
   dom.voiceDeafenBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDeafen(); });
   dom.voicePillClose.addEventListener("click", (e) => { e.stopPropagation(); stopWhisper(); });
+  dom.voicePanePower       ?.addEventListener("click", () => { connected ? disconnect() : connect(); });
+  dom.voicePaneMicBtn      ?.addEventListener("click", () => toggleMic());
+  dom.voicePaneDeafenBtn   ?.addEventListener("click", () => toggleDeafen());
+  dom.voicePaneClearWhisper?.addEventListener("click", () => stopWhisper());
   document.addEventListener("click", (e) => {
     if (!dom.voiceRail.contains(e.target)) closeVoiceRail();
   });
@@ -113,6 +118,7 @@ async function disconnect() {
   room = null; connected = false; micLive = false;
   orderIds.length = 0;
   dom.voicePeers.replaceChildren();
+  dom.voicePaneList?.replaceChildren();
   dom.voicePowerBtn.title = "Join voice";
   renderState();
 }
@@ -144,12 +150,15 @@ function bindRoomEvents() {
     .on(E.LocalTrackPublished, (pub) => {
       if (pub.source === LK.Track.Source.Microphone) startVisualizer();
     })
+    .on(E.TrackMuted,   renderState)
+    .on(E.TrackUnmuted, renderState)
     .on(E.ActiveSpeakersChanged, renderState)
     .on(E.Disconnected, () => {
       stopVisualizer();
       connected = false; micLive = false;
       orderIds.length = 0;
       dom.voicePeers.replaceChildren();
+      dom.voicePaneList?.replaceChildren();
       renderState();
     });
 }
@@ -371,6 +380,7 @@ function refreshPeers() {
     frag.appendChild(chip);
   });
   dom.voicePeers.replaceChildren(frag);
+  renderPanePeers();
   renderState();
 }
 /* ── single source of truth for all visuals ─────────────── */
@@ -399,6 +409,7 @@ function renderState() {
   dom.container.classList.toggle("voice-whisper", st === "whisper");
   dom.voicePeers.querySelectorAll(".vp-peer").forEach((el) =>
     el.classList.toggle("is-target", whisperIds.has(el.dataset.id)));
+  renderVoicePane(st)
   updatePill(st);
 }
 function updatePill(st) {
@@ -419,4 +430,110 @@ function updatePill(st) {
     dom.voicePillText.textContent = "Speaking to All";
     dom.voicePillAvatars.replaceChildren();
   }
+}
+/* ── side-panel "Voice" pane (3rd tab) ──────────────────── */
+function renderPanePeers() {
+  if (!dom.voicePaneList) return;
+  const remotes = sortedRemotes();
+  const frag = document.createDocumentFragment();
+  remotes.forEach((p, i) => {
+    const slot = i + 1;
+    const meta = peerMeta(p);
+    const li = document.createElement("li");
+    li.className = "vpane-peer";
+    li.dataset.id = p.identity;
+    li.appendChild(avatarNode(meta, "vpane-av"));
+    const box = document.createElement("span");
+    box.className = "vpane-peer-meta";
+    const nm = document.createElement("span");
+    nm.className = "vpane-name"; nm.textContent = meta.username;
+    const sub = document.createElement("span");
+    sub.className = "vpane-sub";
+    sub.dataset.slot = slot <= VOICE_MAX_SLOTS ? String(slot) : "";
+    box.append(nm, sub);
+    li.appendChild(box);
+    const mute = document.createElement("span");
+    mute.className = "vpane-mutedic"; mute.title = "Microphone off";
+    mute.innerHTML = SVG_MIC_OFF;
+    li.appendChild(mute);
+    const eq = document.createElement("span");
+    eq.className = "vpane-eq"; eq.setAttribute("aria-hidden", "true");
+    eq.innerHTML = "<i></i><i></i><i></i>";
+    li.appendChild(eq);
+    const wb = document.createElement("button");
+    wb.type = "button"; wb.className = "vpane-wbtn";
+    wb.title = slot <= VOICE_MAX_SLOTS
+      ? `Whisper to ${meta.username} (Alt + ${slot})`
+      : `Whisper to ${meta.username}`;
+    wb.setAttribute("aria-label", wb.title);
+    wb.innerHTML = SVG_WHISPER;
+    wb.addEventListener("click", (e) => { e.stopPropagation(); toggleStickyWhisper(p.identity); });
+    li.appendChild(wb);
+    li.addEventListener("click", () => toggleStickyWhisper(p.identity));
+    frag.appendChild(li);
+  });
+  dom.voicePaneList.replaceChildren(frag);
+  if (dom.voicePaneEmpty) dom.voicePaneEmpty.hidden = remotes.length > 0;
+}
+function renderVoicePane(st) {
+  if (!dom.paneVoice) return;
+  const whispering = whisperIds.size > 0;
+  const map = room?.remoteParticipants || room?.participants;
+  dom.paneVoice.dataset.state = st;
+  /* tab badge — heads in the voice channel (you included) */
+  const heads = connected ? (sortedRemotes().length + 1) : 0;
+  if (dom.voiceCount) {
+    dom.voiceCount.textContent = String(heads);
+    dom.voiceCount.dataset.zero = heads ? "0" : "1";
+  }
+  dom.tabVoice?.classList.toggle("has-voice-live", st === "live" || st === "whisper");
+  /* status + power */
+  dom.voicePaneStatus.textContent =
+    !connected ? (connecting ? "Connecting…" : "Not connected")
+    : whispering ? "Whispering privately"
+    : micLive    ? "Speaking to everyone"
+    : deafened   ? "Deafened"
+    :              "Listening";
+  dom.voicePanePower.textContent = connecting ? "…" : (connected ? "Leave" : "Join");
+  dom.voicePanePower.classList.toggle("is-on", connected);
+  dom.voicePanePower.classList.toggle("is-busy", connecting);
+  /* mic / deafen (mirror the rail, incl. push-to-talk lock) */
+  dom.voicePaneMicBtn.disabled    = !connected || whisperMode === "alt";
+  dom.voicePaneDeafenBtn.disabled = !connected;
+  dom.voicePaneMicBtn.setAttribute("aria-pressed", String(micLive));
+  dom.voicePaneDeafenBtn.setAttribute("aria-pressed", String(deafened));
+  dom.voicePaneMicBtn.classList.toggle("is-off",     connected && !micLive);
+  dom.voicePaneMicBtn.classList.toggle("is-live",    micLive && !whispering);
+  dom.voicePaneMicBtn.classList.toggle("is-whisper", micLive &&  whispering);
+  dom.voicePaneDeafenBtn.classList.toggle("is-off",  deafened);
+  if (dom.voicePaneMicLabel)
+    dom.voicePaneMicLabel.textContent = !micLive ? "Mic off" : (whispering ? "Whispering" : "Mic on");
+  /* exit-whisper shortcut + "whispering to" avatar strip */
+  dom.voicePaneClearWhisper.hidden = !whispering;
+  const ids = orderIds.filter((id) => whisperIds.has(id));
+  dom.voicePaneTarget.hidden = ids.length === 0;
+  dom.voicePaneTargetAvs.replaceChildren(
+    ...ids.map((id) => avatarNode(peerMeta(map?.get(id)), "vpane-av")));
+  /* per-row live state */
+  const speaking = new Set((room?.activeSpeakers || []).map((p) => p.identity));
+  dom.voicePaneList.querySelectorAll(".vpane-peer").forEach((li) => {
+    const id = li.dataset.id;
+    const p  = map?.get(id);
+    const isTarget   = whisperIds.has(id);
+    const isSpeaking = speaking.has(id);
+    const micOff     = p ? (p.isMicrophoneEnabled === false) : false;
+    li.classList.toggle("is-target",   isTarget);
+    li.classList.toggle("is-speaking", isSpeaking);
+    li.classList.toggle("is-muted",    micOff && !isSpeaking);
+    li.querySelector(".vpane-wbtn")?.setAttribute("aria-pressed", String(isTarget));
+    const sub = li.querySelector(".vpane-sub");
+    if (sub) {
+      const slot  = sub.dataset.slot;
+      const state = isSpeaking ? "Speaking"
+                  : isTarget   ? "In your whisper"
+                  : micOff     ? "Muted"
+                  :              "Listening";
+      sub.textContent = slot ? `Alt + ${slot} · ${state}` : state;
+    }
+  });
 }
