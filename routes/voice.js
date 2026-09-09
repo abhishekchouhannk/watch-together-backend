@@ -5,15 +5,12 @@ const { AccessToken, TrackSource } = require('livekit-server-sdk');
 const Room = require('../models/Room');
 const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
-const { isBanned } = require('../utils/roomConfigAndPermissions');
+const { voiceRoomName } = require('../utils/voiceRoom');
+const { isBanned, isVoiceMuted } = require('../utils/roomConfigAndPermissions');
 const LIVEKIT_API_KEY    = process.env.LIVEKIT_API_KEY;
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
 const LIVEKIT_URL        = process.env.LIVEKIT_URL;
 const TOKEN_TTL_SECONDS  = 60 * 10; // short‑lived; only used at connect time
-// Keep the mapping in ONE place so client + server never disagree.
-function voiceRoomName(roomId) {
-  return `voice-${roomId}`;
-}
 /**
  * "Genuine, currently-allowed member" check.
  * Mirrors the gate used by the socket join-room handler:
@@ -50,35 +47,27 @@ router.post('/', authenticateToken, async (req, res) => {
     }
     const user = await User.findById(req.user.id).select('username avatar').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
-    const identity = String(req.user.id);          // stable + unique per room
-    const rn = voiceRoomName(roomId);
-    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-      identity,
-      name: user.username,
-      ttl: TOKEN_TTL_SECONDS,
-      metadata: JSON.stringify({
-        userId:   identity,
-        username: user.username,
-        avatar:   user.avatar || null,            // used later for the "Speaking to" avatars
-      }),
-    });
-    at.addGrant({
-      room: rn,
-      roomJoin:             true,
-      canPublish:           true,
-      canSubscribe:         true,
-      canPublishData:       true,
-      canUpdateOwnMetadata: true,
-      canPublishSources:  [TrackSource.MICROPHONE],       // audio‑only: SFU rejects cam/screen
-    });
-    const token = await at.toJwt();                // async in server-sdk v2
-    res.json({
-      token,
-      url: LIVEKIT_URL,
-      roomName: rn,
-      identity,
-      ttl: TOKEN_TTL_SECONDS,
-    });
+      const identity     = String(req.user.id);
+      const rn           = voiceRoomName(roomId);
+      const forceMuted   = isVoiceMuted(room, req.user.id);   // ← new
+      const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+        identity, name: user.username, ttl: TOKEN_TTL_SECONDS,
+        metadata: JSON.stringify({
+          userId: identity, username: user.username, avatar: user.avatar || null,
+        }),
+      });
+      at.addGrant({
+        room: rn,
+        roomJoin:             true,
+        canPublish:           !forceMuted,     // ← was `true`
+        canSubscribe:         true,
+        canPublishData:       true,
+        canUpdateOwnMetadata: true,
+        canPublishSources:    [TrackSource.MICROPHONE],
+      });
+      const token = await at.toJwt();
+      res.json({ token, url: LIVEKIT_URL, roomName: rn, identity,
+                ttl: TOKEN_TTL_SECONDS, forceMuted });   // ← tell the client up-front
   } catch (err) {
     console.error('voice-token error:', err);
     res.status(500).json({ error: 'Failed to issue voice token' });

@@ -7,10 +7,10 @@ const Message = require("../models/Message");
 const User = require("../models/User");
 const {
   ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
-  isBanned, canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles,
+  isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles,
   canBan, serializeMembers, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope,
 } = require("../utils/roomConfigAndPermissions");
-
+const { enforceVoiceMute } = require("../utils/voiceRoom");
 const recentKicks = new Map();                       // "roomId:userId" → expiry ms
 const KICK_COOLDOWN = 10000;
 
@@ -20,6 +20,7 @@ const advanceLock = new Map();              // roomId → ts; de-dupes concurren
 const pendingSeeks = new Map();             // roomId → { seq, currentTime, waiting: Set, ready: Set, timer }
 const roomSeekSeqs = new Map();             // roomId → number
 const newItemId = () => crypto.randomBytes(8).toString("hex");
+const voiceMutePayload = (room) => ({ muted: serializeVoiceMutes(room) });
 function validUrl(u) {
   try { const x = new URL(u); return /^https?:$/.test(x.protocol) && u.length <= 2048; }
   catch (_) { return false; }
@@ -326,6 +327,11 @@ module.exports = function registerRoomHandlers(io, socket) {
         await User.updateOne({ _id: user.id }, { $addToSet: { joinedRooms: roomId } });
       }
       socket.data.perm = resolvePerms(room, user.id);
+      socket.emit("room-state", {
+        room:  serializeRoom(room),
+        perms: socket.data.perm,
+        voiceMuted: serializeVoiceMutes(room),
+      });
       socket.emit("room-state", { room: serializeRoom(room), perms: socket.data.perm });
       io.to(roomId).emit("participants-update", {
         participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
@@ -607,6 +613,40 @@ module.exports = function registerRoomHandlers(io, socket) {
     io.to(roomId).emit("perm-notice", { text: `${name} was kicked from the room`, byId: user.id });
     socket.emit("perm-toast", { message: `${name} was kicked`, type: "success" });
     await broadcastPermissions(io, roomId, room);
+  }));
+  socket.on("voice-force-mute", modAction(async (room, roomId, { userId } = {}) => {
+    const bad = badTarget(room, userId);                 // blocks self / host / bad id
+    if (bad) return socket.emit("perm-toast", { message: bad, type: "error" });
+    if (isMod(room, userId))
+      return socket.emit("perm-toast", { message: "You can't voice-mute another moderator", type: "error" });
+    if (isVoiceMuted(room, userId))
+      return socket.emit("perm-toast", { message: `${nameOf(room, userId)} is already muted`, type: "error" });
+    const name = nameOf(room, userId);
+    room.voiceMutedUsers.push({
+      userId, username: name,
+      mutedBy: user.id, mutedByName: user.username, mutedAt: new Date(),
+    });
+    await room.save();
+    enforceVoiceMute(roomId, userId, true).catch(() => {});   // best-effort SFU kill
+    io.to(roomId).emit("voice-muted-users", voiceMutePayload(room));
+    io.to(roomId).emit("perm-notice", { text: `${name} was muted in voice by ${user.username}`, byId: user.id });
+    await toUser(io, roomId, userId, "perm-toast",
+      { message: `${user.username} muted your microphone`, type: "error" });
+    socket.emit("perm-toast", { message: `${name} muted in voice`, type: "success" });
+  }));
+  socket.on("voice-force-unmute", modAction(async (room, roomId, { userId } = {}) => {
+    if (!validId(userId)) return;
+    if (!isVoiceMuted(room, userId))
+      return socket.emit("perm-toast", { message: `${nameOf(room, userId)} isn't muted`, type: "error" });
+    const name = nameOf(room, userId);
+    room.voiceMutedUsers = room.voiceMutedUsers.filter((m) => !sameId(m.userId, userId));
+    await room.save();
+    enforceVoiceMute(roomId, userId, false).catch(() => {});  // restores publish rights
+    io.to(roomId).emit("voice-muted-users", voiceMutePayload(room));
+    io.to(roomId).emit("perm-notice", { text: `${name} was unmuted in voice by ${user.username}`, byId: user.id });
+    await toUser(io, roomId, userId, "perm-toast",
+      { message: `${user.username} lifted your voice mute — you can unmute yourself now`, type: "info" });
+    socket.emit("perm-toast", { message: `${name} unmuted in voice`, type: "success" });
   }));
   /* REMOVE — delete the member record (role, grants, request state) + boot; rejoining is allowed */
   socket.on("member-remove", adminAction(async (room, roomId, { userId } = {}) => {

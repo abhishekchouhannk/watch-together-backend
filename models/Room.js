@@ -21,6 +21,15 @@ const BannedUserSchema = new mongoose.Schema({
   reason:       { type: String, maxlength: 140 },
   bannedAt:     { type: Date, default: Date.now },
 }, { _id: false });
+/* voice chat — users a host/mod has force-muted for the whole room.
+   persists so a mute survives leave / rejoin / refresh, like bans do. */
+const VoiceMuteSchema = new mongoose.Schema({
+  userId:      { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  username:    { type: String },
+  mutedBy:     { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  mutedByName: { type: String },
+  mutedAt:     { type: Date, default: Date.now },
+}, { _id: false });
 /* a single queued video — metadata is resolved server-side so every
    client sees identical titles/thumbs and nobody can spoof them */
 const QueueItemSchema = new mongoose.Schema({
@@ -66,7 +75,8 @@ const RoomSchema = new mongoose.Schema({
   queue:      [QueueItemSchema],                 
   queueIndex: { type: Number, default: -1 },     // index of the item currently playing (-1 = detached)
   members: [MemberSchema],
-  bannedUsers: [BannedUserSchema],         
+  bannedUsers: [BannedUserSchema],
+  voiceMutedUsers: [VoiceMuteSchema],         
   video: {
     url:         { type: String },
     itemId:      { type: String },               // ← new: links video ↔ queue item

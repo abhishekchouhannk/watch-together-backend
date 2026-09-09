@@ -18,7 +18,10 @@ import {
 } from "./config.js";
 import { dom } from "./dom.js";
 import { playerHooks } from "./player.js";
-import { SVG_MIC_OFF, SVG_WHISPER } from "./svg.js";
+import { SVG_MIC_OFF, SVG_WHISPER, SVG_SPEAKER, SVG_SPEAKER_OFF, SVG_GAVEL } from "./svg.js";
+import { S } from "./state.js";
+import { getSocket, emit } from "./socket-ref.js";   
+import { onRoomState } from "./socket-core.js";  
 /* ── module state ───────────────────────────────────────── */
 let LK = null;                 // lazily-imported livekit-client module
 let room = null;
@@ -37,9 +40,74 @@ const LABELS = {
   live:    "Speaking to everyone",
   whisper: "Whispering privately",
 };
+
+/* ── per-peer audio: personal mute + volume + host/mod force-mute ── */
+const PREFS_KEY    = "wp:voicePrefs";   // { [userId]: { vol:0..1, muted:bool } } — global, survives rooms
+const localVol     = new Map();         // identity → slider position (0..1), default 1
+const localMuted   = new Set();         // identities I muted just for me
+const forceMuted   = new Set();         // identities a host/mod muted for everyone (server truth)
+let   iAmForceMuted = false;
+let   prefsHydrated = false;
+let   voiceSocketBound = false;
+const clamp01  = (n) => Math.max(0, Math.min(1, Number(n) || 0));
+const loadPrefs = () => { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch { return {}; } };
+const savePrefs = (p) => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch {} };
+function hydratePrefs() {
+  if (prefsHydrated) return; prefsHydrated = true;
+  for (const [id, e] of Object.entries(loadPrefs())) {
+    if (e && typeof e.vol === "number" && e.vol !== 1) localVol.set(id, clamp01(e.vol));
+    if (e && e.muted) localMuted.add(id);
+  }
+}
+const getLocalVol  = (id) => (localVol.has(id) ? localVol.get(id) : 1);
+const isLocalMuted = (id) => localMuted.has(id);
+function persistPref(id) {
+  const all = loadPrefs();
+  const vol = getLocalVol(id), muted = isLocalMuted(id);
+  if (vol === 1 && !muted) delete all[id]; else all[id] = { vol, muted };
+  savePrefs(all);
+}
+function participantById(id) {
+  const map = room?.remoteParticipants || room?.participants;
+  return map?.get(id) || null;
+}
+function effectiveVolume(id) {
+  if (deafened || forceMuted.has(id) || isLocalMuted(id)) return 0;
+  return getLocalVol(id);
+}
+function applyVolume(id) { participantById(id)?.setVolume?.(effectiveVolume(id)); }
+function applyAllVolumes() {
+  (room?.remoteParticipants || room?.participants)?.forEach((p) =>
+    p.setVolume?.(effectiveVolume(p.identity)));
+}
+function setLocalVol(id, v) {
+  v = clamp01(v);
+  localVol.set(id, v);
+  if (v > 0) localMuted.delete(id);          // dragging off zero lifts a personal mute
+  persistPref(id); applyVolume(id); renderState();
+}
+function toggleLocalMute(id) {
+  localMuted.has(id) ? localMuted.delete(id) : localMuted.add(id);
+  persistPref(id); applyVolume(id); renderState();
+}
+/* host/mod control — members only, mirrors the server gate */
+function peerRole(id) {
+  if (String(S.room?.admin?.userId || "") === id) return "admin";
+  return (S.members || []).find((m) => String(m.userId) === id)?.role || "member";
+}
+const canIForceMute = (id) => !!S.perms?.canManage && peerRole(id) === "member";
+const requestForceMute = (id, mute) =>
+  emit(mute ? "voice-force-mute" : "voice-force-unmute", { userId: id });
+
 /* ── public API ─────────────────────────────────────────── */
 export function wireVoice() {
   if (!dom.voiceRail) return;
+  hydratePrefs();
+  bindVoiceSocket();
+  onRoomState((payload) => {
+    bindVoiceSocket();                                    // socket is guaranteed to exist here
+    if (Array.isArray(payload?.voiceMuted)) applyForceMutes(payload.voiceMuted);
+  });
   dom.voiceToggle.addEventListener("click", (e) => {
     e.stopPropagation();
     if (!dom.voiceRail.classList.contains("open")) { openVoiceRail(); return; }
@@ -93,12 +161,12 @@ async function connect() {
   connecting = true; renderState();
   try {
     LK = LK || await import(VOICE_SDK_URL);
-    const { token, url } = await fetchToken();
+    const { token, url, forceMuted: tokForceMuted } = await fetchToken();
     room = new LK.Room({ adaptiveStream: true, dynacast: true });
     bindRoomEvents();
     await room.connect(url, token);
     connected = true; micLive = false;
-    applyDeafen();
+    applyAllVolumes();
     refreshPeers();
     await setSpeakToAll();
   } catch (err) {
@@ -114,6 +182,7 @@ async function connect() {
 async function disconnect() {
   stopVisualizer();
   whisperIds.clear(); whisperMode = "none"; micBeforeWhisper = null;
+  forceMuted.clear(); iAmForceMuted = false;
   try { await room?.disconnect(); } catch {}
   room = null; connected = false; micLive = false;
   orderIds.length = 0;
@@ -143,7 +212,7 @@ function bindRoomEvents() {
     .on(E.TrackSubscribed, (track, _pub, p) => {
       if (track.kind === LK.Track.Kind.Audio) {
         track.attach();
-        if (deafened) p.setVolume?.(0);
+        p.setVolume?.(effectiveVolume(p.identity));
       }
     })
     .on(E.TrackUnsubscribed, (track) => { track.detach().forEach((el) => el.remove()); })
@@ -162,9 +231,31 @@ function bindRoomEvents() {
       renderState();
     });
 }
+function bindVoiceSocket() {
+  if (voiceSocketBound) return;
+  const s = getSocket();
+  if (!s) return;
+  voiceSocketBound = true;
+  s.on("voice-muted-users", (p) => applyForceMutes(p?.muted || []));
+  s.on("room-permissions",  ()  => refreshPeers());   // mod promoted/demoted → show/hide the gavel
+}
+function applyForceMutes(list) {
+  forceMuted.clear();
+  list.forEach((m) => forceMuted.add(String(m?.userId ?? m)));
+  const me    = String(S.userId || "");
+  const muted = forceMuted.has(me);
+  if (muted && !iAmForceMuted) {          // just got muted → cut my mic now
+    if (whisperIds.size) stopWhisper();
+    if (micLive) setMic(false);
+  }
+  iAmForceMuted = muted;                  // on un-mute we leave the mic *off*; the user re-opens it
+  applyAllVolumes();
+  refreshPeers();                         // rebuild rows (badges + control visibility)
+}
 /* ── mic / deafen ───────────────────────────────────────── */
 async function setMic(on) {
   if (!connected) return;
+  if (on && iAmForceMuted) { renderState(); return; }   // SFU won't let us publish anyway
   try {
     await room.localParticipant.setMicrophoneEnabled(on);
     micLive = on;
@@ -176,6 +267,7 @@ async function setMic(on) {
 }
 async function toggleMic() {
   if (!connected) return;
+  if (iAmForceMuted) return;  // locked by host/mod — SFU won't let us publish anyway
   if (whisperMode === "alt") return;         // push-to-talk owns the mic
 
   if (micLive) {
@@ -189,14 +281,10 @@ async function toggleMic() {
     await setMic(true);
   }
 }
-function applyDeafen() {
-  (room?.remoteParticipants || room?.participants)?.forEach((p) =>
-    p.setVolume?.(deafened ? 0 : 1));
-}
 function toggleDeafen() {
   if (!connected) return;
   deafened = !deafened;
-  applyDeafen();
+  applyAllVolumes();
   renderState();
 }
 /* ── whisper (server-enforced via track subscription permissions) ── */
@@ -221,7 +309,7 @@ async function setSpeakToAll() {
 }
 /* add one identity to the whisper set (keeps anyone already selected) */
 async function addWhisper(id, mode) {
-  if (!connected || !orderIds.includes(id)) return;
+  if (!connected || iAmForceMuted || !orderIds.includes(id)) return;
   const fresh = whisperIds.size === 0;
   whisperIds.add(id); whisperMode = mode;
   syncPerms();                               // restrict BEFORE the mic opens
@@ -246,7 +334,7 @@ async function stopWhisper() {
   renderState();
 }
 function toggleStickyWhisper(id) {
-  if (!connected) return;
+  if (!connected || iAmForceMuted) return;
   whisperIds.has(id) ? removeWhisper(id) : addWhisper(id, "sticky");
 }
 /* ── keybinds ───────────────────────────────────────────── */
@@ -396,8 +484,9 @@ function renderState() {
   dom.voiceRail.dataset.state = st;
   dom.voiceToggle.title = LABELS[st];
   dom.voiceToggle.setAttribute("aria-label", LABELS[st]);
-  dom.voiceMicBtn.disabled    = !connected;
+  dom.voiceMicBtn.disabled = !connected || iAmForceMuted;
   dom.voiceDeafenBtn.disabled = !connected;
+  dom.voiceMicBtn.classList.toggle("is-hostmuted", iAmForceMuted);
   dom.voiceMicBtn.classList.toggle("is-off", !micLive);
   dom.voiceMicBtn.classList.toggle("is-live", micLive && !whispering);
   dom.voiceMicBtn.classList.toggle("is-whisper", micLive && whispering);
@@ -437,11 +526,12 @@ function renderPanePeers() {
   const remotes = sortedRemotes();
   const frag = document.createDocumentFragment();
   remotes.forEach((p, i) => {
+    const id   = p.identity;
     const slot = i + 1;
     const meta = peerMeta(p);
     const li = document.createElement("li");
     li.className = "vpane-peer";
-    li.dataset.id = p.identity;
+    li.dataset.id = id;
     li.appendChild(avatarNode(meta, "vpane-av"));
     const box = document.createElement("span");
     box.className = "vpane-peer-meta";
@@ -452,14 +542,35 @@ function renderPanePeers() {
     sub.dataset.slot = slot <= VOICE_MAX_SLOTS ? String(slot) : "";
     box.append(nm, sub);
     li.appendChild(box);
-    const mute = document.createElement("span");
-    mute.className = "vpane-mutedic"; mute.title = "Microphone off";
-    mute.innerHTML = SVG_MIC_OFF;
-    li.appendChild(mute);
+    // their-mic-off glyph + speaking EQ (unchanged)
+    const micIc = document.createElement("span");
+    micIc.className = "vpane-mutedic"; micIc.title = "Microphone off";
+    micIc.innerHTML = SVG_MIC_OFF;
+    li.appendChild(micIc);
     const eq = document.createElement("span");
     eq.className = "vpane-eq"; eq.setAttribute("aria-hidden", "true");
     eq.innerHTML = "<i></i><i></i><i></i>";
     li.appendChild(eq);
+    // ── controls ──
+    const ctls = document.createElement("span");
+    ctls.className = "vpane-ctls";
+    // 3. per-user volume (only affects me)
+    const vol = document.createElement("input");
+    vol.type = "range"; vol.min = "0"; vol.max = "1"; vol.step = "0.05";
+    vol.className = "vpane-vol";
+    vol.value = String(getLocalVol(id));
+    vol.title = "Their volume — only for you";
+    vol.setAttribute("aria-label", `Volume for ${meta.username}`);
+    vol.addEventListener("click", (e) => e.stopPropagation());
+    vol.addEventListener("input", (e) => { e.stopPropagation(); setLocalVol(id, e.target.value); });
+    ctls.appendChild(vol);
+    // 1. personal mute
+    const lm = document.createElement("button");
+    lm.type = "button"; lm.className = "vpane-localmute";
+    lm.innerHTML = `<span class="ic-on">${SVG_SPEAKER}</span><span class="ic-off">${SVG_SPEAKER_OFF}</span>`;
+    lm.addEventListener("click", (e) => { e.stopPropagation(); toggleLocalMute(id); });
+    ctls.appendChild(lm);
+    // whisper (unchanged)
     const wb = document.createElement("button");
     wb.type = "button"; wb.className = "vpane-wbtn";
     wb.title = slot <= VOICE_MAX_SLOTS
@@ -467,9 +578,21 @@ function renderPanePeers() {
       : `Whisper to ${meta.username}`;
     wb.setAttribute("aria-label", wb.title);
     wb.innerHTML = SVG_WHISPER;
-    wb.addEventListener("click", (e) => { e.stopPropagation(); toggleStickyWhisper(p.identity); });
-    li.appendChild(wb);
-    li.addEventListener("click", () => toggleStickyWhisper(p.identity));
+    wb.addEventListener("click", (e) => { e.stopPropagation(); toggleStickyWhisper(id); });
+    ctls.appendChild(wb);
+    // 2. host/mod room-wide mute (members only)
+    if (canIForceMute(id)) {
+      const gv = document.createElement("button");
+      gv.type = "button"; gv.className = "vpane-forcemute";
+      gv.innerHTML = SVG_GAVEL;
+      gv.addEventListener("click", (e) => {
+        e.stopPropagation();
+        requestForceMute(id, !forceMuted.has(id));
+      });
+      ctls.appendChild(gv);
+    }
+    li.appendChild(ctls);
+    li.addEventListener("click", () => toggleStickyWhisper(id));
     frag.appendChild(li);
   });
   dom.voicePaneList.replaceChildren(frag);
@@ -489,16 +612,23 @@ function renderVoicePane(st) {
   dom.tabVoice?.classList.toggle("has-voice-live", st === "live" || st === "whisper");
   /* status + power */
   dom.voicePaneStatus.textContent =
-    !connected ? (connecting ? "Connecting…" : "Not connected")
-    : whispering ? "Whispering privately"
-    : micLive    ? "Speaking to everyone"
-    : deafened   ? "Deafened"
-    :              "Listening";
+    !connected      ? (connecting ? "Connecting…" : "Not connected")
+    : iAmForceMuted ? "Muted by host"
+    : whispering    ? "Whispering privately"
+    : micLive       ? "Speaking to everyone"
+    : deafened      ? "Deafened"
+    :                 "Listening";
+  /* mic / deafen (mirror the rail, incl. push-to-talk lock) */
+  dom.voicePaneMicBtn.disabled = !connected || iAmForceMuted || whisperMode === "alt";
+  dom.voicePaneMicBtn.classList.toggle("is-hostmuted", iAmForceMuted);
+  if (dom.voicePaneMicLabel)
+    dom.voicePaneMicLabel.textContent =
+      iAmForceMuted ? "Muted by host"
+      : !micLive    ? "Mic off"
+      : whispering  ? "Whispering" : "Mic on";
   dom.voicePanePower.textContent = connecting ? "…" : (connected ? "Leave" : "Join");
   dom.voicePanePower.classList.toggle("is-on", connected);
   dom.voicePanePower.classList.toggle("is-busy", connecting);
-  /* mic / deafen (mirror the rail, incl. push-to-talk lock) */
-  dom.voicePaneMicBtn.disabled    = !connected || whisperMode === "alt";
   dom.voicePaneDeafenBtn.disabled = !connected;
   dom.voicePaneMicBtn.setAttribute("aria-pressed", String(micLive));
   dom.voicePaneDeafenBtn.setAttribute("aria-pressed", String(deafened));
@@ -506,8 +636,6 @@ function renderVoicePane(st) {
   dom.voicePaneMicBtn.classList.toggle("is-live",    micLive && !whispering);
   dom.voicePaneMicBtn.classList.toggle("is-whisper", micLive &&  whispering);
   dom.voicePaneDeafenBtn.classList.toggle("is-off",  deafened);
-  if (dom.voicePaneMicLabel)
-    dom.voicePaneMicLabel.textContent = !micLive ? "Mic off" : (whispering ? "Whispering" : "Mic on");
   /* exit-whisper shortcut + "whispering to" avatar strip */
   dom.voicePaneClearWhisper.hidden = !whispering;
   const ids = orderIds.filter((id) => whisperIds.has(id));
@@ -522,16 +650,39 @@ function renderVoicePane(st) {
     const isTarget   = whisperIds.has(id);
     const isSpeaking = speaking.has(id);
     const micOff     = p ? (p.isMicrophoneEnabled === false) : false;
-    li.classList.toggle("is-target",   isTarget);
-    li.classList.toggle("is-speaking", isSpeaking);
-    li.classList.toggle("is-muted",    micOff && !isSpeaking);
+    const hostMuted  = forceMuted.has(id);
+    const youMuted   = isLocalMuted(id);
+    li.classList.toggle("is-target",     isTarget);
+    li.classList.toggle("is-speaking",   isSpeaking && !youMuted && !hostMuted);
+    li.classList.toggle("is-muted",      micOff && !isSpeaking);
+    li.classList.toggle("is-localmuted", youMuted);
+    li.classList.toggle("is-hostmuted",  hostMuted);
     li.querySelector(".vpane-wbtn")?.setAttribute("aria-pressed", String(isTarget));
+    const lm = li.querySelector(".vpane-localmute");
+    if (lm) {
+      lm.setAttribute("aria-pressed", String(youMuted));
+      lm.title = youMuted ? "Unmute for yourself" : "Mute for yourself";
+    }
+    const vol = li.querySelector(".vpane-vol");
+    if (vol) {
+      vol.disabled = deafened || hostMuted;
+      if (document.activeElement !== vol) vol.value = String(getLocalVol(id));
+    }
+    const gv = li.querySelector(".vpane-forcemute");
+    if (gv) {
+      gv.setAttribute("aria-pressed", String(hostMuted));
+      gv.title = hostMuted
+        ? `Unmute ${p?.name || "them"} for the room`
+        : `Mute ${p?.name || "them"} for everyone`;
+    }
     const sub = li.querySelector(".vpane-sub");
     if (sub) {
       const slot  = sub.dataset.slot;
-      const state = isSpeaking ? "Speaking"
+      const state = hostMuted  ? "Muted by host"
+                  : youMuted   ? "Muted for you"
+                  : isSpeaking ? "Speaking"
                   : isTarget   ? "In your whisper"
-                  : micOff     ? "Muted"
+                  : micOff     ? "Mic off"
                   :              "Listening";
       sub.textContent = slot ? `Alt + ${slot} · ${state}` : state;
     }

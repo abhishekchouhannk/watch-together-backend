@@ -110,6 +110,15 @@ const isScope = (s) => Object.prototype.hasOwnProperty.call(SCOPES, s);
 const canEditRoom = canModerate;   // edit name/desc/mode/tags/visibility/cap
 const isBanned = (room, uid) =>
   (room.bannedUsers || []).some((b) => sameId(b.userId, uid));
+const isVoiceMuted = (room, uid) =>
+  (room.voiceMutedUsers || []).some((m) => sameId(m.userId, uid));
+const serializeVoiceMutes = (room) =>
+  (room.voiceMutedUsers || []).map((m) => ({
+    userId: m.userId.toString(),
+    username: m.username,
+    by: m.mutedByName || "",
+    at: m.mutedAt,
+  }));
 function resolvePerms(room, uid) {
   const m     = getMember(room, uid) || {};
   const admin = isAdmin(room, uid);
@@ -149,7 +158,7 @@ function serializeMembers(room, privileged) {
 }
 module.exports = {
   ROOM_CAP, MODE_VALUES, validId,
-  sameId, isAdmin, isMod, roleOf, getMember, ensureMember, isBanned,
+  sameId, isAdmin, isMod, roleOf, getMember, ensureMember, isBanned, isVoiceMuted, serializeVoiceMutes,
   canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles, canBan,
   resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue, canQueue, canGrantQueue, SCOPES, isScope,
 };
