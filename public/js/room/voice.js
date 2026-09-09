@@ -136,22 +136,28 @@ async function fetchToken() {
 }
 function bindRoomEvents() {
   const E = LK.RoomEvent;
+  const isRemote = (p) => p && p.identity !== room?.localParticipant?.identity;
   room
-    .on(E.ParticipantConnected,    (p) => { if (deafened) p.setVolume?.(0); refreshPeers(); })
+    .on(E.ParticipantConnected,    (p) => { applyDeafenTo(p); refreshPeers(); })
     .on(E.ParticipantDisconnected, (p) => { if (whisperIds.has(p.identity)) removeWhisper(p.identity); refreshPeers(); })
     .on(E.ParticipantMetadataChanged, refreshPeers)
     .on(E.TrackSubscribed, (track, _pub, p) => {
-      if (track.kind === LK.Track.Kind.Audio) {
-        track.attach();
-        if (deafened) p.setVolume?.(0);
-      }
+      if (track.kind !== LK.Track.Kind.Audio) return;
+      // Born silent when deafened: set volume first, attach, then hard-mute
+      // the freshly created element before re-asserting on the participant.
+      try { track.setVolume?.(deafened ? 0 : 1); } catch {}
+      const el = track.attach();
+      el.muted  = deafened;
+      el.volume = deafened ? 0 : 1;
+      applyDeafenTo(p);
     })
     .on(E.TrackUnsubscribed, (track) => { track.detach().forEach((el) => el.remove()); })
-    .on(E.LocalTrackPublished, (pub) => {
+    .on(E.TrackPublished,      (_pub, p) => { applyDeafenTo(p); })           // remote (re)publish
+    .on(E.LocalTrackPublished, (pub)    => {
       if (pub.source === LK.Track.Source.Microphone) startVisualizer();
     })
-    .on(E.TrackMuted,   renderState)
-    .on(E.TrackUnmuted, renderState)
+    .on(E.TrackMuted,   (_pub, p) => { if (isRemote(p)) applyDeafenTo(p); renderState(); })
+    .on(E.TrackUnmuted, (_pub, p) => { if (isRemote(p)) applyDeafenTo(p); renderState(); })  // fixes case #3
     .on(E.ActiveSpeakersChanged, renderState)
     .on(E.Disconnected, () => {
       stopVisualizer();
@@ -189,9 +195,24 @@ async function toggleMic() {
     await setMic(true);
   }
 }
+/* ── mic / deafen ───────────────────────────────────────── */
+/* Re-assert the current deafen state on ONE remote participant and every
+ * audio track / media element it owns. Idempotent — the whole point is that
+ * we re-run it on every lifecycle event instead of relying on one call. */
+function applyDeafenTo(p) {
+  if (!p || p.identity === room?.localParticipant?.identity) return;
+  const pubs = p.audioTrackPublications || p.audioTracks || p.trackPublications;
+  pubs?.forEach((pub) => {
+    try { pub.setSubscribed?.(!deafened); } catch {}
+    const track = pub?.track;
+    if (!track) return;
+    const vol = deafened ? 0 : 1;
+    try { track.setVolume?.(vol); } catch {}
+    track.attachedElements?.forEach((el) => { el.muted = deafened; el.volume = vol; });
+  });
+}
 function applyDeafen() {
-  (room?.remoteParticipants || room?.participants)?.forEach((p) =>
-    p.setVolume?.(deafened ? 0 : 1));
+  (room?.remoteParticipants || room?.participants)?.forEach(applyDeafenTo);
 }
 function toggleDeafen() {
   if (!connected) return;
