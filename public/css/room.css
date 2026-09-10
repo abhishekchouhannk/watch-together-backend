@@ -1758,68 +1758,103 @@ button.msg-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
   .video-container.voice-live::after,
   .video-container.voice-whisper::after{transition:none}
 }
-/* ── 14i. voice-pane per-peer controls ── */
-.vpane-ctls{ display:flex; align-items:center; gap:.16rem; margin-left:auto; }
-.vpane-ctls button{
-  width:26px; height:26px; border-radius:50%; flex-shrink:0;
-  display:flex; align-items:center; justify-content:center;
-  background:transparent; color:rgba(255,255,255,.55);
-  transition:background .14s, color .14s, transform .12s, opacity .14s;
-}
-.vpane-ctls button:hover{ background:rgba(255,255,255,.12); color:#fff; }
-.vpane-ctls button:active{ transform:scale(.88); }
-.vpane-ctls button svg{ width:15px; height:15px; display:block; }
-.vpane-ctls button:disabled{ opacity:.3; pointer-events:none; }
-/* Fixed-size input inside an OVERFLOW-CLIPPED collapsing wrapper.
-   Clipping the wrapper (not width/opacity on the input) is what stops the
-   native range thumb bleeding through while the row folds back up. */
-.vpane-vol-wrap{
-  display:flex; align-items:center; gap:.34rem;
-  max-width:0; opacity:0; overflow:hidden; pointer-events:none;
-  transition:max-width .16s ease, opacity .12s ease;
-}
-.vpane-peer:hover        .vpane-vol-wrap,
-.vpane-peer:focus-within .vpane-vol-wrap,
-.vpane-peer.is-localmuted .vpane-vol-wrap,
-.vpane-peer.is-hostmuted  .vpane-vol-wrap{ max-width:120px; opacity:1; pointer-events:auto; }
-.vpane-vol{
-  -webkit-appearance:none; appearance:none;
-  width:64px; height:4px; border-radius:999px; cursor:pointer; flex-shrink:0;
-  background:linear-gradient(to right,
-    var(--acc) 0 var(--fill,100%),
-    rgba(255,255,255,.22) var(--fill,100%) 100%);
-}
-.vpane-vol::-webkit-slider-thumb{
-  -webkit-appearance:none; appearance:none;
-  width:11px; height:11px; border-radius:50%; background:#fff;
-  box-shadow:0 1px 3px rgba(0,0,0,.45);
-}
-.vpane-vol::-moz-range-thumb{
-  width:11px; height:11px; border:0; border-radius:50%; background:#fff;
-  box-shadow:0 1px 3px rgba(0,0,0,.45);
-}
-.vpane-vol:disabled{ cursor:not-allowed; opacity:.4; }
-.vpane-vol-pct{
-  min-width:30px; font-size:.6rem; font-weight:700; letter-spacing:.02em;
-  color:rgba(255,255,255,.6); font-variant-numeric:tabular-nums; white-space:nowrap;
-}
-.vpane-peer.is-localmuted .vpane-vol{ background:rgba(248,113,113,.3); }
-.vpane-peer.is-localmuted .vpane-vol-pct{ color:#f87171; }
-/* personal mute toggle */
+/* ── 14i. voice-pane row — avatar→profile · body→voice modal · 2 quick icons ── */
+.vpane-peer{ display:flex; align-items:center; gap:.5rem; padding:.26rem .3rem;
+  border-radius:10px; transition:background .14s; }
+button.vpane-av{ border:0; padding:0; font:inherit; cursor:pointer; flex-shrink:0;
+  transition:transform .12s ease, box-shadow .12s ease; }
+button.vpane-av:hover{ transform:scale(1.08); box-shadow:0 0 0 2px var(--acc-glow); }
+button.vpane-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
+.vpane-open{ flex:1; min-width:0; display:flex; align-items:center; gap:.5rem;
+  padding:.24rem .2rem; border-radius:8px; text-align:left; cursor:pointer;
+  background:transparent; color:inherit; transition:background .14s; }
+.vpane-open:hover, .vpane-open:focus-visible{ background:var(--surf-h); outline:none; }
+.vpane-open::after{ content:"›"; margin-left:auto; font-size:1rem; line-height:1;
+  color:var(--t3); opacity:.45; transition:transform .14s, opacity .14s; }
+.vpane-open:hover::after{ opacity:1; transform:translateX(2px); }
+.vpane-peer-meta{ display:flex; flex-direction:column; min-width:0; }
+.vpane-name{ font-size:.84rem; font-weight:700; color:var(--t1);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vpane-sub{ font-size:.68rem; color:var(--t3);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vpane-localmute, .vpane-wbtn{ width:30px; height:30px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; background:transparent;
+  color:var(--t3); transition:background .14s, color .14s, transform .12s, opacity .14s; }
+.vpane-localmute:hover, .vpane-wbtn:hover{ background:var(--surf-h); color:var(--t1); }
+.vpane-localmute:active, .vpane-wbtn:active{ transform:scale(.88); }
+.vpane-localmute:disabled, .vpane-wbtn:disabled{ opacity:.35; pointer-events:none; }
+.vpane-localmute svg, .vpane-wbtn svg{ width:16px; height:16px; display:block; }
 .vpane-localmute .ic-off{ display:none; }
 .vpane-localmute[aria-pressed="true"] .ic-on{ display:none; }
 .vpane-localmute[aria-pressed="true"] .ic-off{ display:block; }
-.vpane-localmute[aria-pressed="true"]{ color:#f87171; }
-/* host/mod room-wide mute */
-.vpane-forcemute[aria-pressed="true"]{ color:#fbbf24; background:rgba(251,191,36,.14); }
-/* row states */
+.vpane-localmute[aria-pressed="true"]{ color:#ef4444; }
+.vpane-wbtn[aria-pressed="true"]{ color:var(--voice-whisper); background:rgba(34,211,238,.14); }
+/* row live-state (base .vpane-eq / .vpane-mutedic rules from your original CSS still apply) */
 .vpane-peer.is-localmuted .vpane-av,
 .vpane-peer.is-localmuted .vpane-name{ opacity:.5; }
 .vpane-peer.is-hostmuted  .vpane-name{ opacity:.55; }
 .vpane-peer.is-hostmuted  .vpane-av{ box-shadow:0 0 0 1.5px #f87171; }
-.vpane-peer.is-hostmuted  .vpane-sub{ color:#f87171; }
+.vpane-peer.is-hostmuted  .vpane-sub{ color:#ef4444; }
 .vpane-peer.is-localmuted .vpane-eq,
 .vpane-peer.is-hostmuted  .vpane-eq{ display:none !important; }
-/* my own mic button when a host/mod has muted me */
-.vb-mic.is-hostmuted,
-.vpane-ctl.is-hostmuted{ color:#f87171; opacity:.85; }
+/* desktop vs touch chrome */
+.vpane-hint-touch{ display:none; }
+@media (pointer: coarse){
+  .vpane-hint{ display:none; }
+  .vpane-hint-touch{ display:flex; }
+  .vp-slot{ display:none; }
+}
+/* ── 14j. per-user voice control modal (reuses .prof-card / .cfg-* theming) ── */
+button.prof-av{ border:0; padding:0; font:inherit; cursor:pointer;
+  transition:box-shadow .14s, transform .12s; }
+button.prof-av:hover{ transform:scale(1.04);
+  box-shadow:0 0 0 2px var(--acc-glow), 0 4px 14px rgba(0,0,0,.18); }
+button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
+.vc-id{ gap:.55rem; }
+.vc-status{ display:inline-flex; align-items:center; gap:.38rem;
+  padding:.2rem .6rem; border-radius:999px; font-size:.72rem; font-weight:700;
+  background:var(--tag-bg); color:var(--t3); }
+.vc-status::before{ content:""; width:7px; height:7px; border-radius:50%;
+  background:currentColor; opacity:.9; }
+.vc-status[data-state="speaking"]{ background:rgba(52,211,153,.16); color:#10b981; }
+.vc-status[data-state="whisper"] { background:rgba(34,211,238,.16); color:#06b6d4; }
+.vc-status[data-state="muted"],
+.vc-status[data-state="micoff"]  { background:rgba(248,113,113,.14); color:#ef4444; }
+.vc-volrow{ display:flex; align-items:baseline; justify-content:space-between;
+  margin-bottom:.4rem; }
+.vc-vol-l{ font-size:.82rem; font-weight:700; color:var(--t1); }
+.vc-vol-pct{ font-size:.74rem; font-weight:700; color:var(--acc);
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.vc-vol{ -webkit-appearance:none; appearance:none; width:100%; height:6px;
+  border-radius:999px; cursor:pointer;
+  background:linear-gradient(to right,
+    var(--acc) 0 var(--fill,100%), var(--card-bdr) var(--fill,100%) 100%); }
+.vc-vol::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none;
+  width:18px; height:18px; border-radius:50%; background:#fff;
+  border:2px solid var(--acc); box-shadow:0 1px 4px rgba(0,0,0,.3); }
+.vc-vol::-moz-range-thumb{ width:18px; height:18px; border:2px solid var(--acc);
+  border-radius:50%; background:#fff; }
+.vc-vol:disabled{ opacity:.45; cursor:not-allowed; }
+.vc-vol:disabled::-webkit-slider-thumb{ border-color:var(--t3); }
+.vc-toggle{ display:flex; align-items:center; gap:.55rem; width:100%;
+  margin-top:.5rem; padding:.62rem .7rem; border-radius:10px;
+  font-size:.82rem; font-weight:700; text-align:left; color:var(--t1);
+  background:var(--surf); border:1px solid var(--card-bdr);
+  transition:background .14s, border-color .14s, color .14s, opacity .14s; }
+.vc-toggle svg{ width:17px; height:17px; flex-shrink:0; }
+.vc-toggle:hover:not(:disabled){ background:var(--surf-h); }
+.vc-toggle:disabled{ opacity:.5; cursor:not-allowed; }
+.vc-toggle[aria-pressed="true"]{ background:var(--acc-glow);
+  border-color:var(--acc); color:var(--acc); }
+.vc-toggle.vc-danger[aria-pressed="true"]{ background:rgba(248,113,113,.14);
+  border-color:#f87171; color:#ef4444; }
+.vc-kbd{ display:block; margin-top:.55rem; font-size:.7rem; color:var(--t3); }
+.vc-foot{ margin-top:.9rem; padding-top:.75rem; border-top:1px solid var(--card-bdr); }
+.vc-link{ display:flex; align-items:center; gap:.5rem; width:100%; padding:.5rem .3rem;
+  font-size:.8rem; font-weight:700; color:var(--acc); background:transparent;
+  border-radius:8px; }
+.vc-link svg{ width:16px; height:16px; }
+.vc-link:hover{ background:var(--surf-h); }
+@media (prefers-reduced-motion:reduce){
+  button.prof-av:hover, button.vpane-av:hover, .vpane-open:hover::after{ transform:none; }
+}

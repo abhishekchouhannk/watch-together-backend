@@ -679,7 +679,7 @@ function showRequestPrompt(userId, username, scope) {
    ══════════════════════════════════════ */
 const profCache = new Map();      // userId → { username, avatar, createdAt }
 const isProfileOpen = () => dom.profCard.classList.contains("open");
-function openProfile(userId, fallbackName) {
+export function openProfile(userId, fallbackName) {
   if (!userId) return;
   const cached = profCache.get(userId) || null;
   S.profile = {

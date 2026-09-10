@@ -45,4 +45,7 @@ export const dom = {
   voicePaneDeafenBtn: $("voicePaneDeafenBtn"), voicePaneClearWhisper: $("voicePaneClearWhisper"),
   voicePaneTarget: $("voicePaneTarget"), voicePaneTargetAvs: $("voicePaneTargetAvs"),
   voicePaneList: $("voicePaneList"), voicePaneEmpty: $("voicePaneEmpty"),
+  // voice — per-user control modal (sibling of the profile panel)
+  vcBackdrop: $("vcBackdrop"), vcCard: $("vcCard"), vcClose: $("vcClose"),
+  vcBody: $("vcBody"), vcTitle: $("vcTitle"),
 };

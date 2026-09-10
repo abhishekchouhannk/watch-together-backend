@@ -18,10 +18,12 @@ import {
 } from "./config.js";
 import { dom } from "./dom.js";
 import { playerHooks } from "./player.js";
-import { SVG_MIC_OFF, SVG_WHISPER, SVG_SPEAKER, SVG_SPEAKER_OFF, SVG_GAVEL } from "./svg.js";
+import { SVG_MIC_OFF, SVG_WHISPER, SVG_SPEAKER, SVG_SPEAKER_OFF, SVG_GAVEL, SVG_USER } from "./svg.js";
 import { S } from "./state.js";
 import { getSocket, emit } from "./socket-ref.js";   
 import { onRoomState } from "./socket-core.js";  
+import { openProfile } from "./permissions.js";
+import { esc } from "./utils.js";
 /* ── module state ───────────────────────────────────────── */
 let LK = null;                 // lazily-imported livekit-client module
 let room = null;
@@ -40,6 +42,11 @@ const LABELS = {
   live:    "Speaking to everyone",
   whisper: "Whispering privately",
 };
+
+/* keyboard-shortcut chrome is desktop-only; re-render if a mouse gets (un)plugged */
+const FINE_PTR_MQ   = window.matchMedia?.("(hover: hover) and (pointer: fine)");
+const isFinePointer = () => !!FINE_PTR_MQ?.matches;
+FINE_PTR_MQ?.addEventListener?.("change", () => { if (connected) refreshPeers(); });
 
 /* ── per-peer audio: personal volume + mute, host/mod force-mute, deafen ──
  * Every gain decision flows through effectiveVolume(id). Every relevant
@@ -105,24 +112,28 @@ function participantById(id) {
   return map?.get(id) || null;
 }
 function applyVolume(id) { const p = participantById(id); if (p) applyVolumeTo(p); }
+function syncPeerUI(id) {
+  paintPaneRow(id);
+  if (vcIsOpen() && vcOpenFor.id === id) paintVoiceControl(id);
+}
 function setLocalVol(id, v) {
   v = clamp01(v);
   localVol.set(id, v);
-  if (v === 0) localMuted.add(id); else localMuted.delete(id);  // slider ↔ mute stay in sync
+  if (v === 0) localMuted.add(id); else localMuted.delete(id);
   persistPref(id);
   applyVolume(id);
-  paintPaneRow(id);                                             // in-place, no rebuild
+  syncPeerUI(id);
 }
 function toggleLocalMute(id) {
   if (localMuted.has(id)) {
     localMuted.delete(id);
-    if (getLocalVol(id) === 0) localVol.set(id, 1);             // unmuting off a floored slider
+    if (getLocalVol(id) === 0) localVol.set(id, 1);
   } else {
     localMuted.add(id);
   }
   persistPref(id);
   applyVolume(id);
-  paintPaneRow(id);
+  syncPeerUI(id);
 }
 /* host/mod control — members only, mirrors the server gate */
 function peerRole(id) {
@@ -144,6 +155,7 @@ export function wireVoice() {
   if (!dom.voiceRail) return;
   hydratePrefs();
   bindVoiceSocket();
+  wireVoiceControlModal();
   onRoomState((payload) => {
     bindVoiceSocket();                                    // socket is guaranteed to exist here
     if (Array.isArray(payload?.voiceMuted)) applyForceMutes(payload.voiceMuted);
@@ -221,6 +233,7 @@ async function connect() {
 }
 async function disconnect() {
   stopVisualizer();
+  closeVoiceControl();
   whisperIds.clear(); whisperMode = "none"; micBeforeWhisper = null;
   forceMuted.clear(); iAmForceMuted = false;
   try { await room?.disconnect(); } catch {}
@@ -475,30 +488,43 @@ function avatarNode(meta, cls) {
   }
   return el;
 }
+function avatarButton(meta, cls, title) {
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = cls;
+  btn.title = title; btn.setAttribute("aria-label", title);
+  if (meta.avatar) {
+    const img = document.createElement("img");
+    img.src = meta.avatar; img.alt = ""; img.loading = "lazy";
+    img.addEventListener("error", () => img.remove(), { once: true });
+    btn.appendChild(img);
+  } else {
+    btn.style.background = avColorFor(meta.username);
+    btn.textContent = (meta.username[0] || "?").toUpperCase();
+  }
+  return btn;
+}
 function refreshPeers() {
   const remotes = sortedRemotes();
   orderIds.length = 0;
-  // drop any whisper targets that are no longer present
   const present = new Set(remotes.map((p) => p.identity));
   let changed = false;
   whisperIds.forEach((id) => { if (!present.has(id)) { whisperIds.delete(id); changed = true; } });
-  if (changed && whisperIds.size === 0 && whisperMode !== "none") { stopWhisper(); }
-  else if (changed) { syncPerms(); }
+  if (changed && whisperIds.size === 0 && whisperMode !== "none") stopWhisper();
+  else if (changed) syncPerms();
+  const fine = isFinePointer();
   const frag = document.createDocumentFragment();
   remotes.forEach((p, i) => {
     orderIds.push(p.identity);
-    const slot = i + 1;
-    const meta = peerMeta(p);
+    const slot = i + 1, meta = peerMeta(p);
+    const showKbd = fine && slot <= VOICE_MAX_SLOTS;
     const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "vp-peer";
-    chip.dataset.id = p.identity;
-    chip.title = slot <= VOICE_MAX_SLOTS
+    chip.type = "button"; chip.className = "vp-peer"; chip.dataset.id = p.identity;
+    chip.title = showKbd
       ? `Hold Alt + ${slot} to whisper to ${meta.username}`
       : `Whisper to ${meta.username}`;
     chip.setAttribute("aria-label", chip.title);
     chip.appendChild(avatarNode(meta, "vp-av"));
-    if (slot <= VOICE_MAX_SLOTS) {
+    if (showKbd) {
       const s = document.createElement("span");
       s.className = "vp-slot"; s.textContent = slot;
       chip.appendChild(s);
@@ -538,6 +564,7 @@ function renderState() {
   dom.voicePeers.querySelectorAll(".vp-peer").forEach((el) =>
     el.classList.toggle("is-target", whisperIds.has(el.dataset.id)));
   renderVoicePane(st)
+  renderVoiceControl();
   updatePill(st);
 }
 function updatePill(st) {
@@ -559,76 +586,55 @@ function updatePill(st) {
     dom.voicePillAvatars.replaceChildren();
   }
 }
-/* ── side-panel "Voice" pane (3rd tab) ──────────────────── */
+/* Row = [avatar → profile] · [name/status → voice-control modal] · mute-me · whisper.
+   Volume, % readout and the host/mod "mute for everyone" control all moved
+   into the per-user modal (openVoiceControl). */
 function renderPanePeers() {
   if (!dom.voicePaneList) return;
   const remotes = sortedRemotes();
+  const fine = isFinePointer();
   const frag = document.createDocumentFragment();
   remotes.forEach((p, i) => {
-    const id   = p.identity;
-    const slot = i + 1;
-    const meta = peerMeta(p);
+    const id = p.identity, slot = i + 1, meta = peerMeta(p);
+    const kbd = fine && slot <= VOICE_MAX_SLOTS ? ` (Alt + ${slot})` : "";
     const li = document.createElement("li");
     li.className = "vpane-peer";
     li.dataset.id = id;
-    li.appendChild(avatarNode(meta, "vpane-av"));
+    const av = avatarButton(meta, "vpane-av", `View ${meta.username}'s profile`);
+    av.addEventListener("click", (e) => { e.stopPropagation(); openProfile(id, meta.username); });
+    li.appendChild(av);
+    const open = document.createElement("button");
+    open.type = "button"; open.className = "vpane-open";
+    open.setAttribute("aria-label", `Voice controls for ${meta.username}`);
     const box = document.createElement("span");
     box.className = "vpane-peer-meta";
     const nm = document.createElement("span");
     nm.className = "vpane-name"; nm.textContent = meta.username;
     const sub = document.createElement("span");
     sub.className = "vpane-sub";
-    sub.dataset.slot = slot <= VOICE_MAX_SLOTS ? String(slot) : "";
+    sub.dataset.slot = fine && slot <= VOICE_MAX_SLOTS ? String(slot) : "";
     box.append(nm, sub);
-    li.appendChild(box);
-    const micIc = document.createElement("span");
-    micIc.className = "vpane-mutedic"; micIc.title = "Their microphone is off";
-    micIc.innerHTML = SVG_MIC_OFF;
-    li.appendChild(micIc);
     const eq = document.createElement("span");
     eq.className = "vpane-eq"; eq.setAttribute("aria-hidden", "true");
     eq.innerHTML = "<i></i><i></i><i></i>";
-    li.appendChild(eq);
-    const ctls = document.createElement("span");
-    ctls.className = "vpane-ctls";
-    /* 3. per-user volume — fixed-width input inside a CLIPPED collapsing wrapper */
-    const vwrap = document.createElement("span");
-    vwrap.className = "vpane-vol-wrap";
-    const vol = document.createElement("input");
-    vol.type = "range"; vol.min = "0"; vol.max = "1"; vol.step = "0.02";
-    vol.className = "vpane-vol";
-    vol.setAttribute("aria-label", `Volume for ${meta.username}`);
-    vol.addEventListener("pointerdown", (e) => e.stopPropagation());
-    vol.addEventListener("click", (e) => e.stopPropagation());
-    vol.addEventListener("input", (e) => { e.stopPropagation(); setLocalVol(id, e.target.value); });
-    const pct = document.createElement("span");
-    pct.className = "vpane-vol-pct";
-    vwrap.append(vol, pct);
-    ctls.appendChild(vwrap);
-    /* 1. personal mute */
+    const micIc = document.createElement("span");
+    micIc.className = "vpane-mutedic"; micIc.title = "Their mic is off";
+    micIc.innerHTML = SVG_MIC_OFF;
+    open.append(box, eq, micIc);
+    open.addEventListener("click", (e) => { e.stopPropagation(); openVoiceControl(id); });
+    li.appendChild(open);
     const lm = document.createElement("button");
     lm.type = "button"; lm.className = "vpane-localmute";
     lm.innerHTML = `<span class="ic-on">${SVG_SPEAKER}</span><span class="ic-off">${SVG_SPEAKER_OFF}</span>`;
     lm.addEventListener("click", (e) => { e.stopPropagation(); toggleLocalMute(id); });
-    ctls.appendChild(lm);
-    /* whisper (unchanged) */
+    li.appendChild(lm);
     const wb = document.createElement("button");
     wb.type = "button"; wb.className = "vpane-wbtn";
-    wb.title = slot <= VOICE_MAX_SLOTS ? `Whisper to ${meta.username} (Alt + ${slot})` : `Whisper to ${meta.username}`;
+    wb.title = `Whisper to ${meta.username}${kbd}`;
     wb.setAttribute("aria-label", wb.title);
     wb.innerHTML = SVG_WHISPER;
     wb.addEventListener("click", (e) => { e.stopPropagation(); toggleStickyWhisper(id); });
-    ctls.appendChild(wb);
-    /* 2. host/mod room-wide mute (members only) */
-    if (canIForceMute(id)) {
-      const gv = document.createElement("button");
-      gv.type = "button"; gv.className = "vpane-forcemute";
-      gv.innerHTML = SVG_GAVEL;
-      gv.addEventListener("click", (e) => { e.stopPropagation(); requestForceMute(id, !forceMuted.has(id)); });
-      ctls.appendChild(gv);
-    }
-    li.appendChild(ctls);
-    li.addEventListener("click", () => toggleStickyWhisper(id));
+    li.appendChild(wb);
     frag.appendChild(li);
     paintPaneRow(id, li, p);
   });
@@ -642,7 +648,6 @@ function paintPaneRow(id, li, p) {
   if (!li) return;
   const map = room?.remoteParticipants || room?.participants;
   p = p || map?.get(id);
-  const vol        = getLocalVol(id);
   const youMuted   = mutedForMe(id);
   const hostMuted  = forceMuted.has(id);
   const isTarget   = whisperIds.has(id);
@@ -654,27 +659,17 @@ function paintPaneRow(id, li, p) {
   li.classList.toggle("is-muted",      micOff && !isSpeaking);
   li.classList.toggle("is-localmuted", youMuted && !hostMuted);
   li.classList.toggle("is-hostmuted",  hostMuted);
-  const slider = li.querySelector(".vpane-vol");
-  if (slider) {
-    slider.disabled = deafened || hostMuted;
-    if (document.activeElement !== slider) slider.value = String(vol);
-    slider.style.setProperty("--fill", Math.round((youMuted ? 0 : vol) * 100) + "%");
-    slider.setAttribute("aria-valuetext", volReadout(id));
-  }
-  const pctEl = li.querySelector(".vpane-vol-pct");
-  if (pctEl) pctEl.textContent = hostMuted ? "Host" : volReadout(id);
   const lm = li.querySelector(".vpane-localmute");
   if (lm) {
-    lm.setAttribute("aria-pressed", String(youMuted));
     lm.disabled = hostMuted;
-    lm.title = youMuted ? "Unmute for yourself" : "Mute for yourself";
+    lm.setAttribute("aria-pressed", String(youMuted));
+    lm.title = hostMuted ? "Muted for the whole room"
+             : youMuted  ? "Unmute for yourself" : "Mute for yourself";
   }
-  li.querySelector(".vpane-wbtn")?.setAttribute("aria-pressed", String(isTarget));
-  const gv = li.querySelector(".vpane-forcemute");
-  if (gv) {
-    gv.setAttribute("aria-pressed", String(hostMuted));
-    gv.title = hostMuted ? `Unmute ${p?.name || "them"} for the room`
-                         : `Mute ${p?.name || "them"} for everyone`;
+  const wb = li.querySelector(".vpane-wbtn");
+  if (wb) {
+    wb.disabled = iAmForceMuted || whisperMode === "alt";
+    wb.setAttribute("aria-pressed", String(isTarget));
   }
   const sub = li.querySelector(".vpane-sub");
   if (sub) {
@@ -735,4 +730,171 @@ function renderVoicePane(st) {
   /* per-row live state */
   const speaking = new Set((room?.activeSpeakers || []).map((p) => p.identity));
   dom.voicePaneList.querySelectorAll(".vpane-peer").forEach((li) => paintPaneRow(li.dataset.id, li));
+}
+
+/* ════════════════════════════════════════════════════════════
+   PER-USER VOICE CONTROL MODAL
+   A separate entity from the member profile panel — it only
+   borrows the profile card's themed shell. Build once on open /
+   on structural change; paint the dynamic bits in place so the
+   volume drag is never interrupted.
+   ════════════════════════════════════════════════════════════ */
+let vcOpenFor = null;                       // { id, sig } | null
+const vcIsOpen = () => !!vcOpenFor;
+const vcSignature = (id) => peerRole(id) + "|" + (S.perms?.canManage ? "1" : "0");
+const kbdHint = (txt) => (isFinePointer() ? `<span class="vc-kbd">${txt}</span>` : "");
+function openVoiceControl(id) {
+  if (!connected || !id || !participantById(id)) return;
+  vcOpenFor = { id, sig: vcSignature(id) };
+  buildVoiceControl(id);
+  dom.vcCard.classList.add("open");
+  dom.vcBackdrop.classList.add("open");
+  dom.vcCard.setAttribute("aria-hidden", "false");
+  dom.vcClose.focus();
+}
+function closeVoiceControl() {
+  vcOpenFor = null;
+  dom.vcCard.classList.remove("open");
+  dom.vcBackdrop.classList.remove("open");
+  dom.vcCard.setAttribute("aria-hidden", "true");
+}
+function buildVoiceControl(id) {
+  const p = participantById(id);
+  if (!p) { closeVoiceControl(); return; }
+  const meta = peerMeta(p);
+  const slot = orderIds.indexOf(id) + 1;
+  const role = peerRole(id);
+  const canForce = canIForceMute(id);
+  dom.vcTitle.textContent = "Voice · " + meta.username;
+  let h =
+    '<div class="prof-id vc-id">' +
+      '<span class="vc-av-slot"></span>' +                        // ← avatarButton injected below
+      `<div class="prof-name">${esc(meta.username)}</div>` +
+      '<div class="vc-status" id="vcStatus"></div>' +
+    "</div>" +
+    '<div class="cfg-sec">' +
+      "<h4>Just for you</h4>" +
+      '<div class="vc-volrow"><span class="vc-vol-l">Volume</span>' +
+        '<span class="vc-vol-pct" id="vcVolPct"></span></div>' +
+      '<input type="range" class="vc-vol" id="vcVol" min="0" max="1" step="0.02" ' +
+        `aria-label="Volume for ${esc(meta.username)}">` +
+      '<button type="button" class="vc-toggle" data-act="local-mute" id="vcLocalMute"></button>' +
+      '<button type="button" class="vc-toggle" data-act="whisper" id="vcWhisper"></button>' +
+      (slot > 0 && slot <= VOICE_MAX_SLOTS
+        ? kbdHint(`Tip — hold Alt + ${slot} for push-to-talk whisper.`) : "") +
+    "</div>";
+  if (canForce) {
+    h +=
+      '<div class="cfg-sec">' +
+        "<h4>Everyone</h4>" +
+        '<button type="button" class="vc-toggle vc-danger" data-act="force-toggle" id="vcForce"></button>' +
+        '<p class="cfg-note" id="vcForceNote"></p>' +
+      "</div>";
+  } else if (role === "admin" || role === "mod") {
+    h +=
+      '<div class="cfg-sec"><p class="cfg-note">' +
+        (role === "admin" ? "The host" : "Moderators") +
+        " can't be muted for the room.</p></div>";
+  }
+  h +=
+    '<div class="vc-foot">' +
+      '<button type="button" class="vc-link" data-act="profile">' +
+        SVG_USER + `<span>Open ${esc(meta.username)}'s profile</span>` +
+      "</button>" +
+    "</div>";
+  dom.vcBody.innerHTML = h;
+  const avBtn = avatarButton(meta, "prof-av vc-av", `View ${esc(meta.username)}'s profile`);
+  avBtn.dataset.act = "profile";
+  dom.vcBody.querySelector(".vc-av-slot")?.replaceWith(avBtn);
+  paintVoiceControl(id);
+}
+function paintVoiceControl(id) {
+  if (!vcIsOpen() || vcOpenFor.id !== id) return;
+  const p = participantById(id); const b = dom.vcBody;
+  if (!p) { closeVoiceControl(); return; }
+  const vol        = getLocalVol(id);
+  const youMuted   = mutedForMe(id);
+  const hostMuted  = forceMuted.has(id);
+  const isTarget   = whisperIds.has(id);
+  const isSpeaking = (room?.activeSpeakers || []).some((s) => s.identity === id);
+  const micOff     = p.isMicrophoneEnabled === false;
+  const st = b.querySelector("#vcStatus");
+  if (st) {
+    const [txt, state] =
+        hostMuted  ? ["Muted for the whole room", "muted"]
+      : youMuted   ? ["Muted — just for you",     "muted"]
+      : deafened   ? ["You're deafened",          "muted"]
+      : isSpeaking ? ["Speaking now",             "speaking"]
+      : isTarget   ? ["In your whisper",          "whisper"]
+      : micOff     ? ["Their mic is off",         "micoff"]
+      :              ["Listening",                "listening"];
+    st.textContent = txt; st.dataset.state = state;
+  }
+  const sl = b.querySelector("#vcVol");
+  if (sl) {
+    sl.disabled = deafened || hostMuted;
+    if (document.activeElement !== sl) sl.value = String(vol);
+    sl.style.setProperty("--fill", Math.round((youMuted ? 0 : vol) * 100) + "%");
+    sl.setAttribute("aria-valuetext", volReadout(id));
+  }
+  const pct = b.querySelector("#vcVolPct");
+  if (pct) pct.textContent = hostMuted ? "Muted by host" : volReadout(id);
+  const lm = b.querySelector("#vcLocalMute");
+  if (lm) {
+    lm.disabled = hostMuted;
+    lm.setAttribute("aria-pressed", String(youMuted));
+    lm.innerHTML = (youMuted ? SVG_SPEAKER : SVG_SPEAKER_OFF) +
+      `<span>${youMuted ? "Unmute for yourself" : "Mute for yourself"}</span>`;
+  }
+  const wb = b.querySelector("#vcWhisper");
+  if (wb) {
+    wb.disabled = iAmForceMuted || whisperMode === "alt";
+    wb.setAttribute("aria-pressed", String(isTarget));
+    wb.innerHTML = SVG_WHISPER +
+      `<span>${isTarget ? "Stop whispering to them" : "Whisper to them"}</span>`;
+  }
+  const fb = b.querySelector("#vcForce");
+  if (fb) {
+    fb.setAttribute("aria-pressed", String(hostMuted));
+    fb.innerHTML = SVG_GAVEL +
+      `<span>${hostMuted ? "Unmute for everyone" : "Mute for everyone"}</span>`;
+  }
+  const fn = b.querySelector("#vcForceNote");
+  if (fn) fn.textContent = hostMuted
+    ? "Their mic is disabled for everyone here. Lifting this lets them unmute themselves again."
+    : "Disables their mic for everyone and stops them turning it back on. This persists if they rejoin.";
+}
+function renderVoiceControl() {
+  if (!vcIsOpen()) return;
+  const { id } = vcOpenFor;
+  if (!connected || !participantById(id)) { closeVoiceControl(); return; }
+  const sig = vcSignature(id);
+  if (sig !== vcOpenFor.sig) { vcOpenFor.sig = sig; buildVoiceControl(id); }  // role / my-perms changed
+  else                        paintVoiceControl(id);
+}
+function onVcClick(e) {
+  if (!vcIsOpen()) return;
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const id = vcOpenFor.id, act = el.dataset.act;
+  if (act === "profile") {
+    const p = participantById(id);
+    closeVoiceControl();                                  // hand off to the (separate) profile panel
+    openProfile(id, p ? peerMeta(p).username : "");
+  } else if (act === "local-mute")   toggleLocalMute(id);
+  else if (act === "whisper")        toggleStickyWhisper(id);
+  else if (act === "force-toggle")   requestForceMute(id, !forceMuted.has(id));
+}
+function onVcInput(e) {
+  if (vcIsOpen() && e.target.closest("#vcVol")) setLocalVol(vcOpenFor.id, e.target.value);
+}
+function wireVoiceControlModal() {
+  dom.vcBody.addEventListener("click", onVcClick);
+  dom.vcBody.addEventListener("input", onVcInput);
+  dom.vcClose.addEventListener("click", closeVoiceControl);
+  dom.vcBackdrop.addEventListener("click", closeVoiceControl);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && vcIsOpen()) { e.stopPropagation(); closeVoiceControl(); }
+  }, true);
+  playerHooks.closeVoiceControl = closeVoiceControl;      // fullscreen-exit dismisses it too
 }

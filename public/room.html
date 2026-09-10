@@ -574,6 +574,12 @@
                 </svg>
                 <span>Hold <b>Alt</b> + a number to whisper — add more numbers for a group, or tap a person to lock it on.</span>
               </div>
+              <div class="q-lock vpane-hint vpane-hint-touch">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="9"/><path d="M12 8v.01M11 12h1v4h1"/>
+                </svg>
+                <span>Tap someone's name for volume &amp; mute options. Tap their avatar to view their profile.</span>
+              </div>
             </section>
           </div>
         </div>
@@ -610,6 +616,16 @@
           <button class="cfg-x" id="profClose" type="button" aria-label="Close">✕</button>
         </header>
         <div class="cfg-body prof-body" id="profBody"></div>
+      </aside>
+      <!-- ── PER-USER VOICE CONTROL PANEL (separate from the profile panel) ── -->
+      <div class="prof-backdrop" id="vcBackdrop"></div>
+      <aside class="prof-card vc-card" id="vcCard" role="dialog" aria-modal="true"
+            aria-hidden="true" aria-labelledby="vcTitle">
+        <header class="cfg-head">
+          <h3 id="vcTitle">Voice controls</h3>
+          <button class="cfg-x" id="vcClose" type="button" aria-label="Close">✕</button>
+        </header>
+        <div class="cfg-body prof-body" id="vcBody"></div>
       </aside>
       <div class="toast-wrap" id="toastWrap"></div>
     </div>
