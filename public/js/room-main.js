@@ -39,7 +39,7 @@ import { $, dom } from "./room/dom.js";
 import { initTheme, closeThemeMenu, wireTheme } from "./room/theme.js";
 import { wireRoomDetails } from "./room/room-details.js";
 import { connectSocket, leaveRoom } from "./room/socket-core.js";
-import { wireChatInput, wireChatUnread } from "./room/chat.js";
+import { wireChatInput, wireChatUnread, wireChatActions } from "./room/chat.js";
 import { wirePlayerControls, onFullscreenChange, setPseudoFs } from "./room/player.js";
 import { wireReactions, closeRail } from "./room/reactions.js";
 import { Q } from "./room/queue.js";
@@ -78,6 +78,7 @@ function wireEvents() {
   wirePlayerControls();
   wirePermissions();
   wireChatUnread();
+  wireChatActions();
   // add the queue functionality
   Q.wire();
 }

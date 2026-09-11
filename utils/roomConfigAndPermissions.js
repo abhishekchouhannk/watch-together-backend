@@ -57,8 +57,36 @@ function sanitizeRoomPatch(room, raw = {}) {
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 /* ── moderation / room management ───────────────────────── */
 const canModerate = (room, uid) => isAdmin(room, uid) || isMod(room, uid); // mods + host
-const canGrantSync = canModerate;  // grant/revoke playback, answer requests, set sync mode
 
+/* ── chat moderation ───────────────────────────────────── */
+// edit: the author only, and only while the message is alive
+const canEditMessage = (room, msg, uid) =>
+  !!msg && !msg.deleted && sameId(msg.senderId, uid);
+// delete: the author, OR any moderator / host
+const canDeleteMessage = (room, msg, uid) =>
+  !!msg && !msg.deleted && (sameId(msg.senderId, uid) || canModerate(room, uid));
+// clear the whole room log: host only
+const canClearChat = isAdmin;
+/* one serializer so REST history and socket payloads never drift */
+function serializeMessage(m) {
+  const out = {
+    id:        m._id.toString(),
+    senderId:  m.senderId,
+    username:  m.senderName,
+    timestamp: m.timestamp,
+    editedAt:  m.editedAt || null,
+    deleted:   !!m.deleted,
+  };
+  if (m.deleted) {
+    out.text          = "";
+    out.deletedByName = m.deletedByName || null;
+    out.deletedByRole = m.deletedByRole || null;
+  } else {
+    out.text = m.message;
+  }
+  return out;
+}
+const canGrantSync = canModerate;  // grant/revoke playback, answer requests, set sync mode
 const isMod = (room, uid) => roleOf(room, uid) === "mod";
 function ensureMember(room, user) {
   let m = getMember(room, user.id);
@@ -160,5 +188,6 @@ module.exports = {
   ROOM_CAP, MODE_VALUES, validId,
   sameId, isAdmin, isMod, roleOf, getMember, ensureMember, isBanned, isVoiceMuted, serializeVoiceMutes,
   canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles, canBan,
+  canEditMessage, canDeleteMessage, canClearChat, serializeMessage,
   resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue, canQueue, canGrantQueue, SCOPES, isScope,
 };

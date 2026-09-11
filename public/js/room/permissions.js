@@ -56,7 +56,7 @@ import { onConnect, onRoomState, onParticipantsUpdate } from "./socket-core.js";
 import { renderRoomDetails } from "./room-details.js";
 import { P, markLocal, revertToRoomState } from "./player.js";
 import { Q } from "./queue.js";
-import { addSystemMsg } from "./chat.js";
+import { addSystemMsg, applyChatPerms } from "./chat.js";
 /* ═══════════════════════════════════════════
    COLLAPSIBLE SECTION HELPERS
    ═══════════════════════════════════════════ */
@@ -916,6 +916,7 @@ export function wirePermissionsSockets() {
     S.banned   = banned   || [];
     if (S.cfgRowMenu && !S.members.some((m) => m.userId === S.cfgRowMenu.id)) S.cfgRowMenu = null;
     applyPerms();
+    applyChatPerms();
     refreshPanels();
   });
   socket.on("room-saved", ({ room }) => {               // my own save came back
@@ -938,6 +939,7 @@ onConnect(() => wirePermissionsSockets());
 /* phase 10 — runs before chat (20), queue (30) and the player's load (35) */
 onRoomState(() => {
   applyPerms();
+  applyChatPerms();
   renderRoomDetails();
 }, 10);
 /* presence moves the validation floor (S.room/details already updated by socket-core) */

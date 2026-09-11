@@ -281,14 +281,71 @@ export async function onChatScroll() {
   } catch (_) { hideTopLoader(); }
   loadingOlder = false;
 }
+/* who can act on a message, from the viewer's seat */
+function msgPerms(msg) {
+  const mine = isMe(msg.senderId);
+  return {
+    mine,
+    canEdit:   mine && !msg.deleted,
+    canDelete: !msg.deleted && (mine || !!(S.perms && S.perms.canManage)),
+  };
+}
+function deletedByText(msg) {
+  const role = msg.deletedByRole, name = msg.deletedByName;
+  if (!role || role === "self") return "";
+  return " by " + esc(name || (role === "admin" ? "the host" : "a moderator"));
+}
+function msgBubbleHTML(msg) {
+  if (msg.deleted)
+    return '<div class="msg-text msg-deleted">Message deleted' + deletedByText(msg) + "</div>";
+  return '<div class="msg-text">' + esc(msg.text) +
+    (msg.editedAt
+      ? ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgTs(msg.editedAt)) + '">(edited)</span>'
+      : "") +
+    "</div>";
+}
+/* idempotent — (re)build the ⋯ trigger for the current viewer/role */
+function decorateActions(div, msg) {
+  const old = div.querySelector(".msg-actions");
+  if (old) old.remove();
+  const p = msgPerms(msg);
+  if (!p.canEdit && !p.canDelete) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "msg-actions";
+  btn.dataset.act = "menu";
+  btn.title = "Message actions";
+  btn.setAttribute("aria-haspopup", "true");
+  btn.setAttribute("aria-label", "Message actions");
+  btn.innerHTML =
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">' +
+    '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+  div.appendChild(btn);
+}
+/* reconstruct a minimal msg object from a rendered row */
+function readMsg(el) {
+  return {
+    id:            el.dataset.id,
+    senderId:      el.dataset.senderId || null,
+    deleted:       el.classList.contains("deleted"),
+    editedAt:      el.dataset.edited ? 1 : null,
+    deletedByRole: el.dataset.delRole || null,
+    deletedByName: el.dataset.delName || null,
+  };
+}
 export function buildMsgEl(msg) {
   const self = msg.senderId && S.userId && msg.senderId.toString() === S.userId;
   const c = avColor(msg.username), ini = (msg.username || "?")[0].toUpperCase();
   const uid = msg.senderId ? msg.senderId.toString() : "";
   const div = document.createElement("div");
-  div.className = "chat-msg" + (self ? " self" : "");
-  div.dataset.sender = msg.senderId || msg.username;
-  div.dataset.ts = new Date(msg.timestamp || Date.now()).getTime();
+  div.className = "chat-msg" + (self ? " self" : "") + (msg.deleted ? " deleted" : "");
+  div.dataset.sender   = msg.senderId || msg.username;
+  div.dataset.senderId = uid;
+  div.dataset.id       = msg.id || "";
+  div.dataset.ts       = new Date(msg.timestamp || Date.now()).getTime();
+  if (msg.editedAt)      div.dataset.edited  = "1";
+  if (msg.deletedByRole) div.dataset.delRole = msg.deletedByRole;
+  if (msg.deletedByName) div.dataset.delName = msg.deletedByName;
   const av = uid
     ? '<button type="button" class="msg-av" style="background:' + c + '" ' +
         'data-uid="' + esc(uid) + '" data-uname="' + esc(msg.username || "") + '" ' +
@@ -302,8 +359,9 @@ export function buildMsgEl(msg) {
         '<span class="msg-name' + (self ? " self" : "") + '">' + esc(msg.username) + "</span>" +
         '<span class="msg-ts">' + fmtMsgTs(msg.timestamp) + "</span>" +
       "</div>" +
-      '<div class="msg-text">' + esc(msg.text) + "</div>" +
+      msgBubbleHTML(msg) +
     "</div>";
+  decorateActions(div, msg);
   return div;
 }
 export function appendMessage(msg, auto) {
@@ -355,6 +413,164 @@ export function markStartReached() {
   el.textContent = "✨ This is the beginning of the conversation";
   dom.chatMsgs.insertBefore(el, dom.chatMsgs.firstChild);
 }
+/*
+   New delete/edit chat messages functionality and helper functions
+*/
+function cssEsc(s) {
+  return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&");
+}
+function rowById(id) {
+  return id ? dom.chatMsgs.querySelector('.chat-msg[data-id="' + cssEsc(id) + '"]') : null;
+}
+function liveText(el) {
+  const t = el.querySelector(".msg-text");
+  if (!t) return "";
+  const clone = t.cloneNode(true);
+  const tag = clone.querySelector(".msg-edited");
+  if (tag) tag.remove();
+  return clone.textContent.trim();
+}
+function autoGrow(ta) {
+  ta.style.height = "auto";
+  ta.style.height = Math.min(ta.scrollHeight, 140) + "px";
+}
+function enterEdit(el) {
+  if (!el || el.classList.contains("editing") || el.classList.contains("deleted")) return;
+  const textEl = el.querySelector(".msg-text");
+  if (!textEl) return;
+  const current = liveText(el);
+  el.classList.add("editing");
+  const box = document.createElement("div");
+  box.className = "msg-edit";
+  box.innerHTML =
+    '<textarea class="msg-edit-input" maxlength="500" rows="1"></textarea>' +
+    '<div class="msg-edit-actions">' +
+      '<button type="button" class="msg-edit-cancel">Cancel</button>' +
+      '<button type="button" class="msg-edit-save">Save</button>' +
+    "</div>";
+  textEl.after(box);
+  const ta = box.querySelector("textarea");
+  ta.value = current;
+  autoGrow(ta);
+  ta.focus();
+  ta.setSelectionRange(current.length, current.length);
+  const cancel = () => exitEdit(el);
+  const save = () => {
+    const next = ta.value.trim();
+    if (next && next !== current && getSocket())
+      sockEmit("chat-edit", { id: el.dataset.id, text: next });
+    exitEdit(el);                               // server broadcast repaints the bubble
+  };
+  box.querySelector(".msg-edit-cancel").onclick = cancel;
+  box.querySelector(".msg-edit-save").onclick   = save;
+  ta.addEventListener("input", () => autoGrow(ta));
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); cancel(); }
+    else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); }
+  });
+}
+function exitEdit(el) {
+  if (!el) return;
+  el.classList.remove("editing");
+  const box = el.querySelector(".msg-edit");
+  if (box) box.remove();
+}
+const MsgMenu = {
+  el: null, forId: null,
+  ensure() {
+    if (this.el) return this.el;
+    const m = document.createElement("div");
+    m.className = "msg-menu";
+    m.hidden = true;
+    document.body.appendChild(m);
+    this.el = m;
+    return m;
+  },
+  open(anchor, row) {
+    const id = row.dataset.id;
+    if (!id) return;
+    if (this.forId === id && !this.el.hidden) { this.close(); return; }
+    const p = msgPerms(readMsg(row));
+    let html = "";
+    if (p.canEdit)   html += '<button type="button" class="msg-menu-item" data-act="edit">Edit</button>';
+    if (p.canDelete) html +=
+      '<button type="button" class="msg-menu-item danger" data-act="del">Delete</button>' +
+      '<div class="msg-menu-confirm" data-confirm hidden>' +
+        "<span>Delete this message?</span>" +
+        '<button type="button" class="msg-menu-item danger" data-act="del-yes">Yes, delete</button>' +
+        '<button type="button" class="msg-menu-item" data-act="del-no">Cancel</button>' +
+      "</div>";
+    if (!html) return;
+    const m = this.ensure();
+    m.innerHTML = html;
+    m.hidden = false;
+    this.forId = id;
+    const r = anchor.getBoundingClientRect();
+    let left = r.right - m.offsetWidth;
+    let top  = r.bottom + 4;
+    if (top + m.offsetHeight > window.innerHeight - 8) top = r.top - m.offsetHeight - 4;
+    m.style.left = Math.round(Math.max(8, left)) + "px";
+    m.style.top  = Math.round(Math.max(8, top))  + "px";
+  },
+  confirm(on) {
+    if (!this.el) return;
+    const del  = this.el.querySelector('[data-act="del"]');
+    const conf = this.el.querySelector("[data-confirm]");
+    if (del)  del.hidden  = on;
+    if (conf) conf.hidden = !on;
+  },
+  close() {
+    if (this.el) { this.el.hidden = true; this.el.innerHTML = ""; }
+    this.forId = null;
+  },
+};
+
+/* 
+   Socket events related functions
+*/
+function applyEdit({ id, text, editedAt }) {
+  const el = rowById(id);
+  if (!el || el.classList.contains("deleted")) return;
+  exitEdit(el);
+  el.dataset.edited = "1";
+  const textEl = el.querySelector(".msg-text");
+  if (textEl)
+    textEl.innerHTML = esc(text) +
+      ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgTs(editedAt)) + '">(edited)</span>';
+}
+function applyDelete({ id, byId, byName, byRole }) {
+  if (MsgMenu.forId === id) MsgMenu.close();
+  const el = rowById(id);
+  if (!el) return;
+  exitEdit(el);
+  el.classList.add("deleted");
+  delete el.dataset.edited;
+  el.dataset.delRole = byRole || "";
+  el.dataset.delName = byName || "";
+  const trigger = el.querySelector(".msg-actions");
+  if (trigger) trigger.remove();
+  const textEl = el.querySelector(".msg-text");
+  if (textEl) {
+    textEl.className = "msg-text msg-deleted";
+    textEl.innerHTML = "Message deleted" +
+      deletedByText({ deletedByRole: byRole, deletedByName: byName });
+  }
+  regroupChat();
+}
+function applyClear({ byId, byName }) {
+  MsgMenu.close();
+  dom.chatMsgs.querySelectorAll(".chat-msg, .chat-loader, .chat-start")
+    .forEach((el) => el.remove());
+  oldestMsgId = null;
+  hasMoreMsgs = false;
+  loadingOlder = false;
+  startMarkerShown = false;
+  addSystemMsg((isMe(byId) ? "You" : (byName || "The host")) + " cleared the chat",
+               { silent: isMe(byId) });
+  markStartReached();
+  Unread.toEnd();
+}
+
 /* ══════════════════════════════════════
    WIRING — two halves, called from wireEvents() at the ORIGINAL positions
    so document-level listener order is unchanged.
@@ -378,6 +594,72 @@ export function wireChatUnread() {
   window.addEventListener("focus", () => Unread.sync());
   Unread.paint();
 }
+function resetClearBtn() {
+  const b = dom.chatClear;
+  if (!b) return;
+  b.dataset.confirm = "0";
+  b.classList.remove("confirm");
+  b.title = "Clear chat for everyone";
+  clearTimeout(b._t);
+}
+/* call this again whenever the viewer's role changes (member → mod, etc.) */
+export function applyChatPerms() {
+  if (dom.chatClear) dom.chatClear.hidden = !(S.perms && S.perms.isAdmin);
+  dom.chatMsgs.querySelectorAll(".chat-msg")
+    .forEach((el) => decorateActions(el, readMsg(el)));
+}
+/* message edit/delete + host clear — wired from room-main after wireChatUnread() */
+export function wireChatActions() {
+  // open the per-message menu
+  dom.chatMsgs.addEventListener("click", (e) => {
+    const trigger = e.target.closest('.msg-actions[data-act="menu"]');
+    if (!trigger) return;
+    const row = trigger.closest(".chat-msg");
+    if (!row) return;
+    e.stopPropagation();
+    MsgMenu.open(trigger, row);
+  });
+  // menu item clicks (menu lives on <body>)
+  MsgMenu.ensure().addEventListener("click", (e) => {
+    const item = e.target.closest("[data-act]");
+    if (!item) return;
+    const id  = MsgMenu.forId;
+    const act = item.dataset.act;
+    if (act === "edit")        { MsgMenu.close(); enterEdit(rowById(id)); }
+    else if (act === "del")    { MsgMenu.confirm(true); }
+    else if (act === "del-no") { MsgMenu.confirm(false); }
+    else if (act === "del-yes") {
+      if (id && getSocket()) sockEmit("chat-delete", { id });
+      MsgMenu.close();
+    }
+  });
+  // dismissers
+  document.addEventListener("click", (e) => {
+    if (MsgMenu.el && !MsgMenu.el.hidden &&
+        !MsgMenu.el.contains(e.target) && !e.target.closest(".msg-actions"))
+      MsgMenu.close();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") MsgMenu.close(); });
+  dom.chatMsgs.addEventListener("scroll", () => MsgMenu.close());
+  window.addEventListener("resize", () => MsgMenu.close());
+  // host: clear chat (two-click confirm, matching your row-menu pattern)
+  if (dom.chatClear) {
+    dom.chatClear.addEventListener("click", () => {
+      const b = dom.chatClear;
+      if (b.dataset.confirm === "1") {
+        if (getSocket()) sockEmit("chat-clear");
+        resetClearBtn();
+      } else {
+        b.dataset.confirm = "1";
+        b.classList.add("confirm");
+        b.title = "Click again to clear for everyone";
+        clearTimeout(b._t);
+        b._t = setTimeout(resetClearBtn, 3000);
+      }
+    });
+  }
+  applyChatPerms();
+}
 /* ══════════════════════════════════════
    NETWORK — own domain events + centralized hooks.
    socket-core does NOT import this module; we subscribe to it.
@@ -389,13 +671,16 @@ onConnect(() => {
   const socket = getSocket();
   socket.on("chat-message", (msg) => appendMessage(msg, true));
   socket.on("chat-system", ({ text, byId }) => addSystemMsg(text, { silent: isMe(byId) }));
+  socket.on("chat-edited",  applyEdit);
+  socket.on("chat-deleted", applyDelete);
+  socket.on("chat-cleared", applyClear);
 });
 /* phase 20: after applyPerms/renderRoomDetails (10), before queue/video (30).
    Returning the promise makes socket-core await the history fetch, exactly as
    the original `await loadInitialMessages()` did. */
 onRoomState(() => {
-  addSystemMsg("You joined the room", { silent: true });   // ← silenced
-  return loadInitialMessages();
+  addSystemMsg("You joined the room", { silent: true });
+  return loadInitialMessages().then(applyChatPerms);   // ← perms are ready by phase 20
 }, 20);
 onUserJoined(({ username }) => addSystemMsg(username + " joined"));
 onUserLeft(({ username }) => addSystemMsg(username + " left"));

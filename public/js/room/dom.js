@@ -19,7 +19,7 @@ export const dom = {
   details: $("roomDetails"), hdrName: $("hdrName"), hdrBadge: $("hdrBadge"), hdrDot: $("hdrDot"),
   videoWrap: $("videoWrapper"), placeholder: $("videoPlaceholder"),
   controls: $("videoControls"), container: $("videoContainer"),
-  chatMsgs: $("chatMessages"), chatInput: $("chatInput"), chatOnline: $("chatOnline"),
+  chatMsgs: $("chatMessages"), chatInput: $("chatInput"), chatClear: $("chatClearBtn"), chatOnline: $("chatOnline"),
   toasts: $("toastWrap"),
   themeSwitcher: $("themeSwitcher"), themeBtn: $("themeBtn"), themeBtnIcon: $("themeBtnIcon"), themeMenu: $("themeMenu"),
   fxLayer: $("fxLayer"),

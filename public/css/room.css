@@ -1,5 +1,12 @@
 /* ======== 0. Reset ======== */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+/* remove the annoying tap highlight */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color: rgba(0,0,0,0);
+}
+
 html{height:100%}
 body{
   min-height:100%;
@@ -461,6 +468,87 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   .msg-text{font-size:.77rem;padding:.26rem .46rem}
   .msg-name{font-size:.68rem}
   .chat-msg{max-width:92%}
+}
+
+/* ======== 7b. Chat message actions (edit / delete / clear) ======== */
+.chat-msg{position:relative}
+.msg-actions{
+  position:absolute;top:2px;right:2px;
+  width:20px;height:20px;border-radius:6px;z-index:2;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--surf);border:1px solid var(--card-bdr);color:var(--t3);
+  opacity:0;pointer-events:none;
+  transition:opacity .12s,background .15s,color .15s,border-color .15s;
+}
+.chat-msg.self .msg-actions{right:auto;left:2px}
+.chat-msg:hover .msg-actions,
+.chat-msg:focus-within .msg-actions,
+.msg-actions:focus-visible{opacity:1;pointer-events:auto}
+.msg-actions:hover{background:var(--acc);border-color:var(--acc);color:var(--acc-t)}
+@media(hover:none){.msg-actions{opacity:1;pointer-events:auto}}
+/* edited marker */
+.msg-edited{font-size:.62rem;font-style:italic;color:var(--t3);opacity:.85}
+.chat-msg.self .msg-edited{color:color-mix(in srgb,var(--acc-t) 75%,transparent)}
+/* deleted tombstone */
+.msg-text.msg-deleted{
+  background:transparent;border:1px dashed var(--card-bdr);
+  color:var(--t3);font-style:italic;
+}
+.chat-msg.deleted .msg-av{opacity:.5}
+.chat-msg.deleted .msg-actions{display:none}
+/* inline editor */
+.chat-msg.editing{max-width:100%}
+.chat-msg.editing .msg-text{display:none}
+.msg-edit{display:flex;flex-direction:column;gap:.3rem;margin-top:.15rem;width:100%}
+.msg-edit-input{
+  width:100%;resize:none;font:inherit;font-size:.8rem;line-height:1.36;
+  padding:.35rem .5rem;border-radius:9px;
+  background:var(--in-bg);border:1px solid var(--in-foc);color:var(--in-t);
+  box-shadow:0 0 0 3px var(--in-ring);
+}
+.msg-edit-actions{display:flex;gap:.35rem;justify-content:flex-end}
+.msg-edit-actions button{
+  font-size:.69rem;font-weight:600;padding:.25rem .6rem;border-radius:7px;
+  border:1px solid var(--card-bdr);background:var(--surf);color:var(--t2);
+  transition:background .15s;
+}
+.msg-edit-save{background:var(--acc);border-color:var(--acc);color:var(--acc-t)}
+.msg-edit-save:hover{background:var(--acc-h)}
+/* floating per-message menu (appended to <body>) */
+.msg-menu{
+  position:fixed;z-index:1000;min-width:9.5rem;padding:.3rem;
+  display:flex;flex-direction:column;gap:.12rem;border-radius:10px;
+  background:var(--card);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--card-bdr);box-shadow:var(--card-sh);
+  animation:msgIn .14s ease-out both;
+}
+.msg-menu[hidden]{display:none}
+.msg-menu-item{
+  text-align:left;font-size:.76rem;padding:.4rem .55rem;border-radius:7px;
+  color:var(--t2);background:transparent;transition:background .15s,color .15s;
+}
+.msg-menu-item:hover{background:var(--surf);color:var(--t1)}
+.msg-menu-item.danger{color:#ef4444}
+.msg-menu-item.danger:hover{background:color-mix(in srgb,#ef4444 14%,transparent)}
+.msg-menu-confirm{display:flex;flex-direction:column;gap:.12rem}
+.msg-menu-confirm>span{font-size:.69rem;color:var(--t3);padding:.3rem .55rem}
+/* host-only clear-chat button in the composer */
+.chat-clear-btn{
+  width:32px;height:32px;border-radius:9px;flex-shrink:0;align-self:center;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--in-bg);border:1px solid var(--in-bdr);color:var(--t3);
+  transition:background .2s,color .2s,border-color .2s,transform .1s;
+}
+.chat-clear-btn[hidden]{display:none}
+.chat-clear-btn svg{width:15px;height:15px}
+.chat-clear-btn:hover{color:#ef4444;border-color:color-mix(in srgb,#ef4444 45%,var(--in-bdr))}
+.chat-clear-btn:active{transform:scale(.9)}
+.chat-clear-btn.confirm{
+  background:color-mix(in srgb,#ef4444 16%,transparent);
+  border-color:#ef4444;color:#ef4444;
+}
+@media(max-width:768px){
+  .msg-actions{width:22px;height:22px}
 }
 
 /* ═══════════ SYSTEM / ROOM-UPDATE NOTICES (ephemeral) ═══════════ */

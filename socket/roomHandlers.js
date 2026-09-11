@@ -7,7 +7,7 @@ const Message = require("../models/Message");
 const User = require("../models/User");
 const {
   ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
-  isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles,
+  isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canDeleteMessage, canClearChat, canGrantSync, canSetRoles,
   canBan, serializeMembers, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope,
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
@@ -332,7 +332,6 @@ module.exports = function registerRoomHandlers(io, socket) {
         perms: socket.data.perm,
         voiceMuted: serializeVoiceMutes(room),
       });
-      socket.emit("room-state", { room: serializeRoom(room), perms: socket.data.perm });
       io.to(roomId).emit("participants-update", {
         participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
         count: room.participants.length,
@@ -357,6 +356,83 @@ module.exports = function registerRoomHandlers(io, socket) {
       });
     } catch (err) { console.error("chat-message error:", err); }
   });
+  /* ── edit a message (author only) ───────────────────────── */
+  socket.on("chat-edit", async ({ id, text }) => {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId || !validId(id)) return;
+      const clean = (text || "").trim().slice(0, 500);
+      if (!clean) {
+        return socket.emit("perm-toast", {
+          message: "Message can't be empty — delete it instead", type: "error",
+        });
+      }
+      const msg = await Message.findById(id);
+      if (!msg || msg.roomId !== roomId || msg.deleted) return;
+      if (!sameId(msg.senderId, user.id)) {
+        return socket.emit("perm-toast", {
+          message: "You can only edit your own messages", type: "error",
+        });
+      }
+      if (msg.message === clean) return;                 // no-op
+      msg.message  = clean;
+      msg.editedAt = new Date();
+      await msg.save();
+      io.to(roomId).emit("chat-edited", {
+        id: msg._id.toString(), text: clean, editedAt: msg.editedAt,
+      });
+    } catch (err) { console.error("chat-edit error:", err); }
+  });
+  /* ── delete a message (author, or any mod / host) ───────── */
+  socket.on("chat-delete", async ({ id }) => {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId || !validId(id)) return;
+      const room = await Room.findOne({ roomId });
+      if (!room) return;
+      const msg = await Message.findById(id);
+      if (!msg || msg.roomId !== roomId || msg.deleted) return;
+      if (!canDeleteMessage(room, msg, user.id)) {
+        return socket.emit("perm-toast", {
+          message: "You can't delete that message", type: "error",
+        });
+      }
+      const mine = sameId(msg.senderId, user.id);
+      const role = mine ? "self" : (isAdmin(room, user.id) ? "admin" : "mod");
+      msg.deleted       = true;
+      msg.deletedAt     = new Date();
+      msg.deletedBy     = user.id;
+      msg.deletedByName = user.username;
+      msg.deletedByRole = role;
+      msg.message       = "";                            // scrub text at rest
+      await msg.save();
+      io.to(roomId).emit("chat-deleted", {
+        id: msg._id.toString(),
+        byId: String(user.id), byName: user.username, byRole: role,
+      });
+    } catch (err) { console.error("chat-delete error:", err); }
+  });
+  /* ── clear the whole room log (host only) ───────────────── */
+  socket.on("chat-clear", async () => {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      const room = await Room.findOne({ roomId });
+      if (!room) return;
+      if (!canClearChat(room, user.id)) {
+        return socket.emit("perm-toast", {
+          message: "Only the host can clear the chat", type: "error",
+        });
+      }
+      await Message.deleteMany({ roomId });
+      io.to(roomId).emit("chat-cleared", {
+        byId: String(user.id), byName: user.username,
+      });
+    } catch (err) { console.error("chat-clear error:", err); }
+  });
+  /* Report goes here later:
+       socket.on("chat-report", ...) → write a Report doc, emit "perm-toast" ack,
+       notify mods via a `mod-notice` event. No schema for it yet. */
   /* ═══════════════ VIDEO SYNC (permission-gated) ═══════════════ */
   async function denySync(action) {
     const roomId = socket.data.roomId;

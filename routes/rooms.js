@@ -5,7 +5,7 @@ const Room = require('../models/Room');
 const Message = require('../models/Message');
 const { authenticateToken } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
-const { sanitizeRoomPatch, canModerate, isBanned, ROOM_CAP } = require('../utils/roomConfigAndPermissions');
+const { sanitizeRoomPatch, serializeMessage, canModerate, isBanned, ROOM_CAP } = require('../utils/roomConfigAndPermissions');
 
 // Get user's joined rooms
 router.get('/joined', authenticateToken, async (req, res) => {
@@ -152,13 +152,7 @@ router.get("/:roomId/messages", authenticateToken, async (req, res) => {
     docs.reverse();
     res.json({
       hasMore,
-      messages: docs.map((m) => ({
-        id: m._id.toString(),
-        senderId: m.senderId,
-        username: m.senderName,
-        text: m.message,
-        timestamp: m.timestamp,
-      })),
+      messages: docs.map(serializeMessage),
     });
   } catch (err) {
     console.error(err);

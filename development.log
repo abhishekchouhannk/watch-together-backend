@@ -1,5 +1,10 @@
 Ongoing Development:
-
+1. Add feature to delete messages in the chatroom.
+    - Let users delete their own messages
+    - Let moderators delete any messages.
+    - Let admins clear the whole chat.
+    - Let messages be editable by the user who sent them.
+    - Add a feature to report messages in the chatroom. (TOO MANY FEATURES, WILL BE DONE LATER)
 
 Need to work on:
 1. Make the flexbox of the arrows be percentage width of the video container instead of a fixed pixel width or gap.
@@ -11,13 +16,7 @@ Need to work on:
 7. Add option to change profile pictures and modify user details in general like name etc. 
     - Add a profile modal in general for the user to change their profile picture.
     - Add a functionality to click on a user avatar and see their profile, including their name, email, and other details.
-8. Add feature to delete messages in the chatroom.
-    - Let users delete their own messages
-    - Let moderators delete any messages.
-    - Let admins clear the whole chat.
-    - Let messages be editable by the user who sent them.
-    - Add a feature to report messages in the chatroom. (TOO MANY FEATURES, WILL BE DONE LATER)
-9. Add feature in chatroom to access giphy (sending gifs in chatroom) and maybe other media like images (not videos for now).
+8. Add feature in chatroom to access giphy (sending gifs in chatroom) and maybe other media like images (not videos for now).
 
 Completed:
 1. (DONE) Add a queue and then move to next video or prev button.
@@ -36,6 +35,10 @@ Completed:
 12. (DONE) Remove the excessive descriptive texts in the UI and make it more minimalistic.
 13. (DONE) Added voice chat to the application. Added a selective whisper mode to allow users to speak to select a select user.
     - Also, added feature to use keybinds to push to talk (PTT) and also added a toggle button to enable/disable voice chat.
+    - added voice chat display in side pane:
+        >> 1. users can locally mute other remote users or whisper to them
+        >> 2. Mods/host can mute remote users for whole room
+        >> 3. Added profile panel/modal access on the avatars displayed in the voice chat area
 
 
 Other important but later -
