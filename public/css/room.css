@@ -471,7 +471,8 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 }
 
 /* ======== 7b. Chat message actions (edit / delete / clear) ======== */
-.chat-msg{position:relative}
+.chat-msg{position:relative;transition:background .15s ease}
+/* ── desktop hover affordance — removed entirely on touch (fix #3) ── */
 .msg-actions{
   position:absolute;top:2px;right:2px;
   width:20px;height:20px;border-radius:6px;z-index:2;
@@ -485,17 +486,40 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .chat-msg:focus-within .msg-actions,
 .msg-actions:focus-visible{opacity:1;pointer-events:auto}
 .msg-actions:hover{background:var(--acc);border-color:var(--acc);color:var(--acc-t)}
-@media(hover:none){.msg-actions{opacity:1;pointer-events:auto}}
+.chat-msg.editing .msg-actions,
+.chat-msg.deleted .msg-actions{display:none}
+/* ── selected / pressed highlight — theme-neutral grey veil, NOT the accent
+       (fix #3: WhatsApp-style target indicator) ── */
+.chat-msg.menu-target,
+.chat-msg.pressing{
+  background:color-mix(in srgb,var(--t2) 12%,transparent);
+  border-radius:9px;
+}
+.chat-msg.menu-target .msg-text{
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--t2) 22%,transparent);
+}
+@media (hover:none){
+  .msg-actions{display:none!important}        /* no 3-dot clutter on touch */
+  .chat-msg{-webkit-touch-callout:none}        /* kill the iOS long-press callout */
+  .chat-msg.pressing,
+  .chat-msg.pressing *{-webkit-user-select:none;user-select:none}
+}
 /* edited marker */
 .msg-edited{font-size:.62rem;font-style:italic;color:var(--t3);opacity:.85}
 .chat-msg.self .msg-edited{color:color-mix(in srgb,var(--acc-t) 75%,transparent)}
-/* deleted tombstone */
-.msg-text.msg-deleted{
-  background:transparent;border:1px dashed var(--card-bdr);
-  color:var(--t3);font-style:italic;
+/* ── deleted tombstone ──
+   fix #2: `.chat-msg.self .msg-text` is (0,3,0); the old rule was (0,2,0) and
+   lost, so self-deleted bubbles kept the accent background. Match that
+   specificity for both incoming AND self messages. ── */
+.chat-messages .chat-msg .msg-text.msg-deleted,
+.chat-messages .chat-msg.self .msg-text.msg-deleted{
+  background:transparent;
+  border:1px dashed var(--card-bdr);
+  border-radius:10px;
+  color:var(--t3);
+  font-style:italic;
 }
 .chat-msg.deleted .msg-av{opacity:.5}
-.chat-msg.deleted .msg-actions{display:none}
 /* inline editor */
 .chat-msg.editing{max-width:100%}
 .chat-msg.editing .msg-text{display:none}
@@ -532,6 +556,11 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .msg-menu-item.danger:hover{background:color-mix(in srgb,#ef4444 14%,transparent)}
 .msg-menu-confirm{display:flex;flex-direction:column;gap:.12rem}
 .msg-menu-confirm>span{font-size:.69rem;color:var(--t3);padding:.3rem .55rem}
+/* ── fix #1: the HTML `hidden` attr (UA `display:none`, spec 0,1,0) was being
+       beaten by `.msg-menu-confirm{display:flex}`. Re-assert it at (0,2,0) so
+       the confirm sub-panel actually stays collapsed until "Delete" is hit. ── */
+.msg-menu-item[hidden],
+.msg-menu-confirm[hidden]{display:none}
 /* host-only clear-chat button in the composer */
 .chat-clear-btn{
   width:32px;height:32px;border-radius:9px;flex-shrink:0;align-self:center;
@@ -546,9 +575,6 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .chat-clear-btn.confirm{
   background:color-mix(in srgb,#ef4444 16%,transparent);
   border-color:#ef4444;color:#ef4444;
-}
-@media(max-width:768px){
-  .msg-actions{width:22px;height:22px}
 }
 
 /* ═══════════ SYSTEM / ROOM-UPDATE NOTICES (ephemeral) ═══════════ */

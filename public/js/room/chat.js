@@ -361,9 +361,56 @@ export function buildMsgEl(msg) {
       "</div>" +
       msgBubbleHTML(msg) +
     "</div>";
-  decorateActions(div, msg);
+  decorateActions(div, msg);       // desktop hover 3-dot (hidden on touch via CSS)
+  wireRowInteraction(div);         // desktop right-click + touch long-press
   return div;
 }
+/* ── right-click (desktop) + long-press (touch) open the same menu ──
+   Listeners read live state through readMsg(), so they survive edit/delete
+   repaints and late role changes without being re-attached. */
+function actionable(el) {
+  if (el.classList.contains("editing")) return false;
+  const p = msgPerms(readMsg(el));
+  return p.canEdit || p.canDelete;
+}
+function wireRowInteraction(el) {
+  /* desktop: replace the native context menu */
+  el.addEventListener("contextmenu", (e) => {
+    if (e.target.closest(".msg-edit") || e.target.closest(".msg-av")) return;
+    e.preventDefault();                       // no "Inspect / Save image / …"
+    if (!actionable(el)) return;
+    MsgMenu.open(el, { x: e.clientX, y: e.clientY });
+  });
+  /* touch: press-and-hold */
+  let timer = 0, sx = 0, sy = 0, fired = false;
+  const reset = () => { clearTimeout(timer); timer = 0; el.classList.remove("pressing"); };
+  el.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    if (e.target.closest(".msg-edit") || e.target.closest(".msg-av")) return;
+    if (!actionable(el)) return;
+    fired = false;
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+    el.classList.add("pressing");             // immediate feedback, WhatsApp-style
+    timer = setTimeout(() => {
+      fired = true;
+      el.classList.remove("pressing");
+      if (navigator.vibrate) navigator.vibrate(12);
+      MsgMenu.open(el, { x: sx, y: sy });
+    }, 450);
+  }, { passive: true });
+  el.addEventListener("touchmove", (e) => {
+    if (!timer) return;
+    if (Math.abs(e.touches[0].clientX - sx) > 10 ||
+        Math.abs(e.touches[0].clientY - sy) > 10) reset();   // it's a scroll, not a press
+  }, { passive: true });
+  el.addEventListener("touchend", (e) => {
+    if (fired) e.preventDefault();             // swallow the emulated click
+    reset();
+  });
+  el.addEventListener("touchcancel", reset);
+}
+
 export function appendMessage(msg, auto) {
   const self = isMe(msg.senderId);
   const stick = self || Unread.atBottom();          // measure BEFORE inserting
@@ -476,41 +523,58 @@ function exitEdit(el) {
   if (box) box.remove();
 }
 const MsgMenu = {
-  el: null, forId: null,
+  el: null, forId: null, rowEl: null, _openedAt: 0,
   ensure() {
     if (this.el) return this.el;
     const m = document.createElement("div");
     m.className = "msg-menu";
     m.hidden = true;
+    m.addEventListener("contextmenu", (e) => e.preventDefault());
     document.body.appendChild(m);
     this.el = m;
     return m;
   },
-  open(anchor, row) {
+  /* pos = { x, y } pointer/touch point  OR  { anchor: el } (the 3-dot button) */
+  open(row, pos) {
     const id = row.dataset.id;
     if (!id) return;
-    if (this.forId === id && !this.el.hidden) { this.close(); return; }
+    if (this.forId === id && !this.el.hidden && pos && pos.anchor) { this.close(); return; }
     const p = msgPerms(readMsg(row));
     let html = "";
-    if (p.canEdit)   html += '<button type="button" class="msg-menu-item" data-act="edit">Edit</button>';
-    if (p.canDelete) html +=
-      '<button type="button" class="msg-menu-item danger" data-act="del">Delete</button>' +
-      '<div class="msg-menu-confirm" data-confirm hidden>' +
-        "<span>Delete this message?</span>" +
-        '<button type="button" class="msg-menu-item danger" data-act="del-yes">Yes, delete</button>' +
-        '<button type="button" class="msg-menu-item" data-act="del-no">Cancel</button>' +
-      "</div>";
+    if (p.canEdit)
+      html += '<button type="button" class="msg-menu-item" data-act="edit">Edit</button>';
+    if (p.canDelete)
+      html +=
+        '<button type="button" class="msg-menu-item danger" data-act="del">Delete</button>' +
+        '<div class="msg-menu-confirm" data-confirm hidden>' +
+          "<span>Delete this message?</span>" +
+          '<button type="button" class="msg-menu-item danger" data-act="del-yes">Yes, delete</button>' +
+          '<button type="button" class="msg-menu-item" data-act="del-no">Cancel</button>' +
+        "</div>";
     if (!html) return;
+    if (this.rowEl) this.rowEl.classList.remove("menu-target");
     const m = this.ensure();
     m.innerHTML = html;
     m.hidden = false;
     this.forId = id;
-    const r = anchor.getBoundingClientRect();
-    let left = r.right - m.offsetWidth;
-    let top  = r.bottom + 4;
-    if (top + m.offsetHeight > window.innerHeight - 8) top = r.top - m.offsetHeight - 4;
-    m.style.left = Math.round(Math.max(8, left)) + "px";
-    m.style.top  = Math.round(Math.max(8, top))  + "px";
+    this.rowEl = row;
+    this._openedAt = Date.now();
+    row.classList.add("menu-target");
+    const pad = 8, mw = m.offsetWidth, mh = m.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left, top;
+    if (pos && pos.anchor) {
+      const r = pos.anchor.getBoundingClientRect();
+      left = r.right - mw;
+      top  = (r.bottom + 4 + mh > vh - pad) ? r.top - mh - 4 : r.bottom + 4;
+    } else {
+      left = (pos ? pos.x : vw / 2);
+      top  = (pos ? pos.y : vh / 2);
+      if (left + mw > vw - pad) left -= mw;
+      if (top  + mh > vh - pad) top  -= mh;
+    }
+    m.style.left = Math.round(Math.min(Math.max(pad, left), vw - mw - pad)) + "px";
+    m.style.top  = Math.round(Math.min(Math.max(pad, top),  vh - mh - pad)) + "px";
   },
   confirm(on) {
     if (!this.el) return;
@@ -519,8 +583,10 @@ const MsgMenu = {
     if (del)  del.hidden  = on;
     if (conf) conf.hidden = !on;
   },
+  justOpened() { return Date.now() - this._openedAt < 350; },
   close() {
     if (this.el) { this.el.hidden = true; this.el.innerHTML = ""; }
+    if (this.rowEl) { this.rowEl.classList.remove("menu-target"); this.rowEl = null; }
     this.forId = null;
   },
 };
@@ -610,14 +676,14 @@ export function applyChatPerms() {
 }
 /* message edit/delete + host clear — wired from room-main after wireChatUnread() */
 export function wireChatActions() {
-  // open the per-message menu
+  // open the per-message menu (desktop 3-dot)
   dom.chatMsgs.addEventListener("click", (e) => {
     const trigger = e.target.closest('.msg-actions[data-act="menu"]');
     if (!trigger) return;
     const row = trigger.closest(".chat-msg");
     if (!row) return;
     e.stopPropagation();
-    MsgMenu.open(trigger, row);
+    MsgMenu.open(row, { anchor: trigger });          // ← was (trigger, row)
   });
   // menu item clicks (menu lives on <body>)
   MsgMenu.ensure().addEventListener("click", (e) => {
@@ -635,9 +701,10 @@ export function wireChatActions() {
   });
   // dismissers
   document.addEventListener("click", (e) => {
-    if (MsgMenu.el && !MsgMenu.el.hidden &&
-        !MsgMenu.el.contains(e.target) && !e.target.closest(".msg-actions"))
-      MsgMenu.close();
+    if (!MsgMenu.el || MsgMenu.el.hidden) return;
+    if (MsgMenu.justOpened()) return;                // ← ignore the post-long-press click
+    if (MsgMenu.el.contains(e.target) || e.target.closest(".msg-actions")) return;
+    MsgMenu.close();
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") MsgMenu.close(); });
   dom.chatMsgs.addEventListener("scroll", () => MsgMenu.close());
