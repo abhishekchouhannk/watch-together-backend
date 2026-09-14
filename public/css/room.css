@@ -1195,6 +1195,7 @@ button.role-toggle:hover{filter:brightness(1.15);box-shadow:0 0 0 2px var(--acc-
   padding:.55rem .65rem;border-radius:9px;
   background:var(--in-bg);border:1px solid var(--in-bdr);
   transition:border-color .15s, box-shadow .15s;
+  color: var(--t1);
 }
 .rep-msg:hover,.rep-msg:focus-visible{
   outline:none;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-glow);
