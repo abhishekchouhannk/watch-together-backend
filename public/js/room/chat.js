@@ -573,7 +573,11 @@ const MsgMenu = {
     m.className = "msg-menu";
     m.hidden = true;
     m.addEventListener("contextmenu", (e) => e.preventDefault());
-    document.body.appendChild(m);
+    
+    // Change this line to append inside the themed container
+    const roomPage = document.getElementById("roomPage") || document.body;
+    roomPage.appendChild(m);
+    
     this.el = m;
     return m;
   },
