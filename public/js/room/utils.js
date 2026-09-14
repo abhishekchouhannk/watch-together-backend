@@ -28,6 +28,34 @@ export function fmtMsgTs(ts)  { const d = ts ? new Date(ts) : new Date(); return
 export function avColor(name) { if (!name) return AV_COLORS[0]; let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h); return AV_COLORS[Math.abs(h) % AV_COLORS.length]; }
 export const fmtBadge = (n) => (n > BADGE_CAP ? BADGE_CAP + "+" : String(n));
 export const isMe     = (id) => !!(id && S.userId && id.toString() === S.userId);
+/* ── message timestamps ── */
+const RELATIVE_DAYS = true;   // false → always "12 Mar, 3:42 PM"
+const sameDay = (a, b) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+/* compact stamp for the message header */
+export function fmtMsgStamp(ts) {
+  const d = new Date(ts || Date.now());
+  if (isNaN(d)) return "";
+  const now  = new Date();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (RELATIVE_DAYS) {
+    if (sameDay(d, now)) return "Today, " + time;
+    const yest = new Date(now); yest.setDate(now.getDate() - 1);
+    if (sameDay(d, yest)) return "Yesterday, " + time;
+  }
+  const opts = { day: "numeric", month: "short" };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString([], opts) + ", " + time;
+}
+/* full form, for tooltips */
+export function fmtMsgFull(ts) {
+  const d = new Date(ts || Date.now());
+  if (isNaN(d)) return "";
+  return d.toLocaleString([], {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+}
 export function extractYT(url) {
   const m = url.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
   return m ? m[1] : null;

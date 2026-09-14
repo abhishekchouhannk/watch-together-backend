@@ -48,7 +48,7 @@
 import { roomId, GROUP_WINDOW } from "./config.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
-import { esc, fmtMsgTs, avColor, fmtBadge, isMe, delay } from "./utils.js";
+import { esc, fmtMsgStamp, fmtMsgFull, avColor, fmtBadge, isMe, delay } from "./utils.js";
 import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onUserJoined, onUserLeft } from "./socket-core.js";
 /* ── history pagination bookkeeping ── */
@@ -56,6 +56,22 @@ let startMarkerShown = false;
 let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
 /* messages I've reported this session (the server dedupes too) */
 const reportedIds = new Set();
+
+// helpers
+
+/* role of a sender from the viewer's member list */
+function roleOfUid(uid) {
+  if (!uid) return "member";
+  const adminId = S.room && S.room.admin && S.room.admin.userId;
+  if (adminId && String(adminId) === uid) return "admin";
+  const m = (S.members || []).find((x) => String(x.userId) === uid);
+  return m && (m.role === "admin" || m.role === "mod") ? m.role : "member";
+}
+function paintRole(el) {
+  const r = roleOfUid(el.dataset.senderId);
+  if (el.dataset.role !== r) el.dataset.role = r;
+}
+
 /* ══════════════════════════════════════
    SIDE-PANEL BADGES (unread chat/room updates)
    ══════════════════════════════════════ */
@@ -240,6 +256,7 @@ export function sendMessage() {
   if (!text || !getSocket()) return;
   sockEmit("chat-message", { text });
   dom.chatInput.value = "";
+  growChatInput();
   dom.chatInput.focus();
   Unread.stick = true;
   Unread.clear();
@@ -316,7 +333,7 @@ function msgBubbleHTML(msg) {
     return '<div class="msg-text msg-deleted">Message deleted' + deletedByText(msg) + "</div>";
   return '<div class="msg-text">' + esc(msg.text) +
     (msg.editedAt
-      ? ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgTs(msg.editedAt)) + '">(edited)</span>'
+      ? ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgFull(msg.editedAt)) + '">(edited)</span>'
       : "") +
     "</div>";
 }
@@ -336,7 +353,7 @@ function decorateActions(div, msg) {
   btn.innerHTML =
     '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">' +
     '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
-  div.appendChild(btn);
+  (div.querySelector(".msg-line") || div).appendChild(btn);
 }
 /* reconstruct a minimal msg object from a rendered row */
 function readMsg(el) {
@@ -357,6 +374,7 @@ export function buildMsgEl(msg) {
   div.className = "chat-msg" + (self ? " self" : "") + (msg.deleted ? " deleted" : "");
   div.dataset.sender   = msg.senderId || msg.username;
   div.dataset.senderId = uid;
+  div.dataset.role = roleOfUid(uid);
   div.dataset.id       = msg.id || "";
   div.dataset.ts       = new Date(msg.timestamp || Date.now()).getTime();
   if (msg.editedAt)      div.dataset.edited  = "1";
@@ -373,9 +391,10 @@ export function buildMsgEl(msg) {
     '<div class="msg-body">' +
       '<div class="msg-head">' +
         '<span class="msg-name' + (self ? " self" : "") + '">' + esc(msg.username) + "</span>" +
-        '<span class="msg-ts">' + fmtMsgTs(msg.timestamp) + "</span>" +
+        '<time class="msg-ts" datetime="' + new Date(msg.timestamp || Date.now()).toISOString() +
+          '" title="' + esc(fmtMsgFull(msg.timestamp)) + '">' + esc(fmtMsgStamp(msg.timestamp)) + "</time>" +
       "</div>" +
-      msgBubbleHTML(msg) +
+      '<div class="msg-line">' + msgBubbleHTML(msg) + "</div>"
     "</div>";
   decorateActions(div, msg);       // desktop hover 3-dot (hidden on touch via CSS)
   wireRowInteraction(div);         // desktop right-click + touch long-press
@@ -520,9 +539,20 @@ export async function jumpToMessage(id) {
   row._flashT = setTimeout(() => row.classList.remove("msg-flash"), 2200);
   return true;
 }
-function autoGrow(ta) {
+/* grow a textarea to fit its content, up to its CSS max-height (or `cap`) */
+function autoGrow(ta, cap) {
+  const max = cap || parseFloat(getComputedStyle(ta).maxHeight) || 140;
   ta.style.height = "auto";
-  ta.style.height = Math.min(ta.scrollHeight, 140) + "px";
+  const border = ta.offsetHeight - ta.clientHeight;
+  const full   = ta.scrollHeight + border;
+  ta.style.height    = Math.min(full, max) + "px";
+  ta.style.overflowY = full > max ? "auto" : "hidden";
+}
+/* the composer grows upward and squeezes the log; keep the log pinned */
+function growChatInput() {
+  const pinned = Unread.atBottom(8);
+  autoGrow(dom.chatInput);
+  if (pinned) Unread.toEnd();
 }
 function enterEdit(el) {
   if (!el || el.classList.contains("editing") || el.classList.contains("deleted")) return;
@@ -538,7 +568,7 @@ function enterEdit(el) {
       '<button type="button" class="msg-edit-cancel">Cancel</button>' +
       '<button type="button" class="msg-edit-save">Save</button>' +
     "</div>";
-  textEl.after(box);
+  (el.querySelector(".msg-line") || textEl).after(box);
   const ta = box.querySelector("textarea");
   ta.value = current;
   autoGrow(ta);
@@ -654,7 +684,7 @@ function applyEdit({ id, text, editedAt }) {
   const textEl = el.querySelector(".msg-text");
   if (textEl)
     textEl.innerHTML = esc(text) +
-      ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgTs(editedAt)) + '">(edited)</span>';
+      ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgFull(editedAt)) + '">(edited)</span>'
 }
 function applyDelete({ id, byId, byName, byRole }) {
   if (MsgMenu.forId === id) MsgMenu.close();
@@ -697,10 +727,14 @@ function applyClear({ byId, byName }) {
 /* the send button / Enter key / log scroll — the early block of wireEvents() */
 export function wireChatInput() {
   $("sendBtn").onclick = sendMessage;
+  dom.chatInput.addEventListener("input", growChatInput);
   dom.chatInput.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;                       // IME candidate, not a send
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  });
+  });                                                // Shift+Enter → newline
+  window.addEventListener("resize", () => autoGrow(dom.chatInput));
   dom.chatMsgs.addEventListener("scroll", onChatScroll);
+  autoGrow(dom.chatInput);
 }
 /* ── side-panel unread ── — the late block of wireEvents() */
 export function wireChatUnread() {
@@ -724,8 +758,10 @@ function resetClearBtn() {
 /* call this again whenever the viewer's role changes (member → mod, etc.) */
 export function applyChatPerms() {
   if (dom.chatClear) dom.chatClear.hidden = !(S.perms && S.perms.isAdmin);
-  dom.chatMsgs.querySelectorAll(".chat-msg")
-    .forEach((el) => decorateActions(el, readMsg(el)));
+  dom.chatMsgs.querySelectorAll(".chat-msg").forEach((el) => {
+    decorateActions(el, readMsg(el));
+    paintRole(el);
+  });
 }
 /* message edit/delete + host clear — wired from room-main after wireChatUnread() */
 export function wireChatActions() {
@@ -809,3 +845,16 @@ onRoomState(() => {
 }, 20);
 onUserJoined(({ username }) => addSystemMsg(username + " joined"));
 onUserLeft(({ username }) => addSystemMsg(username + " left"));
+
+/* "Today" becomes "Yesterday" at midnight; relabel once a day */
+(function scheduleStampRefresh() {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+  setTimeout(() => {
+    dom.chatMsgs.querySelectorAll(".chat-msg").forEach((el) => {
+      const t = el.querySelector(".msg-ts");
+      if (t) t.textContent = fmtMsgStamp(Number(el.dataset.ts));
+    });
+    scheduleStampRefresh();
+  }, next - now);
+})();

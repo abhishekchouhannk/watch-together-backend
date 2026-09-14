@@ -50,7 +50,7 @@ import { MODES, ROOM_CAP, ROLE_LABEL, FIELD_LABEL, MOD_EVT } from "./config.js";
 import { CHEV_SVG, STEP_UP, STEP_DN, SEC_CLOSE } from "./svg.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
-import { esc, fmtMsgTs, avColor, toast, safeHttpUrl, fmtJoined, isMe } from "./utils.js";
+import { esc, fmtMsgTs, fmtMsgStamp, avColor, toast, safeHttpUrl, fmtJoined, isMe } from "./utils.js";
 import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onParticipantsUpdate } from "./socket-core.js";
 import { renderRoomDetails } from "./room-details.js";
@@ -406,7 +406,7 @@ function reportCardHTML(r) {
             ? ' <span class="rep-more" title="' + esc(reps.slice(1).map((x) => x.username).join(", ")) +
                 '">+' + more + " more</span>"
             : "") +
-          (r.at ? " · " + esc(fmtMsgTs(r.at)) : "") +
+          (r.at ? " · " + esc(fmtMsgStamp(r.at)) : "") +
         "</span>" +
       "</div>" +
       (r.count > 1 ? '<span class="cnt rep-cnt" title="Reports">' + r.count + "</span>" : "") +

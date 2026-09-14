@@ -365,7 +365,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     try {
       const roomId = socket.data.roomId;
       if (!roomId) return;
-      const clean = (text || "").trim().slice(0, 500);
+      const clean = (text || "").replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 500);
       if (!clean) return;
       const msg = await Message.create({ roomId, senderId: user.id, senderName: user.username, message: clean });
       io.to(roomId).emit("chat-message", {
@@ -379,7 +379,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     try {
       const roomId = socket.data.roomId;
       if (!roomId || !validId(id)) return;
-      const clean = (text || "").trim().slice(0, 500);
+      const clean = (text || "").replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 500);
       if (!clean) {
         return socket.emit("perm-toast", {
           message: "Message can't be empty — delete it instead", type: "error",

@@ -44,6 +44,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   --scr-th:rgba(225,29,72,.25);--scr-tr:transparent;
   --toast-ok:rgba(5,150,105,.92);--toast-err:rgba(225,29,72,.92);--toast-t:#fff;
   --menu-bg:rgba(255,248,250,.98);--menu-bdr:rgba(190,130,160,.28);
+  --role-host:#b45309;--role-mod:#1d4ed8;--role-member:#6e1d42;
 }
 #roomPage[data-theme="afternoon"]{
   --sky-fb:#229df2;
@@ -63,6 +64,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   --scr-th:rgba(234,179,8,.3);--scr-tr:transparent;
   --toast-ok:rgba(5,150,105,.92);--toast-err:rgba(220,38,38,.92);--toast-t:#fff;
   --menu-bg:rgba(255,255,255,.98);--menu-bdr:rgba(100,160,220,.28);
+  --role-host:#b45309;--role-mod:#7c3aed;--role-member:#0c3d5e;
 }
 #roomPage[data-theme="evening"]{
   --sky-fb:#8d6daa;
@@ -82,6 +84,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   --scr-th:rgba(147,51,234,.3);--scr-tr:transparent;
   --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
   --menu-bg:rgba(32,14,52,.98);--menu-bdr:rgba(180,130,200,.25);
+  --role-host:#fbbf24;--role-mod:#7dd3fc;--role-member:#d8c5f0;
 }
 #roomPage[data-theme="night"]{
   --sky-fb:#171f43;
@@ -101,6 +104,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   --scr-th:rgba(99,102,241,.25);--scr-tr:transparent;
   --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
   --menu-bg:rgba(18,25,54,.98);--menu-bdr:rgba(99,102,241,.22);
+  --role-host:#fcd34d;--role-mod:#6ee7b7;--role-member:#c0caee;
 }
 
 /* mode badges — light */
@@ -410,78 +414,115 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 }
 .chat-messages{
   flex:1;overflow-y:auto;min-height:0;
-  padding:.5rem .65rem;display:flex;flex-direction:column;gap:.18rem;
+  padding:.5rem .6rem;display:flex;flex-direction:column;gap:.1rem;
 }
+/* ── one message row ── */
 .chat-msg{
-  display:flex;gap:.4rem;align-items:flex-start;
+  display:flex;gap:.5rem;align-items:flex-start;
   max-width:88%;align-self:flex-start;
+  padding:.2rem .4rem;border-radius:8px;
   animation:msgIn .28s cubic-bezier(.16,1,.3,1) both;
 }
+.chat-msg:not(.grouped){margin-top:.45rem}          /* air between speakers */
 .chat-msg.self{flex-direction:row-reverse;align-self:flex-end}
-.chat-msg.grouped{margin-top:-.1rem}
 .chat-msg.grouped .msg-head{display:none}
-.chat-msg.grouped .msg-av{visibility:hidden}
-.chat-msg.grouped .msg-text{margin-top:0}
+.chat-msg.grouped .msg-av{visibility:hidden;height:0}
 @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@media (hover:hover){
+  .chat-msg:hover{background:color-mix(in srgb,var(--t2) 6%,transparent)}
+}
 .msg-av{
-  width:1.4rem;height:1.4rem;border-radius:50%;flex-shrink:0;
+  width:1.6rem;height:1.6rem;border-radius:50%;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;
-  font-size:.58rem;font-weight:700;color:#fff;margin-top:.08rem;
+  font-size:.62rem;font-weight:700;color:#fff;margin-top:.1rem;
 }
-.msg-body{min-width:0;display:flex;flex-direction:column}
+.msg-body{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
 .chat-msg.self .msg-body{align-items:flex-end}
-.msg-head{display:flex;align-items:baseline;gap:.3rem;line-height:1.1}
+/* ── name · time ── */
+.msg-head{display:flex;align-items:baseline;gap:.4rem;line-height:1.2;flex-wrap:wrap}
 .chat-msg.self .msg-head{flex-direction:row-reverse}
-.msg-name{font-size:.71rem;font-weight:700;color:var(--t1)}
-.msg-name.self{color:var(--acc)}
-.msg-ts{font-size:.58rem;color:var(--t3)}
+.msg-name{font-size:.74rem;font-weight:700;color:var(--role-member,var(--t1))}
+.msg-ts{font-size:.6rem;color:var(--t3);white-space:nowrap}
+/* ── text + ⋯ on one line; the button centers on the text ── */
+.msg-line{display:flex;align-items:center;gap:.35rem;max-width:100%;margin-top:.1rem}
+.chat-msg.self .msg-line{flex-direction:row-reverse}
+.chat-msg.grouped .msg-line{margin-top:0}
+/* ── no bubble ── */
 .msg-text{
-  font-size:.8rem;line-height:1.36;word-break:break-word;
-  padding:.3rem .52rem;border-radius:10px 10px 10px 3px;
-  background:var(--surf);color:var(--t2);
-  display:inline-block;margin-top:.1rem;
+  min-width:0;
+  font-size:.82rem;line-height:1.42;color:var(--t1);
+  white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;
 }
-.chat-msg.self .msg-text{background:var(--acc);color:var(--acc-t);border-radius:10px 10px 3px 10px}
 .chat-sys{text-align:center;font-size:.68rem;color:var(--t3);font-style:italic;padding:.25rem 0;
   animation:msgIn .28s cubic-bezier(.16,1,.3,1) both}
-.chat-bar{display:flex;gap:.4rem;padding:.5rem .55rem;border-top:1px solid var(--card-bdr);flex-shrink:0}
+/* ── composer: the textarea grows, the buttons stay at the bottom ── */
+.chat-bar{
+  --chat-row:2.1rem;
+  display:flex;align-items:flex-end;gap:.4rem;
+  padding:.5rem .55rem;border-top:1px solid var(--card-bdr);flex-shrink:0;
+}
 .chat-input{
-  flex:1;min-width:0;padding:.45rem .65rem;
+  flex:1;min-width:0;display:block;resize:none;
+  font-size:.82rem;line-height:1.4;
+  /* one line = exactly --chat-row, so it matches the buttons */
+  padding:calc((var(--chat-row) - 1.4em - 2px) / 2) .65rem;
+  min-height:var(--chat-row);
+  max-height:calc(1.4em * 6 + (var(--chat-row) - 1.4em));   /* ≈ 6 lines */
+  overflow-y:hidden;                                         /* JS switches to auto at the cap */
   background:var(--in-bg);border:1px solid var(--in-bdr);
-  border-radius:9px;color:var(--in-t);font-size:.82rem;
+  border-radius:9px;color:var(--in-t);
   backdrop-filter:blur(8px);transition:border-color .2s,box-shadow .2s;
 }
 .chat-input:focus{border-color:var(--in-foc);box-shadow:0 0 0 3px var(--in-ring)}
 .chat-input::placeholder{color:var(--in-ph)}
 .send-btn{
-  width:32px;height:32px;border-radius:9px;flex-shrink:0;align-self:center;
+  width:var(--chat-row);height:var(--chat-row);border-radius:9px;flex-shrink:0;align-self:flex-end;
   background:var(--acc);color:var(--acc-t);
   display:flex;align-items:center;justify-content:center;transition:background .2s,transform .1s;
 }
 .send-btn svg{width:15px;height:15px}
 .send-btn:hover{background:var(--acc-h)}
 .send-btn:active{transform:scale(.9)}
-/* ── mobile / stacked: squeeze a little further ── */
+/* ── textarea scrollbars: thin on desktop, hidden on touch ── */
+.chat-input,.msg-edit-input{scrollbar-width:thin;scrollbar-color:var(--scr-th) transparent}
+.chat-input::-webkit-scrollbar,.msg-edit-input::-webkit-scrollbar{width:6px}
+.chat-input::-webkit-scrollbar-track,.msg-edit-input::-webkit-scrollbar-track{background:transparent}
+.chat-input::-webkit-scrollbar-thumb,.msg-edit-input::-webkit-scrollbar-thumb{background:var(--scr-th);border-radius:6px}
+@media (hover:none),(pointer:coarse){
+  .chat-input,.msg-edit-input{scrollbar-width:none}
+  .chat-input::-webkit-scrollbar,.msg-edit-input::-webkit-scrollbar{display:none;width:0}
+}
+/* ── role colors + small tags ── */
+.chat-msg[data-role="admin"] .msg-name{color:var(--role-host)}
+.chat-msg[data-role="mod"]   .msg-name{color:var(--role-mod)}
+.chat-msg[data-role="admin"] .msg-name::after{content:"HOST"}
+.chat-msg[data-role="mod"]   .msg-name::after{content:"MOD"}
+.chat-msg[data-role="admin"] .msg-name::after,
+.chat-msg[data-role="mod"]   .msg-name::after{
+  display:inline-block;vertical-align:middle;margin:0 .3rem;
+  padding:.02rem .28rem;border-radius:4px;
+  font-size:.5rem;font-weight:800;letter-spacing:.05em;line-height:1.3;
+  background:color-mix(in srgb,currentColor 16%,transparent);
+}
 @media(max-width:768px){
-  .chat-messages{padding:.4rem .5rem;gap:.14rem}
-  .msg-av{width:1.25rem;height:1.25rem;font-size:.54rem}
-  .msg-text{font-size:.77rem;padding:.26rem .46rem}
-  .msg-name{font-size:.68rem}
-  .chat-msg{max-width:92%}
+  .chat-messages{padding:.4rem .45rem}
+  .chat-msg{max-width:92%;padding:.15rem .3rem}
+  .msg-av{width:1.4rem;height:1.4rem;font-size:.56rem}
+  .msg-text{font-size:.8rem}
+  .msg-name{font-size:.7rem}
 }
 
 /* ======== 7b. Chat message actions (edit / delete / clear) ======== */
 .chat-msg{position:relative;transition:background .15s ease}
 /* ── desktop hover affordance — removed entirely on touch (fix #3) ── */
 .msg-actions{
-  position:absolute;top:2px;right:2px;
-  width:20px;height:20px;border-radius:6px;z-index:2;
+  flex:0 0 auto;align-self:center;
+  width:22px;height:22px;border-radius:6px;
   display:flex;align-items:center;justify-content:center;
   background:var(--surf);border:1px solid var(--card-bdr);color:var(--t3);
   opacity:0;pointer-events:none;
   transition:opacity .12s,background .15s,color .15s,border-color .15s;
 }
-.chat-msg.self .msg-actions{right:auto;left:2px}
 .chat-msg:hover .msg-actions,
 .chat-msg:focus-within .msg-actions,
 .msg-actions:focus-visible{opacity:1;pointer-events:auto}
@@ -495,9 +536,6 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   background:color-mix(in srgb,var(--t2) 12%,transparent);
   border-radius:9px;
 }
-.chat-msg.menu-target .msg-text{
-  box-shadow:0 0 0 1px color-mix(in srgb,var(--t2) 22%,transparent);
-}
 @media (hover:none){
   .msg-actions{display:none!important}        /* no 3-dot clutter on touch */
   .chat-msg{-webkit-touch-callout:none}        /* kill the iOS long-press callout */
@@ -506,23 +544,18 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 }
 /* edited marker */
 .msg-edited{font-size:.62rem;font-style:italic;color:var(--t3);opacity:.85}
-.chat-msg.self .msg-edited{color:color-mix(in srgb,var(--acc-t) 75%,transparent)}
-/* ── deleted tombstone ──
-   fix #2: `.chat-msg.self .msg-text` is (0,3,0); the old rule was (0,2,0) and
-   lost, so self-deleted bubbles kept the accent background. Match that
-   specificity for both incoming AND self messages. ── */
+.chat-msg.self .msg-edited{color:var(--t3)}
+/* ── deleted tombstone ── */
 .chat-messages .chat-msg .msg-text.msg-deleted,
 .chat-messages .chat-msg.self .msg-text.msg-deleted{
-  background:transparent;
-  border:1px dashed var(--card-bdr);
-  border-radius:10px;
-  color:var(--t3);
-  font-style:italic;
+  background:transparent;border:0;padding:0;border-radius:0;
+  color:var(--t3);font-style:italic;font-size:.76rem;
 }
 .chat-msg.deleted .msg-av{opacity:.5}
 /* inline editor */
 .chat-msg.editing{max-width:100%}
-.chat-msg.editing .msg-text{display:none}
+.chat-msg.editing .msg-line{display:none}
+.chat-msg.editing .msg-body{flex:1}
 .msg-edit{display:flex;flex-direction:column;gap:.3rem;margin-top:.15rem;width:100%}
 .msg-edit-input{
   width:100%;resize:none;font:inherit;font-size:.8rem;line-height:1.36;
@@ -563,7 +596,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .msg-menu-confirm[hidden]{display:none}
 /* host-only clear-chat button in the composer */
 .chat-clear-btn{
-  width:32px;height:32px;border-radius:9px;flex-shrink:0;align-self:center;
+  width:var(--chat-row);height:var(--chat-row);border-radius:9px;flex-shrink:0;align-self:flex-end;
   display:flex;align-items:center;justify-content:center;
   background:var(--in-bg);border:1px solid var(--in-bdr);color:var(--t3);
   transition:background .2s,color .2s,border-color .2s,transform .1s;
@@ -1130,17 +1163,9 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .report-acts .cfg-mini{flex:1;min-width:5.5rem}
 /* ── reported-message flash highlight ── */
 .chat-msg.flash{border-radius:9px;animation:msgFlash 2.2s ease both}
-.chat-msg.flash .msg-text{
-  box-shadow:0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent);
-}
-@keyframes msgFlash{
-  0%,55%{background:color-mix(in srgb,var(--acc) 16%,transparent)}
-  100%{background:transparent}
-}
 @media (prefers-reduced-motion:reduce){
   .chat-msg.flash{animation:none;background:color-mix(in srgb,var(--acc) 12%,transparent)}
 }
-
 
 /* clickable avatar + name in the people list — same affordance as chat */
 button.cfg-av-btn{
