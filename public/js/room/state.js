@@ -42,6 +42,7 @@ export const S = {
 /* ── properties the original file attached to S at top level, in order ── */
 S.cfgCollapsed = {};          // { people: true, room: false, … }
 S.banned       = [];          // admin-only, from room-permissions
+S.reports = [];          // mod-only, from room-permissions
 S.cfgRowMenu   = null;        // { id, confirm: null | 'ban' | 'remove' }
 S.roomDraft    = null;        // in-progress edits
 S.roomConflict = null;        // unacknowledged incoming change

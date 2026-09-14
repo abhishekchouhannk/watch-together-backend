@@ -5,10 +5,11 @@ const crypto = require("crypto");
 const Room = require("../models/Room");
 const Message = require("../models/Message");
 const User = require("../models/User");
+const Report = require("../models/Report");
 const {
   ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
-  isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canDeleteMessage, canClearChat, canGrantSync, canSetRoles,
-  canBan, serializeMembers, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope,
+  isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canDeleteMessage, canClearChat, canGrantSync, canSetRoles, canReportMessage, canReviewReports, 
+  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope,
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
 const recentKicks = new Map();                       // "roomId:userId" → expiry ms
@@ -90,6 +91,23 @@ function emitLoad(io, roomId, it, by, play) {
 const findItem = (room, id) => (room.queue || []).findIndex((i) => i.itemId === id);
 function sysMsg(io, roomId, text, byId = null) {
   io.to(roomId).emit("chat-system", { text, byId: byId ? String(byId) : null });
+}
+/* emit only to sockets in the room whose user may review reports */
+async function emitToMods(io, room, event, payload) {
+  const sockets = await io.in(room.roomId).fetchSockets();
+  for (const s of sockets) {
+    const uid = s.data && s.data.user && s.data.user.id;
+    if (uid && canReviewReports(room, uid)) s.emit(event, payload);
+  }
+}
+async function listReports(roomId) {
+  const docs = await Report.find({ roomId }).sort({ updatedAt: -1 }).limit(50).lean();
+  return docs.map(serializeReport);
+}
+/* re-broadcast the full list to every mod in the room */
+async function pushReports(io, room) {
+  const reports = await listReports(room.roomId);
+  await emitToMods(io, room, "room-reports", { reports });
 }
 function clearSeekBarrier(roomId) {
   const ps = pendingSeeks.get(roomId);
@@ -410,6 +428,14 @@ module.exports = function registerRoomHandlers(io, socket) {
         id: msg._id.toString(),
         byId: String(user.id), byName: user.username, byRole: role,
       });
+      /* a mod/host delete resolves the report; an author delete keeps it as evidence */
+      if (role === "self") {
+        const r = await Report.updateMany({ roomId, messageId: msg._id }, { $set: { messageDeleted: true } });
+        if (r.modifiedCount) await pushReports(io, room);
+      } else {
+        const r = await Report.deleteMany({ roomId, messageId: msg._id });
+        if (r.deletedCount) await pushReports(io, room);
+      }
     } catch (err) { console.error("chat-delete error:", err); }
   });
   /* ── clear the whole room log (host only) ───────────────── */
@@ -425,10 +451,80 @@ module.exports = function registerRoomHandlers(io, socket) {
         });
       }
       await Message.deleteMany({ roomId });
+      await Report.deleteMany({ roomId });
       io.to(roomId).emit("chat-cleared", {
         byId: String(user.id), byName: user.username,
       });
+      await pushReports(io, room);
     } catch (err) { console.error("chat-clear error:", err); }
+  });
+  /* ── report a message (anyone, not your own) ───────────── */
+  socket.on("chat-report", async ({ id } = {}) => {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId || !validId(id)) return;
+      const room = await Room.findOne({ roomId });
+      if (!room) return;
+      const msg = await Message.findById(id);
+      if (!msg || msg.roomId !== roomId || msg.deleted) {
+        return socket.emit("perm-toast", { message: "That message is no longer available", type: "error" });
+      }
+      if (!canReportMessage(room, msg, user.id)) {
+        return socket.emit("perm-toast", { message: "You can't report your own message", type: "error" });
+      }
+      let rep;
+      try {
+        /* the $ne filter plus the unique index make this atomic: a second report
+           from the same user can't match, so the upsert collides → E11000 */
+        rep = await Report.findOneAndUpdate(
+          { roomId, messageId: msg._id, "reporters.userId": { $ne: user.id } },
+          {
+            $set:  { senderId: msg.senderId, senderName: msg.senderName,
+                     text: msg.message, messageTs: msg.timestamp, messageDeleted: false },
+            $push: { reporters: { userId: user.id, username: user.username, at: new Date() } },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+      } catch (e) {
+        if (e && e.code === 11000) {
+          return socket.emit("perm-toast", { message: "You've already reported this message", type: "info" });
+        }
+        throw e;
+      }
+      socket.emit("perm-toast", { message: "Reported. The host and mods have been notified", type: "success" });
+      await emitToMods(io, room, "report-new", {
+        id: rep._id.toString(),
+        messageId: msg._id.toString(),
+        reporterName: user.username,
+        senderName: msg.senderName,
+        count: rep.reporters.length,
+      });
+      await pushReports(io, room);
+    } catch (err) { console.error("chat-report error:", err); }
+  });
+  /* ── fetch the report list (host + mods) ───────────────── */
+  socket.on("report-list", async () => {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      const room = await Room.findOne({ roomId });
+      if (!room || !canReviewReports(room, user.id)) return;
+      socket.emit("room-reports", { reports: await listReports(roomId) });
+    } catch (err) { console.error("report-list error:", err); }
+  });
+  /* ── dismiss a report without touching the message ─────── */
+  socket.on("report-dismiss", async ({ id } = {}) => {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId || !validId(id)) return;
+      const room = await Room.findOne({ roomId });
+      if (!room) return;
+      if (!canReviewReports(room, user.id)) {
+        return socket.emit("perm-toast", { message: "Only the host and moderators can do that", type: "error" });
+      }
+      await Report.deleteOne({ _id: id, roomId });
+      await pushReports(io, room);
+    } catch (err) { console.error("report-dismiss error:", err); }
   });
   /* Report goes here later:
        socket.on("chat-report", ...) → write a Report doc, emit "perm-toast" ack,

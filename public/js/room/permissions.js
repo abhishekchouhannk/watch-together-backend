@@ -50,13 +50,13 @@ import { MODES, ROOM_CAP, ROLE_LABEL, FIELD_LABEL, MOD_EVT } from "./config.js";
 import { CHEV_SVG, STEP_UP, STEP_DN, SEC_CLOSE } from "./svg.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
-import { esc, avColor, toast, safeHttpUrl, fmtJoined, isMe } from "./utils.js";
+import { esc, fmtMsgTs, avColor, toast, safeHttpUrl, fmtJoined, isMe } from "./utils.js";
 import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onParticipantsUpdate } from "./socket-core.js";
 import { renderRoomDetails } from "./room-details.js";
 import { P, markLocal, revertToRoomState } from "./player.js";
 import { Q } from "./queue.js";
-import { addSystemMsg, applyChatPerms } from "./chat.js";
+import { addSystemMsg, applyChatPerms, jumpToMessage } from "./chat.js";
 /* ═══════════════════════════════════════════
    COLLAPSIBLE SECTION HELPERS
    ═══════════════════════════════════════════ */
@@ -83,6 +83,9 @@ function secOpen(id, titleHTML, defaultClosed, extraAttrs) {
    ══════════════════════════════════════ */
 const participantsHere = () => ((S.room && S.room.participants) || []).length;
 const participantFloor = () => Math.max(2, participantsHere());
+/* report id whose "Delete message?" confirm is open in the sheet */
+let reportConfirm = null;
+const isObjId = (s) => /^[a-f0-9]{24}$/i.test(String(s || ""));
 /* first blocking problem with the room-details form, or null */
 function roomFormError() {
   if (!$("cfgMax")) return null;
@@ -99,34 +102,60 @@ function roomFormError() {
     msg: `${here} ${here === 1 ? "person is" : "people are"} here right now — remove someone first` };
   return null;
 }
+/* pending requests + open reports, for whoever can act on them */
+function paintGearBadge() {
+  const p = S.perms || {};
+  const req = (p.canGrantSync || p.canGrantQueue) ? S.requests.length : 0;
+  const rep = p.canManage ? (S.reports || []).length : 0;
+  const n = req + rep;
+  dom.gearBadge.classList.toggle("is-hidden", n === 0);
+  dom.gearBadge.textContent = n > 99 ? "99+" : n;
+}
 export function applyPerms() {
   const p = S.perms;
   dom.container.classList.toggle("locked", !p.canSync);
   $("playBtn").disabled     = !p.canSync;
   $("progressBar").disabled = !p.canSync;
   dom.vcLock.style.display  = p.canSync ? "none" : "";
-  const n = (p.canGrantSync || p.canGrantQueue) ? S.requests.length : 0;
-  dom.gearBadge.classList.toggle("is-hidden", n === 0);
-  dom.gearBadge.textContent = n;
+  paintGearBadge();
   if (!p.canSync) P.stopLeader();
   Q.render();
 }
 // Check if the config sheet is open
 export const isConfigOpen = () => dom.cfgSheet.classList.contains("open");
-export function openConfig() {
+/* opts.focus = "reports" → open that section and scroll to opts.reportId */
+export function openConfig(opts) {
+  opts = (opts && typeof opts === "object" && !(opts instanceof Event)) ? opts : {};
   S.cfgCollapsed = {};          // wipe any per-session toggles → defaults apply
   S.cfgRowMenu   = null;
+  reportConfirm  = null;
+  if (opts.focus) S.cfgCollapsed[opts.focus] = false;
   renderConfig();
   dom.cfgSheet.classList.add("open");
   dom.cfgBackdrop.classList.add("open");
   dom.cfgSheet.setAttribute("aria-hidden", "false");
+  if (opts.focus === "reports") focusReport(opts.reportId);
 }
 export function closeConfig() {
   S.roomDraft = null;
   S.roomConflict = null;
+  reportConfirm = null;
   dom.cfgSheet.classList.remove("open");
   dom.cfgBackdrop.classList.remove("open");
   dom.cfgSheet.setAttribute("aria-hidden", "true");
+}
+/* scroll a report card into view and flash it */
+function focusReport(reportId) {
+  const sec = dom.cfgBody.querySelector('[data-sec-id="reports"]');
+  if (!sec) return;
+  const target = (isObjId(reportId) && sec.querySelector('[data-rid="' + reportId + '"]')) || sec;
+  requestAnimationFrame(() => {
+    target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    target.classList.remove("cfg-flash");
+    void target.offsetWidth;
+    target.classList.add("cfg-flash");
+    setTimeout(() => target.classList.remove("cfg-flash"), 1800);
+  });
 }
 /* one access row + its request affordance */
 function accessRow(label, granted, state, scope, openToAll) {
@@ -183,6 +212,8 @@ export function renderConfig() {
       h += SEC_CLOSE;
     }
   }
+  /* ── reports (host + mods, only when there are any) ── */
+  if (p.canManage && (S.reports || []).length) h += reportsSectionHTML();
   /* ── queue mode (host + mods) ── */
   if (p.canGrantQueue) {
     h += secOpen("queuemode", "Who can manage the queue");
@@ -353,6 +384,66 @@ function rowMenuHTML(m, isOnline, state) {
       ' title="Remove and block them from rejoining">🚫 Ban</button>' +
   "</div>";
 }
+/* small inline profile link (name only) */
+function profLinkHTML(uid, name, cls) {
+  return '<button class="' + (cls || "rep-link") + '" data-act="profile" data-uid="' + esc(uid) +
+    '" data-uname="' + esc(name) + '" title="View profile">' + esc(name) + "</button>";
+}
+function reportCardHTML(r) {
+  const reps  = r.reporters || [];
+  const first = reps[0] || { userId: "", username: "Someone" };
+  const more  = reps.length - 1;
+  const confirming = reportConfirm === r.id;
+  let h = '<div class="rep-card" data-rid="' + esc(r.id) + '">' +
+    /* who was reported (avatar + name → profile panel) */
+    '<div class="rep-head">' +
+      memberAvBtnHTML({ userId: r.senderId, username: r.senderName }) +
+      '<div class="rep-who">' +
+        profLinkHTML(r.senderId, r.senderName, "cfg-uname cfg-uname-btn rep-name") +
+        '<span class="rep-meta">Reported by ' +
+          (first.userId ? profLinkHTML(first.userId, first.username) : esc(first.username)) +
+          (more > 0
+            ? ' <span class="rep-more" title="' + esc(reps.slice(1).map((x) => x.username).join(", ")) +
+                '">+' + more + " more</span>"
+            : "") +
+          (r.at ? " · " + esc(fmtMsgTs(r.at)) : "") +
+        "</span>" +
+      "</div>" +
+      (r.count > 1 ? '<span class="cnt rep-cnt" title="Reports">' + r.count + "</span>" : "") +
+    "</div>" +
+    /* the reported message; tap to jump to it in the chat */
+    '<button class="rep-msg" data-act="report-jump" data-mid="' + esc(r.messageId) +
+      '" title="Show in chat">' +
+      '<span class="rep-text">' + (r.text ? esc(r.text) : "<em>(no text)</em>") + "</span>" +
+      '<span class="rep-go">' +
+        (r.messageDeleted ? '<span class="rep-gone">Deleted by the author</span>' : "") +
+        "<span>View in chat →</span></span>" +
+    "</button>";
+  if (confirming) {
+    h += '<div class="rep-confirm">' +
+           '<div class="pp-txt">Delete this message for everyone?</div>' +
+           '<div class="rep-acts">' +
+             '<button class="cfg-mini no" data-act="report-del-yes" data-id="' + esc(r.id) +
+               '" data-mid="' + esc(r.messageId) + '">Yes, delete</button>' +
+             '<button class="cfg-mini alt" data-act="report-del-no">Cancel</button>' +
+           "</div></div>";
+  } else {
+    h += '<div class="rep-acts">' +
+           (r.messageDeleted ? "" :
+             '<button class="cfg-mini no" data-act="report-del" data-id="' + esc(r.id) + '">🗑 Delete message</button>') +
+           '<button class="cfg-mini alt" data-act="report-dismiss" data-id="' + esc(r.id) + '">Dismiss</button>' +
+         "</div>";
+  }
+  return h + "</div>";
+}
+function reportsSectionHTML() {
+  const list = S.reports || [];
+  if (reportConfirm && !list.some((r) => r.id === reportConfirm)) reportConfirm = null;
+  let h = secOpen("reports", 'Reports <span class="cnt">' + list.length + "</span>");
+  list.forEach((r) => { h += reportCardHTML(r); });
+  h += '<p class="cfg-note">Tap a message to see it in the chat. Tap a name for kick, remove or ban.</p>';
+  return h + SEC_CLOSE;
+}
 /* "a, #B,b ,c" → ["a","b","c"] — dedupes, strips #, lowercases, caps at 8 */
 const parseTags = (v) => [...new Set(
   String(v == null ? "" : v).split(",")
@@ -473,6 +564,12 @@ function nudgeNote() {
   setTimeout(() => note.classList.remove("nudge"), 600);
 }
 const refreshConfig  = () => { if (isConfigOpen())  renderConfig();  };
+const refreshReports = () => {
+  if (!isConfigOpen()) return;
+  const top = dom.cfgBody.scrollTop;
+  renderConfig();
+  dom.cfgBody.scrollTop = top;
+};
 const refreshProfile = () => { if (isProfileOpen()) renderProfile(); };
 /* anything that used to call refreshConfig() on a server broadcast
    (room-permissions, member list changes, participants changes) should call this */
@@ -579,6 +676,28 @@ function onCfgClick(e) {
   }
   if (act === "menu-close")  { S.cfgRowMenu = null; renderConfig(); return; }
   if (act === "unban") { sockEmit("member-unban", { userId: el.dataset.id }); return; }
+  /* ── reports ── */
+  if (act === "report-jump") {
+    const mid = el.dataset.mid;
+    closeConfig();                                   // the sheet covers the chat on mobile
+    jumpToMessage(mid).then((ok) => {
+      if (!ok) toast("That message isn't in the chat anymore", "error");
+    });
+    return;
+  }
+  if (act === "report-dismiss") {
+    el.disabled = true;
+    sockEmit("report-dismiss", { id: el.dataset.id });
+    return;                                          // 'room-reports' re-renders the list
+  }
+  if (act === "report-del")    { reportConfirm = el.dataset.id; refreshReports(); return; }
+  if (act === "report-del-no") { reportConfirm = null;          refreshReports(); return; }
+  if (act === "report-del-yes") {
+    el.disabled = true;
+    reportConfirm = null;
+    sockEmit("chat-delete", { id: el.dataset.mid }); // server resolves the report
+    return;
+  }
   if (act === "save-room") {
     if (!getSocket()) return;
     if (S.roomConflict) return nudgeConflict();
@@ -672,6 +791,29 @@ function showRequestPrompt(userId, username, scope) {
   no.onclick = () => { sockEmit("perm-respond", { userId, scope, approve: false }); el.remove(); };
   dom.toasts.appendChild(el);
   setTimeout(() => el.remove(), 30000);
+}
+/* host/mod toast: "X reported Y". No message content; View opens the sheet. */
+function showReportPrompt({ id, reporterName, senderName }) {
+  if (!isObjId(id)) return;
+  const txt = "<strong>" + esc(reporterName || "Someone") + "</strong> reported <strong>" +
+              esc(senderName || "a message") + "</strong>";
+  const existing = dom.toasts.querySelector('[data-report="' + id + '"]');
+  if (existing) { existing.querySelector(".pp-txt").innerHTML = "🚩 " + txt; return; }
+  const el = document.createElement("div");
+  el.className = "perm-prompt report-prompt";
+  el.dataset.report = id;
+  el.setAttribute("role", "status");
+  el.innerHTML =
+    '<div class="pp-txt">🚩 ' + txt + "</div>" +
+    '<div class="pp-acts">' +
+      '<button class="cfg-mini ok">View report</button>' +
+      '<button class="cfg-mini alt">Dismiss</button>' +
+    "</div>";
+  const [view, dismiss] = el.querySelectorAll("button");
+  view.onclick    = () => { el.remove(); openConfig({ focus: "reports", reportId: id }); };
+  dismiss.onclick = () => el.remove();               // hides the toast; the report stays open
+  dom.toasts.appendChild(el);
+  setTimeout(() => el.remove(), 20000);
 }
 /* ══════════════════════════════════════
    MEMBER PROFILE PANEL
@@ -895,7 +1037,7 @@ if (document.readyState === "loading") {
    sheet, so it is registered here (player.js must not import openConfig).
    ══════════════════════════════════════ */
 export function wirePermissions() {
-  dom.configBtn.onclick = openConfig;
+  dom.configBtn.onclick = () => openConfig();
   $("cfgClose").onclick = closeConfig;
   dom.cfgBackdrop.onclick = closeConfig;
   dom.vcLock.onclick = (e) => { e.stopPropagation(); openConfig(); };
@@ -910,15 +1052,33 @@ export function wirePermissionsSockets() {
   const socket = getSocket();
   /* ── permissions ── */
   socket.on("room-permissions", ({ perms, members, requests, banned }) => {
+    const couldReview = !!(S.perms && S.perms.canManage);
     S.perms    = perms;
     S.members  = members  || [];
     S.requests = requests || [];
     S.banned   = banned   || [];
     if (S.cfgRowMenu && !S.members.some((m) => m.userId === S.cfgRowMenu.id)) S.cfgRowMenu = null;
+    /* promoted → fetch reports; demoted → forget them */
+    if (perms.canManage && !couldReview) sockEmit("report-list");
+    if (!perms.canManage && couldReview) {
+      S.reports = [];
+      dom.toasts.querySelectorAll("[data-report]").forEach((n) => n.remove());
+    }
     applyPerms();
     applyChatPerms();
     refreshPanels();
   });
+  /* ── reports (server only sends these to host + mods) ── */
+  socket.on("room-reports", ({ reports }) => {
+    S.reports = Array.isArray(reports) ? reports : [];
+    const open = new Set(S.reports.map((r) => r.id));
+    dom.toasts.querySelectorAll("[data-report]").forEach((n) => {
+      if (!open.has(n.dataset.report)) n.remove();   // resolved elsewhere → drop its toast
+    });
+    paintGearBadge();
+    refreshReports();
+  });
+  socket.on("report-new", (data) => showReportPrompt(data || {}));
   socket.on("room-saved", ({ room }) => {               // my own save came back
     S.room = Object.assign({}, S.room, room);
     S.roomDraft = null;
@@ -941,6 +1101,7 @@ onRoomState(() => {
   applyPerms();
   applyChatPerms();
   renderRoomDetails();
+  if (S.perms && S.perms.canManage) sockEmit("report-list");
 }, 10);
 /* presence moves the validation floor (S.room/details already updated by socket-core) */
 onParticipantsUpdate(() => {

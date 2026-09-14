@@ -54,6 +54,8 @@ import { onConnect, onRoomState, onUserJoined, onUserLeft } from "./socket-core.
 /* ── history pagination bookkeeping ── */
 let startMarkerShown = false;
 let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
+/* messages I've reported this session (the server dedupes too) */
+const reportedIds = new Set();
 /* ══════════════════════════════════════
    SIDE-PANEL BADGES (unread chat/room updates)
    ══════════════════════════════════════ */
@@ -257,16 +259,19 @@ export async function loadInitialMessages() {
     if (!hasMoreMsgs) markStartReached();
   } catch (_) {}
 }
-export async function onChatScroll() {
-  Unread.onScroll();
-  SYS.hold(SYS.SCROLL_HOLD);            // ← never collapse under a moving finger
-  if (dom.chatMsgs.scrollTop > 40 || !hasMoreMsgs || loadingOlder || !oldestMsgId) return;
+/* fetch ONE older page and prepend it, keeping the scroll position.
+   Resolves true if a page was loaded. */
+async function loadOlderPage(minDelay) {
+  if (loadingOlder || !hasMoreMsgs || !oldestMsgId) return false;
   loadingOlder = true;
   const prev = dom.chatMsgs.scrollHeight;
   showTopLoader();
+  let ok = false;
   try {
-    const fp = fetch("/api/rooms/" + roomId + "/messages?limit=20&before=" + oldestMsgId, { credentials: "include" }).then((r) => r.json());
-    const d = (await Promise.all([fp, delay(450)]))[0];
+    const fp = fetch("/api/rooms/" + roomId + "/messages?limit=20&before=" + oldestMsgId,
+                     { credentials: "include" })
+      .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+    const d = (await Promise.all([fp, delay(minDelay || 0)]))[0];
     hasMoreMsgs = d.hasMore;
     hideTopLoader();
     if (d.messages.length) {
@@ -278,16 +283,27 @@ export async function onChatScroll() {
       dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight - prev;
     }
     if (!hasMoreMsgs) markStartReached();
+    ok = true;
   } catch (_) { hideTopLoader(); }
   loadingOlder = false;
+  return ok;
+}
+export async function onChatScroll() {
+  Unread.onScroll();
+  SYS.hold(SYS.SCROLL_HOLD);            // never collapse under a moving finger
+  if (dom.chatMsgs.scrollTop > 40) return;
+  await loadOlderPage(450);
 }
 /* who can act on a message, from the viewer's seat */
 function msgPerms(msg) {
   const mine = isMe(msg.senderId);
+  const mod  = !!(S.perms && S.perms.canManage);
   return {
     mine,
     canEdit:   mine && !msg.deleted,
-    canDelete: !msg.deleted && (mine || !!(S.perms && S.perms.canManage)),
+    canDelete: !msg.deleted && (mine || mod),
+    /* mods/host delete directly; reporting would only notify themselves */
+    canReport: !mine && !mod && !msg.deleted && !!msg.senderId,
   };
 }
 function deletedByText(msg) {
@@ -309,7 +325,7 @@ function decorateActions(div, msg) {
   const old = div.querySelector(".msg-actions");
   if (old) old.remove();
   const p = msgPerms(msg);
-  if (!p.canEdit && !p.canDelete) return;
+  if (!p.canEdit && !p.canDelete && !p.canReport) return;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "msg-actions";
@@ -371,7 +387,7 @@ export function buildMsgEl(msg) {
 function actionable(el) {
   if (el.classList.contains("editing")) return false;
   const p = msgPerms(readMsg(el));
-  return p.canEdit || p.canDelete;
+  return p.canEdit || p.canDelete || p.canReport;
 }
 function wireRowInteraction(el) {
   /* desktop: replace the native context menu */
@@ -477,6 +493,33 @@ function liveText(el) {
   if (tag) tag.remove();
   return clone.textContent.trim();
 }
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+/* Bring a message on screen and flash it. Pages back through history if it
+   isn't loaded yet. Resolves false if the message isn't in the log. */
+export async function jumpToMessage(id) {
+  if (!id) return false;
+  /* show the chat pane (goes through the normal tab handlers) */
+  if (!dom.paneChat.classList.contains("active")) dom.tabChat.click();
+  let row = rowById(id);
+  for (let guard = 0; !row && guard < 50; guard++) {
+    while (loadingOlder) await delay(60);          // a scroll-triggered fetch is in flight
+    row = rowById(id);
+    if (row || !hasMoreMsgs || !oldestMsgId) break;
+    if (!(await loadOlderPage(0))) break;
+    row = rowById(id);
+  }
+  if (!row) return false;
+  /* wait past the tab-switch rAF (Unread.onChatShown may snap to the bottom) */
+  await nextFrame(); await nextFrame();
+  SYS.hold(2500);                                   // don't collapse notices mid-scroll
+  row.scrollIntoView({ block: "center", behavior: "smooth" });
+  row.classList.remove("msg-flash");
+  void row.offsetWidth;                             // restart the animation
+  row.classList.add("msg-flash");
+  clearTimeout(row._flashT);
+  row._flashT = setTimeout(() => row.classList.remove("msg-flash"), 2200);
+  return true;
+}
 function autoGrow(ta) {
   ta.style.height = "auto";
   ta.style.height = Math.min(ta.scrollHeight, 140) + "px";
@@ -543,13 +586,23 @@ const MsgMenu = {
     let html = "";
     if (p.canEdit)
       html += '<button type="button" class="msg-menu-item" data-act="edit">Edit</button>';
+    if (p.canReport) {
+      html += reportedIds.has(id)
+        ? '<button type="button" class="msg-menu-item" disabled>Reported ✓</button>'
+        : '<button type="button" class="msg-menu-item" data-act="report">Report</button>' +
+          '<div class="msg-menu-confirm" data-confirm="report" hidden>' +
+            "<span>Report this message to the host &amp; mods?</span>" +
+            '<button type="button" class="msg-menu-item danger" data-act="rep-yes">Yes, report</button>' +
+            '<button type="button" class="msg-menu-item" data-act="confirm-no">Cancel</button>' +
+          "</div>";
+    }
     if (p.canDelete)
       html +=
         '<button type="button" class="msg-menu-item danger" data-act="del">Delete</button>' +
-        '<div class="msg-menu-confirm" data-confirm hidden>' +
+        '<div class="msg-menu-confirm" data-confirm="del" hidden>' +
           "<span>Delete this message?</span>" +
           '<button type="button" class="msg-menu-item danger" data-act="del-yes">Yes, delete</button>' +
-          '<button type="button" class="msg-menu-item" data-act="del-no">Cancel</button>' +
+          '<button type="button" class="msg-menu-item" data-act="confirm-no">Cancel</button>' +
         "</div>";
     if (!html) return;
     if (this.rowEl) this.rowEl.classList.remove("menu-target");
@@ -576,12 +629,11 @@ const MsgMenu = {
     m.style.left = Math.round(Math.min(Math.max(pad, left), vw - mw - pad)) + "px";
     m.style.top  = Math.round(Math.min(Math.max(pad, top),  vh - mh - pad)) + "px";
   },
-  confirm(on) {
+  /* kind = "del" | "report" → show that confirm panel; null → back to the item list */
+  confirm(kind) {
     if (!this.el) return;
-    const del  = this.el.querySelector('[data-act="del"]');
-    const conf = this.el.querySelector("[data-confirm]");
-    if (del)  del.hidden  = on;
-    if (conf) conf.hidden = !on;
+    this.el.querySelectorAll(":scope > .msg-menu-item").forEach((b) => { b.hidden = !!kind; });
+    this.el.querySelectorAll("[data-confirm]").forEach((c) => { c.hidden = c.dataset.confirm !== kind; });
   },
   justOpened() { return Date.now() - this._openedAt < 350; },
   close() {
@@ -634,6 +686,7 @@ function applyClear({ byId, byName }) {
   addSystemMsg((isMe(byId) ? "You" : (byName || "The host")) + " cleared the chat",
                { silent: isMe(byId) });
   markStartReached();
+  reportedIds.clear();
   Unread.toEnd();
 }
 
@@ -691,11 +744,16 @@ export function wireChatActions() {
     if (!item) return;
     const id  = MsgMenu.forId;
     const act = item.dataset.act;
-    if (act === "edit")        { MsgMenu.close(); enterEdit(rowById(id)); }
-    else if (act === "del")    { MsgMenu.confirm(true); }
-    else if (act === "del-no") { MsgMenu.confirm(false); }
+    if (act === "edit")            { MsgMenu.close(); enterEdit(rowById(id)); }
+    else if (act === "del")        { MsgMenu.confirm("del"); }
+    else if (act === "report")     { MsgMenu.confirm("report"); }
+    else if (act === "confirm-no") { MsgMenu.confirm(null); }
     else if (act === "del-yes") {
       if (id && getSocket()) sockEmit("chat-delete", { id });
+      MsgMenu.close();
+    }
+    else if (act === "rep-yes") {
+      if (id && getSocket()) { sockEmit("chat-report", { id }); reportedIds.add(id); }
       MsgMenu.close();
     }
   });

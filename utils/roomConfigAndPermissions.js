@@ -138,6 +138,12 @@ const isScope = (s) => Object.prototype.hasOwnProperty.call(SCOPES, s);
 const canEditRoom = canModerate;   // edit name/desc/mode/tags/visibility/cap
 const isBanned = (room, uid) =>
   (room.bannedUsers || []).some((b) => sameId(b.userId, uid));
+/* ── reports ───────────────────────────────────────────── */
+// anyone may report someone else's live message
+const canReportMessage = (room, msg, uid) =>
+  !!msg && !msg.deleted && !sameId(msg.senderId, uid);
+// who receives / reviews / dismisses reports
+const canReviewReports = canModerate;
 const isVoiceMuted = (room, uid) =>
   (room.voiceMutedUsers || []).some((m) => sameId(m.userId, uid));
 const serializeVoiceMutes = (room) =>
@@ -184,10 +190,27 @@ function serializeMembers(room, privileged) {
     };
   });
 }
+function serializeReport(r) {
+  const reporters = (r.reporters || []).map((x) => ({
+    userId: x.userId.toString(), username: x.username || "Someone", at: x.at,
+  }));
+  return {
+    id:             r._id.toString(),
+    messageId:      r.messageId.toString(),
+    senderId:       r.senderId.toString(),
+    senderName:     r.senderName || "Unknown",
+    text:           r.text || "",
+    messageTs:      r.messageTs || null,
+    messageDeleted: !!r.messageDeleted,
+    reporters,
+    count:          reporters.length,
+    at:             r.updatedAt || r.createdAt,
+  };
+}
 module.exports = {
   ROOM_CAP, MODE_VALUES, validId,
-  sameId, isAdmin, isMod, roleOf, getMember, ensureMember, isBanned, isVoiceMuted, serializeVoiceMutes,
-  canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles, canBan,
+  sameId, isAdmin, isMod, roleOf, getMember, ensureMember, isBanned, isVoiceMuted, serializeVoiceMutes, serializeReport,
+  canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles, canBan, canReportMessage, canReviewReports, 
   canEditMessage, canDeleteMessage, canClearChat, serializeMessage,
   resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue, canQueue, canGrantQueue, SCOPES, isScope,
 };
