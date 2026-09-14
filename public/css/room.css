@@ -1108,6 +1108,39 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .cfg-field .invalid{border-color:#ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.15)}
 .cfg-dirty.nudge{animation:cfgShake .45s ease}
 
+/* reports section and handling */
+/* ── reports section ── */
+.report-card{
+  display:flex;flex-direction:column;gap:.45rem;
+  padding:.55rem .6rem;margin-bottom:.5rem;border-radius:10px;
+  background:var(--surf);border:1px solid var(--card-bdr);
+}
+.report-head{display:flex;align-items:center;gap:.45rem;min-width:0}
+.report-who{display:flex;flex-direction:column;min-width:0;align-items:flex-start}
+.report-by{font-size:.66rem;color:var(--t3)}
+.report-msg{
+  text-align:left;font-size:.74rem;line-height:1.4;color:var(--t2);
+  background:var(--in-bg);border:1px dashed var(--card-bdr);border-radius:8px;
+  padding:.4rem .55rem;cursor:pointer;word-break:break-word;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  transition:border-color .15s;
+}
+.report-msg:hover{border-color:var(--acc)}
+.report-acts{display:flex;gap:.35rem;flex-wrap:wrap}
+.report-acts .cfg-mini{flex:1;min-width:5.5rem}
+/* ── reported-message flash highlight ── */
+.chat-msg.flash{border-radius:9px;animation:msgFlash 2.2s ease both}
+.chat-msg.flash .msg-text{
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent);
+}
+@keyframes msgFlash{
+  0%,55%{background:color-mix(in srgb,var(--acc) 16%,transparent)}
+  100%{background:transparent}
+}
+@media (prefers-reduced-motion:reduce){
+  .chat-msg.flash{animation:none;background:color-mix(in srgb,var(--acc) 12%,transparent)}
+}
+
 
 /* clickable avatar + name in the people list — same affordance as chat */
 button.cfg-av-btn{
@@ -1166,91 +1199,6 @@ button.role-toggle:hover{filter:brightness(1.15);box-shadow:0 0 0 2px var(--acc-
   font-size:.6rem;color:inherit;opacity:.6;cursor:pointer;
 }
 .tag-x:hover{opacity:1}
-
-/* ======== 15b. Reports ======== */
-/* card per reported message — roomy, stacks cleanly on phones */
-.rep-card{
-  display:flex;flex-direction:column;gap:.6rem;
-  margin:.15rem 0 .7rem;padding:.75rem;border-radius:12px;
-  background:var(--surf);border:1px solid var(--card-bdr);
-}
-.rep-card:last-of-type{margin-bottom:.3rem}
-.rep-head{display:flex;align-items:center;gap:.6rem;min-width:0}
-.rep-head .cfg-av{width:2rem;height:2rem;font-size:.75rem}
-.rep-who{display:flex;flex-direction:column;gap:.15rem;min-width:0;flex:1}
-.rep-name{font-size:.85rem;max-width:100%}
-.rep-meta{font-size:.68rem;color:var(--t3);line-height:1.35}
-.rep-link{
-  background:transparent;border:0;padding:0;font:inherit;font-weight:700;
-  color:var(--t2);cursor:pointer;
-  text-decoration:underline transparent;text-underline-offset:2px;transition:text-decoration-color .15s;
-}
-.rep-link:hover{text-decoration-color:currentColor}
-.rep-more{font-weight:700;color:var(--t2);cursor:help}
-.rep-cnt{flex-shrink:0;align-self:flex-start;background:#ef4444;color:#fff}
-/* the reported message — tap to jump */
-.rep-msg{
-  width:100%;text-align:left;cursor:pointer;
-  display:flex;flex-direction:column;gap:.4rem;
-  padding:.55rem .65rem;border-radius:9px;
-  background:var(--in-bg);border:1px solid var(--in-bdr);
-  transition:border-color .15s, box-shadow .15s;
-  color: var(--t1);
-}
-.rep-msg:hover,.rep-msg:focus-visible{
-  outline:none;border-color:var(--acc);box-shadow:0 0 0 2px var(--acc-glow);
-}
-.rep-text{
-  font-size:.74rem;line-height:1.45;color:var(--t2);word-break:break-word;
-  display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;
-}
-.rep-go{
-  display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;
-  font-size:.66rem;font-weight:700;color:var(--acc);
-}
-.rep-go > span:last-child{margin-left:auto}
-.rep-gone{color:var(--t3);font-weight:600;font-style:italic}
-/* actions: big tap targets, side by side */
-.rep-acts{display:flex;gap:.45rem}
-.rep-acts .cfg-mini{flex:1;padding:.5rem .6rem;font-size:.74rem}
-.rep-confirm{
-  display:flex;flex-direction:column;gap:.5rem;padding:.55rem .6rem;border-radius:10px;
-  background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);
-  animation:toastIn .18s ease;
-}
-.rep-confirm .pp-txt{font-size:.76rem}
-/* "look here" flash when arriving from the notification */
-.cfg-flash{animation:cfgFlash 1.6s ease}
-@keyframes cfgFlash{
-  0%,40%{box-shadow:0 0 0 2px var(--acc), 0 0 18px var(--acc-glow)}
-  100%  {box-shadow:0 0 0 0 transparent}
-}
-/* report notification — same shell as .perm-prompt, red accent */
-.report-prompt{border-left:3px solid #ef4444}
-/* disabled "Reported ✓" item in the message menu */
-.msg-menu-item:disabled{opacity:.55;cursor:default}
-.msg-menu-item:disabled:hover{background:transparent;color:var(--t2)}
-/* jump-to-message highlight in the chat: two soft pulses, then back to normal */
-.chat-msg.msg-flash{
-  border-radius:9px;
-  animation:msgFlash 2s ease-out both;
-}
-.chat-msg.msg-flash .msg-text{animation:msgFlashRing 2s ease-out both}
-@keyframes msgFlash{
-  0%  {background:color-mix(in srgb,var(--acc) 26%,transparent)}
-  25% {background:color-mix(in srgb,var(--acc) 8%,transparent)}
-  50% {background:color-mix(in srgb,var(--acc) 26%,transparent)}
-  100%{background:transparent}
-}
-@keyframes msgFlashRing{
-  0%,50%{box-shadow:0 0 0 2px var(--acc)}
-  100%  {box-shadow:0 0 0 0 transparent}
-}
-@media (prefers-reduced-motion:reduce){
-  .chat-msg.msg-flash{animation:none;background:color-mix(in srgb,var(--acc) 18%,transparent)}
-  .chat-msg.msg-flash .msg-text{animation:none}
-  .cfg-flash{animation:none}
-}
 
 /* ======== 16. YouTube letterbox / crop mode ======== */
 /* Applied to .video-container only while a YouTube video is loaded.
