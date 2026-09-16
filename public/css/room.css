@@ -425,6 +425,9 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 }
 .chat-msg:not(.grouped){margin-top:.45rem}          /* air between speakers */
 .chat-msg.self{flex-direction:row-reverse;align-self:flex-end}
+.chat-msg.self .msg-text {
+  text-align: right;
+}
 .chat-msg.grouped .msg-head{display:none}
 .chat-msg.grouped .msg-av{visibility:hidden;height:0}
 @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
