@@ -79,10 +79,12 @@ function serializeMessage(m) {
   };
   if (m.deleted) {
     out.text          = "";
+    out.mediaUrl      = null;
     out.deletedByName = m.deletedByName || null;
     out.deletedByRole = m.deletedByRole || null;
   } else {
-    out.text = m.message;
+    out.text     = m.message;
+    out.mediaUrl = m.mediaUrl || null; // Pass the media link to the frontend 
   }
   return out;
 }
