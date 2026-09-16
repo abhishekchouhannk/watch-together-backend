@@ -337,24 +337,6 @@ function msgBubbleHTML(msg) {
       : "") +
     "</div>";
 }
-/* idempotent — (re)build the ⋯ trigger for the current viewer/role */
-function decorateActions(div, msg) {
-  const old = div.querySelector(".msg-actions");
-  if (old) old.remove();
-  const p = msgPerms(msg);
-  if (!p.canEdit && !p.canDelete && !p.canReport) return;
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "msg-actions";
-  btn.dataset.act = "menu";
-  btn.title = "Message actions";
-  btn.setAttribute("aria-haspopup", "true");
-  btn.setAttribute("aria-label", "Message actions");
-  btn.innerHTML =
-    '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">' +
-    '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
-  (div.querySelector(".msg-line") || div).appendChild(btn);
-}
 /* reconstruct a minimal msg object from a rendered row */
 function readMsg(el) {
   return {
@@ -396,7 +378,6 @@ export function buildMsgEl(msg) {
       "</div>" +
       '<div class="msg-line">' + msgBubbleHTML(msg) + "</div>"
     "</div>";
-  decorateActions(div, msg);       // desktop hover 3-dot (hidden on touch via CSS)
   wireRowInteraction(div);         // desktop right-click + touch long-press
   return div;
 }
@@ -759,21 +740,11 @@ function resetClearBtn() {
 export function applyChatPerms() {
   if (dom.chatClear) dom.chatClear.hidden = !(S.perms && S.perms.isAdmin);
   dom.chatMsgs.querySelectorAll(".chat-msg").forEach((el) => {
-    decorateActions(el, readMsg(el));
     paintRole(el);
   });
 }
 /* message edit/delete + host clear — wired from room-main after wireChatUnread() */
 export function wireChatActions() {
-  // open the per-message menu (desktop 3-dot)
-  dom.chatMsgs.addEventListener("click", (e) => {
-    const trigger = e.target.closest('.msg-actions[data-act="menu"]');
-    if (!trigger) return;
-    const row = trigger.closest(".chat-msg");
-    if (!row) return;
-    e.stopPropagation();
-    MsgMenu.open(row, { anchor: trigger });          // ← was (trigger, row)
-  });
   // menu item clicks (menu lives on <body>)
   MsgMenu.ensure().addEventListener("click", (e) => {
     const item = e.target.closest("[data-act]");
