@@ -1,10 +1,4 @@
 Ongoing Development:
-1. Add feature to delete messages in the chatroom.
-    - Let users delete their own messages
-    - Let moderators delete any messages.
-    - Let admins clear the whole chat.
-    - Let messages be editable by the user who sent them.
-    - Add a feature to report messages in the chatroom. (TOO MANY FEATURES, WILL BE DONE LATER)
 
 Need to work on:
 1. Make the flexbox of the arrows be percentage width of the video container instead of a fixed pixel width or gap.
@@ -39,6 +33,13 @@ Completed:
         >> 1. users can locally mute other remote users or whisper to them
         >> 2. Mods/host can mute remote users for whole room
         >> 3. Added profile panel/modal access on the avatars displayed in the voice chat area
+14. Add feature to delete messages in the chatroom.
+    - Let users delete their own messages
+    - Let moderators delete any messages.
+    - Let admins clear the whole chat.
+    - Let messages be editable by the user who sent them.
+    - Add a feature to report messages in the chatroom.
+        - Done, and also added reports section in the config sheet (room settings).
 
 
 Other important but later -
