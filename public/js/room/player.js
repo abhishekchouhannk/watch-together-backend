@@ -533,7 +533,7 @@ export async function loadVideo(url, fromRemote, opts) {
     const qs = new URLSearchParams({
       enablejsapi: "1", fs: "0", controls: "0", disablekb: "1",
       rel: "0", modestbranding: "1", iv_load_policy: "3",
-      playsinline: "1", autoplay: "0", origin: location.origin,
+      playsinline: "1", autoplay: "0", origin: location.origin, cc_load_policy: "3",
     }).toString();
     dom.videoWrap.innerHTML =
       '<iframe id="ytPlayerDiv" title="YouTube player" frameborder="0"' +
