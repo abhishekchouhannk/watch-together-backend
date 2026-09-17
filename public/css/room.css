@@ -435,7 +435,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
   display:flex;align-items:center;justify-content:center;
   font-size:.62rem;font-weight:700;color:#fff;margin-top:.1rem;
 }
-.msg-body{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+.msg-body{min-width:0;max-width:100%;display:flex;flex-direction:column;align-items:flex-start}
 /* ── name · time ── */
 .msg-head{display:flex;align-items:baseline;gap:.4rem;line-height:1.2;flex-wrap:wrap}
 .msg-name{font-size:.74rem;font-weight:700;color:var(--role-member,var(--t1))}
@@ -455,7 +455,7 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .chat-bar{
   --chat-row:2.1rem;
   display:flex;align-items:flex-end;gap:.4rem;
-  padding:.5rem .55rem;border-top:1px solid var(--card-bdr);flex-shrink:0;
+  padding:.5rem .55rem;flex-shrink:0;
 }
 .chat-input{
   flex:1;min-width:0;display:block;resize:none;
@@ -590,6 +590,234 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .chat-clear-btn.confirm{
   background:color-mix(in srgb,#ef4444 16%,transparent);
   border-color:#ef4444;color:#ef4444;
+}
+
+/* ======== 7c'. Attachment strip — thumbnails only ======== */
+.chat-composer{
+  position:relative;flex-shrink:0;
+  border-top:1px solid var(--card-bdr);
+}
+.chat-attach{
+  display:flex;gap:.4rem;
+  padding:.5rem .55rem 0;
+  overflow-x:auto;overscroll-behavior-x:contain;
+  scrollbar-width:none;
+}
+.chat-attach::-webkit-scrollbar{display:none}
+.chat-attach[hidden]{display:none}
+.chat-attach-item{
+  position:relative;flex:0 0 auto;
+  width:3.5rem;height:3.5rem;border-radius:9px;overflow:hidden;
+  background:color-mix(in srgb,var(--t2) 10%,transparent);
+  border:1px solid var(--card-bdr);
+  animation:attachIn .18s cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes attachIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+.chat-attach-view{
+  display:block;width:100%;height:100%;padding:0;border:0;
+  background:transparent;cursor:zoom-in;
+}
+.chat-attach-view img{display:block;width:100%;height:100%;object-fit:cover;transition:opacity .2s}
+.chat-attach-broken{display:none}
+/* loading shimmer */
+.chat-attach-item.loading img{opacity:0}
+.chat-attach-item.loading::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent 20%,color-mix(in srgb,var(--t2) 14%,transparent) 50%,transparent 80%);
+  background-size:200% 100%;animation:mediaShimmer 1.1s linear infinite;
+}
+/* failed → dashed tile + icon; will be sent as a link */
+.chat-attach-item.broken{border-style:dashed;background:transparent}
+.chat-attach-item.broken img{display:none}
+.chat-attach-item.broken .chat-attach-view{cursor:default;display:flex;align-items:center;justify-content:center}
+.chat-attach-item.broken .chat-attach-broken{display:block;width:1.1rem;height:1.1rem;color:var(--t3)}
+.chat-attach-x{
+  position:absolute;top:.2rem;right:.2rem;
+  width:1.15rem;height:1.15rem;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.6);color:#fff;
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  transition:background .15s,transform .1s;
+}
+.chat-attach-x svg{width:9px;height:9px}
+.chat-attach-x:hover{background:rgba(0,0,0,.85)}
+.chat-attach-x:active{transform:scale(.88)}
+@media (pointer:coarse){
+  .chat-attach-item{width:3.9rem;height:3.9rem}
+  .chat-attach-x{width:1.4rem;height:1.4rem}
+  .chat-attach-x svg{width:10px;height:10px}
+}
+.gif-btn{
+  height:var(--chat-row);padding:0 .55rem;border-radius:9px;flex-shrink:0;align-self:flex-end;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--in-bg);border:1px solid var(--in-bdr);color:var(--t3);
+  font-size:.64rem;font-weight:800;letter-spacing:.08em;line-height:1;
+  transition:color .2s,border-color .2s,background .2s,transform .1s;
+}
+.gif-btn:hover{color:var(--t1)}
+.gif-btn.active{color:var(--acc);border-color:var(--in-foc);box-shadow:0 0 0 3px var(--in-ring)}
+.gif-btn:active{transform:scale(.92)}
+
+/* ======== 7d. GIPHY picker ======== */
+.gif-picker{
+  position:absolute;z-index:40;
+  left:.55rem;right:.55rem;bottom:calc(100% + .4rem);
+  max-width:22rem;margin-left:auto;                 /* right-aligned, full width on narrow panels */
+  height:var(--gif-h,22rem);
+  display:flex;flex-direction:column;
+  background:var(--card);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border:1px solid var(--card-bdr);border-radius:12px;box-shadow:var(--card-sh);
+  overflow:hidden;transform-origin:bottom right;
+  animation:gifIn .16s cubic-bezier(.16,1,.3,1) both;
+}
+.gif-picker[hidden]{display:none}
+@keyframes gifIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+.gif-head{padding:.5rem .5rem .3rem;flex-shrink:0}
+.gif-search{position:relative;display:block}
+.gif-search svg{position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--in-ph);pointer-events:none}
+.gif-search input{
+  width:100%;height:2rem;padding:0 .6rem 0 1.9rem;font-size:.78rem;
+  background:var(--in-bg);border:1px solid var(--in-bdr);border-radius:8px;color:var(--in-t);
+  transition:border-color .2s,box-shadow .2s;
+}
+.gif-search input:focus{outline:none;border-color:var(--in-foc);box-shadow:0 0 0 3px var(--in-ring)}
+.gif-search input::placeholder{color:var(--in-ph)}
+.gif-label{
+  flex-shrink:0;padding:.15rem .65rem .35rem;
+  font-size:.6rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--t3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.gif-scroll{
+  flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  padding:0 .5rem .5rem;
+  scrollbar-width:thin;scrollbar-color:var(--scr-th) transparent;
+}
+.gif-scroll::-webkit-scrollbar{width:6px}
+.gif-scroll::-webkit-scrollbar-thumb{background:var(--scr-th);border-radius:6px}
+.gif-grid{display:flex;gap:.35rem;align-items:flex-start}
+.gif-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:.35rem}
+.gif-tile{
+  position:relative;display:block;width:100%;padding:0;border:0;cursor:pointer;
+  border-radius:7px;overflow:hidden;
+  background:color-mix(in srgb,var(--t2) 10%,transparent);
+  transition:transform .12s;
+}
+.gif-tile img{display:block;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .25s}
+.gif-tile.ready img{opacity:1}
+.gif-tile:hover,.gif-tile:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.gif-tile:active{transform:scale(.97)}
+.gif-status{
+  display:flex;align-items:center;justify-content:center;gap:.4rem;
+  padding:.9rem .5rem;font-size:.72rem;color:var(--t3);text-align:center;
+}
+.gif-status[hidden]{display:none}
+.gif-retry{font-size:.7rem;font-weight:600;color:var(--acc);background:transparent;text-decoration:underline}
+.gif-foot{
+  flex-shrink:0;padding:.3rem .65rem;border-top:1px solid var(--card-bdr);
+  font-size:.58rem;letter-spacing:.04em;color:var(--t3);text-align:right;
+}
+.gif-foot b{color:var(--t2);font-weight:800}
+/* ======== 7e. Media inside messages — always constrained ======== */
+.chat-msg.no-text .msg-line{display:none}            /* GIF-only message: no empty text line */
+.msg-media-wrap{
+  position:relative;display:block;
+  margin-top:.3rem;
+  max-width:18rem;                                   /* absolute cap → intrinsic sizing can't blow out */
+  border-radius:8px;overflow:hidden;line-height:0;
+  background:color-mix(in srgb,var(--t2) 8%,transparent);
+}
+.chat-msg.no-text .msg-media-wrap{margin-top:.15rem}
+.msg-media-link{display:block;cursor:zoom-in}
+.msg-media{
+  display:block;
+  max-width:100%;                                    /* never wider than the message column */
+  max-height:min(15rem,45vh);                        /* never taller than ~15rem */
+  width:auto;height:auto;                            /* keeps aspect ratio under both caps */
+  object-fit:contain;
+  -webkit-user-drag:none;
+  animation:mediaIn .22s ease-out both;
+}
+@keyframes mediaIn{from{opacity:0}to{opacity:1}}
+/* placeholder while loading — reserves space, shimmer */
+.msg-media-wrap.loading{width:min(12rem,100%);aspect-ratio:4/3}
+.msg-media-wrap.loading .msg-media{position:absolute;inset:0;width:100%;height:100%;opacity:0;animation:none}
+.msg-media-wrap.loading::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent 20%,color-mix(in srgb,var(--t2) 12%,transparent) 50%,transparent 80%);
+  background-size:200% 100%;animation:mediaShimmer 1.2s linear infinite;
+}
+@keyframes mediaShimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+.msg-media-wrap.broken{background:transparent;line-height:1.3}
+.msg-media-fallback{
+  display:inline-flex;align-items:center;gap:.3rem;
+  padding:.3rem .55rem;border:1px dashed var(--card-bdr);border-radius:8px;
+  font-size:.72rem;color:var(--t3);text-decoration:none;
+}
+.msg-media-fallback:hover{color:var(--t1)}
+@media(max-width:768px){
+  .msg-media-wrap{max-width:15rem}
+  .msg-media{max-height:min(12rem,40vh)}
+  .gif-picker{max-width:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .gif-picker,.msg-media{animation:none}
+  .msg-media-wrap.loading::after{animation:none}
+}
+
+/* ======== 7f. Lightbox ======== */
+html.lb-lock,html.lb-lock body{overflow:hidden}
+.lb{
+  position:fixed;inset:0;z-index:3000;
+  background:rgba(6,6,10,.88);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  opacity:0;transition:opacity .18s ease;
+}
+.lb[hidden]{display:none}
+.lb.open{opacity:1}
+.lb-stage{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  padding:3.75rem 1rem 1.5rem;
+  padding-top:max(3.75rem,env(safe-area-inset-top));
+}
+.lb-img{
+  display:block;min-width:0;min-height:0;
+  max-width:100%;max-height:100%;
+  width:auto;height:auto;object-fit:contain;
+  border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.5);
+  -webkit-user-drag:none;
+  transform:scale(.965);opacity:1;
+  transition:transform .2s cubic-bezier(.16,1,.3,1),opacity .2s;
+}
+.lb.open .lb-img{transform:none}
+.lb.loading .lb-img{opacity:0}
+.lb-spinner{
+  position:absolute;width:2rem;height:2rem;border-radius:50%;
+  border:2px solid rgba(255,255,255,.22);border-top-color:#fff;
+  animation:lbSpin .8s linear infinite;
+  opacity:0;transition:opacity .2s;pointer-events:none;
+}
+.lb.loading .lb-spinner{opacity:1}
+@keyframes lbSpin{to{transform:rotate(360deg)}}
+.lb-error{display:none;color:rgba(255,255,255,.7);font-size:.85rem}
+.lb.error .lb-error{display:block}
+.lb.error .lb-img,.lb.error .lb-spinner{display:none}
+.lb-btn{
+  position:absolute;top:.75rem;
+  width:2.5rem;height:2.5rem;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.1);color:#fff;
+  transition:background .15s,transform .1s;
+}
+.lb-btn svg{width:17px;height:17px}
+.lb-btn:hover{background:rgba(255,255,255,.2)}
+.lb-btn:active{transform:scale(.92)}
+.lb-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.lb-close{right:.75rem}
+.lb-open{right:3.75rem}
+@media (prefers-reduced-motion:reduce){
+  .chat-attach-item,.lb,.lb-img{animation:none;transition:none}
+  .chat-attach-item.loading::after{animation:none}
 }
 
 /* ═══════════ SYSTEM / ROOM-UPDATE NOTICES (ephemeral) ═══════════ */

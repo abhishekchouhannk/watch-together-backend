@@ -72,3 +72,12 @@ export const VOICE_SDK_URL =
 export const VOICE_MAX_SLOTS       = 9;                 // Alt+1 … Alt+9  (ROOM_CAP − 1)
 export const VOICE_AUTOCONNECT     = false;             // true → join voice (muted) on load
 export const VOICE_RAIL_AUTO_CLOSE = RAIL_AUTO_CLOSE;   // reuse the reaction-rail timing
+
+/* ── GIPHY ── */
+export const GIPHY_KEY    = "7fJIJT9ne9wVuiN1K5LUK9obiezwifEW";
+export const GIPHY_RATING = "r";          // g | pg | pg-13 | r
+/* true  → clicking a GIF sends it immediately (Discord-style)
+   false → it's staged in the preview strip so the user can add a caption */
+export const GIF_INSTANT_SEND = true;
+/* max images per send — each becomes its own message; extra links stay as text */
+export const MAX_ATTACHMENTS = 4;

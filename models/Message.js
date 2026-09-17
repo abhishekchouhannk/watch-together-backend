@@ -1,12 +1,14 @@
 // models/Message.js
 const mongoose = require("mongoose");
-/** Stores all the messages throughout the application. Messages for a certain room can be grouped by using RoomId */
 const MessageSchema = new mongoose.Schema({
   roomId:     { type: String, required: true },
   senderId:   { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   senderName: { type: String, required: true },
-  // required only while the message is alive — deleted messages are scrubbed to ""
-  message:    { type: String, required: function () { return !this.deleted; }, default: "" },
+  // text is optional when the message carries media (GIF-only), and scrubbed to "" on delete.
+  // NB: mongoose treats "" as missing for `required` strings, hence the function.
+  message:    { type: String, required: function () { return !this.deleted && !this.mediaUrl; }, default: "" },
+  // https image/GIF url (validated in the socket handler), scrubbed on delete
+  mediaUrl:   { type: String, default: null, maxlength: 2048 },
   timestamp:  { type: Date, default: Date.now },
   // ── edit / delete bookkeeping ──
   editedAt:      { type: Date, default: null },

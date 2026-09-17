@@ -21,6 +21,25 @@ const advanceLock = new Map();              // roomId → ts; de-dupes concurren
 const pendingSeeks = new Map();             // roomId → { seq, currentTime, waiting: Set, ready: Set, timer }
 const roomSeekSeqs = new Map();             // roomId → number
 const newItemId = () => crypto.randomBytes(8).toString("hex");
+
+// for giphy handling
+const MEDIA_URL_MAX = 2048;
+const MEDIA_EXT = /\.(?:png|jpe?g|gif)$/i;
+function cleanText(text) {
+  return (typeof text === "string" ? text : "")
+    .replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 500);
+}
+/* mirrors normalizeImageUrl() in public/js/media-embed.js — keep in sync */
+function cleanMediaUrl(raw) {
+  if (typeof raw !== "string" || !raw || raw.length > MEDIA_URL_MAX) return null;
+  let u;
+  try { u = new URL(raw); } catch (_) { return null; }
+  if (u.protocol !== "https:" || u.username || u.password) return null;
+  if (!MEDIA_EXT.test(u.pathname)) return null;
+  return u.href;
+}
+// for giphy handling (this above block)
+// ----------------------------------------------------------------------------------
 const voiceMutePayload = (room) => ({ muted: serializeVoiceMutes(room) });
 function validUrl(u) {
   try { const x = new URL(u); return /^https?:$/.test(x.protocol) && u.length <= 2048; }
@@ -291,6 +310,7 @@ const presencePayload = (room) => ({
   participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
   count: room.participants.length,
 });
+
 module.exports = function registerRoomHandlers(io, socket) {
   const user = socket.data.user;
   socket.on("join-room", async ({ roomId }) => {
@@ -361,35 +381,53 @@ module.exports = function registerRoomHandlers(io, socket) {
       socket.emit("room-error", { message: "Failed to join room" });
     }
   });
-  socket.on("chat-message", async ({ text }) => {
-    try {
-      const roomId = socket.data.roomId;
-      if (!roomId) return;
-      const clean = (text || "").replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 500);
-      if (!clean) return;
-      const msg = await Message.create({ roomId, senderId: user.id, senderName: user.username, message: clean });
-      io.to(roomId).emit("chat-message", {
-        id: msg._id.toString(), senderId: user.id, username: user.username,
-        text: clean, timestamp: msg.timestamp,
-      });
-    } catch (err) { console.error("chat-message error:", err); }
+
+  /* ── chat-message: strict FIFO per socket ──────────────────
+    A send with N images emits N events back to back. Each handler awaits the DB,
+    so without a queue they could finish — and broadcast — out of order. */
+const CHAT_QUEUE_MAX = 20;
+let chatChain = Promise.resolve();
+let chatPending = 0;
+
+async function handleChatMessage(payload) {
+  try {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    const { text, mediaUrl } = payload || {};
+    const clean = cleanText(text);
+    const media = cleanMediaUrl(mediaUrl);
+    if (!clean && !media) return;
+    const msg = await Message.create({
+      roomId, senderId: user.id, senderName: user.username,
+      message: clean, mediaUrl: media,
+    });
+    io.to(roomId).emit("chat-message", {
+      id: msg._id.toString(), senderId: user.id, username: user.username,
+      text: clean, mediaUrl: media, timestamp: msg.timestamp,
+    });
+  } catch (err) { console.error("chat-message error:", err); }     // never rejects → chain survives
+}
+  socket.on("chat-message", (payload) => {
+    if (chatPending >= CHAT_QUEUE_MAX) return;             // flood guard
+    chatPending++;
+    chatChain = chatChain
+      .then(() => handleChatMessage(payload))
+      .finally(() => { chatPending--; });
   });
-  /* ── edit a message (author only) ───────────────────────── */
-  socket.on("chat-edit", async ({ id, text }) => {
+  /* ── edit a message (author only) — the caption may be emptied if media exists ── */
+  socket.on("chat-edit", async ({ id, text } = {}) => {
     try {
       const roomId = socket.data.roomId;
       if (!roomId || !validId(id)) return;
-      const clean = (text || "").replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 500);
-      if (!clean) {
-        return socket.emit("perm-toast", {
-          message: "Message can't be empty — delete it instead", type: "error",
-        });
-      }
+      const clean = cleanText(text);
       const msg = await Message.findById(id);
       if (!msg || msg.roomId !== roomId || msg.deleted) return;
       if (!sameId(msg.senderId, user.id)) {
+        return socket.emit("perm-toast", { message: "You can only edit your own messages", type: "error" });
+      }
+      if (!clean && !msg.mediaUrl) {
         return socket.emit("perm-toast", {
-          message: "You can only edit your own messages", type: "error",
+          message: "Message can't be empty — delete it instead", type: "error",
         });
       }
       if (msg.message === clean) return;                 // no-op
@@ -423,6 +461,7 @@ module.exports = function registerRoomHandlers(io, socket) {
       msg.deletedByName = user.username;
       msg.deletedByRole = role;
       msg.message       = "";                            // scrub text at rest
+      msg.mediaUrl      = null;                          // …and the media link
       await msg.save();
       io.to(roomId).emit("chat-deleted", {
         id: msg._id.toString(),
@@ -480,7 +519,8 @@ module.exports = function registerRoomHandlers(io, socket) {
           { roomId, messageId: msg._id, "reporters.userId": { $ne: user.id } },
           {
             $set:  { senderId: msg.senderId, senderName: msg.senderName,
-                     text: msg.message, messageTs: msg.timestamp, messageDeleted: false },
+                     text: msg.message || (msg.mediaUrl ? "[image] " + msg.mediaUrl : ""),
+                     messageTs: msg.timestamp, messageDeleted: false },
             $push: { reporters: { userId: user.id, username: user.username, at: new Date() } },
           },
           { upsert: true, new: true, setDefaultsOnInsert: true }

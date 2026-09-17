@@ -45,12 +45,16 @@
  *      dom.chatJumpN, dom.tabChat, dom.paneChat
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { roomId, GROUP_WINDOW } from "./config.js";
+import { roomId, GROUP_WINDOW, GIF_INSTANT_SEND } from "./config.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
 import { esc, fmtMsgStamp, fmtMsgFull, avColor, fmtBadge, isMe, delay } from "./utils.js";
 import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onUserJoined, onUserLeft } from "./socket-core.js";
+import { normalizeImageUrl } from "./chat_modules/media-embed.js";
+import { wireGifPicker, closeGifPicker } from "./chat_modules/gif-picker.js";
+import { wireAttachments, takeOutgoing, resetAttachments, stageGif } from "./chat_modules/chat-attach.js";
+import { wireLightbox } from "./chat_modules/lightbox.js";
 /* ── history pagination bookkeeping ── */
 let startMarkerShown = false;
 let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
@@ -250,12 +254,89 @@ export const SYS = {
     if (el.dataset.unread === "1") { delete el.dataset.unread; Unread.drop(1); }
   },
 };
+
+function onGifPicked({ url }) {
+  const clean = normalizeImageUrl(url);
+  if (!clean) return;
+  if (!GIF_INSTANT_SEND) {
+    stageGif(clean);                                       // joins the thumbnail row
+    dom.chatInput.focus();
+    return;
+  }
+  if (!getSocket()) return;
+  sockEmit("chat-message", { text: "", mediaUrl: clean }); // the typed draft stays untouched
+  Unread.stick = true;
+  Unread.clear();
+  if (matchMedia("(hover: hover)").matches) dom.chatInput.focus();
+}
+/* ══════════════════════════════════════
+   MESSAGE MEDIA — <img class="msg-media"> under .msg-text
+   Images change height when they load. A ResizeObserver keeps the log
+   stable: pinned → stay pinned; growth ABOVE the viewport → compensate
+   scrollTop so what you're reading doesn't jump.
+   ══════════════════════════════════════ */
+const mediaRO = typeof ResizeObserver === "function" ? new ResizeObserver(onMediaResize) : null;
+const mediaH  = new WeakMap();
+function onMediaResize(entries) {
+  const c = dom.chatMsgs;
+  if (!c.clientHeight) return;                   // pane hidden → every size is 0, ignore
+  const viewTop = c.getBoundingClientRect().top;
+  let shift = 0, changed = false;
+  for (const { target } of entries) {
+    if (!target.isConnected) continue;
+    const h = target.offsetHeight, prev = mediaH.get(target);
+    mediaH.set(target, h);
+    if (prev === undefined || prev === h) continue;
+    changed = true;
+    if (target.getBoundingClientRect().top < viewTop) shift += h - prev;
+  }
+  if (!changed) return;
+  if (Unread.stick) Unread.toEnd();
+  else if (shift) c.scrollTop += shift;
+}
+function mediaHTML(url) {
+  if (!url) return "";
+  const u = esc(url);
+  return '<div class="msg-media-wrap loading">' +
+    '<a class="msg-media-link" href="' + u + '" target="_blank" rel="noopener noreferrer nofollow" ' +
+       'aria-label="View image">' +
+      '<img class="msg-media" src="' + u + '" alt="" loading="lazy" decoding="async" ' +
+           'referrerpolicy="no-referrer" draggable="false">' +
+    "</a></div>";
+}
+function mountMedia(row) {
+  const wrap = row.querySelector(".msg-media-wrap");
+  const img  = wrap && wrap.querySelector(".msg-media");
+  if (!img) return;
+  img.addEventListener("load", () => wrap.classList.remove("loading"), { once: true });
+  img.addEventListener("error", () => {
+    const url = img.getAttribute("src") || "";
+    wrap.className = "msg-media-wrap broken";
+    wrap.innerHTML = '<a class="msg-media-fallback" href="' + esc(url) + '" target="_blank" ' +
+                     'rel="noopener noreferrer nofollow">🖼️ Image unavailable</a>';
+  }, { once: true });
+  if (mediaRO) mediaRO.observe(wrap);
+}
+/* scroll-stable removal (used on delete) */
+function removeMedia(row) {
+  const wrap = row.querySelector(".msg-media-wrap");
+  if (!wrap) return;
+  const c = dom.chatMsgs;
+  const above  = c.clientHeight > 0 && wrap.getBoundingClientRect().top < c.getBoundingClientRect().top;
+  const before = c.scrollHeight, top = c.scrollTop;
+  if (mediaRO) mediaRO.unobserve(wrap);
+  wrap.remove();
+  if (above) c.scrollTop = Math.max(0, top - (before - c.scrollHeight));
+}
 /* ═══════ CHAT ═══════ */
 export function sendMessage() {
-  const text = dom.chatInput.value.trim();
-  if (!text || !getSocket()) return;
-  sockEmit("chat-message", { text });
+  if (!getSocket()) return;
+  /* [{ text, mediaUrl: img1 }, { text: "", mediaUrl: img2 }, …] — one message per image */
+  const batch = takeOutgoing();
+  if (!batch.length) return;
+  batch.forEach((payload) => sockEmit("chat-message", payload));  // server keeps them in order
   dom.chatInput.value = "";
+  resetAttachments();
   growChatInput();
   dom.chatInput.focus();
   Unread.stick = true;
@@ -331,7 +412,7 @@ function deletedByText(msg) {
 function msgBubbleHTML(msg) {
   if (msg.deleted)
     return '<div class="msg-text msg-deleted">Message deleted' + deletedByText(msg) + "</div>";
-  return '<div class="msg-text">' + esc(msg.text) +
+  return '<div class="msg-text">' + esc(msg.text || "") +
     (msg.editedAt
       ? ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgFull(msg.editedAt)) + '">(edited)</span>'
       : "") +
@@ -344,6 +425,7 @@ function readMsg(el) {
     senderId:      el.dataset.senderId || null,
     deleted:       el.classList.contains("deleted"),
     editedAt:      el.dataset.edited ? 1 : null,
+    hasMedia:      el.dataset.media === "1",
     deletedByRole: el.dataset.delRole || null,
     deletedByName: el.dataset.delName || null,
   };
@@ -352,13 +434,18 @@ export function buildMsgEl(msg) {
   const self = msg.senderId && S.userId && msg.senderId.toString() === S.userId;
   const c = avColor(msg.username), ini = (msg.username || "?")[0].toUpperCase();
   const uid = msg.senderId ? msg.senderId.toString() : "";
+  /* re-validate even server data: only https image links ever reach an <img> */
+  const media  = !msg.deleted ? normalizeImageUrl(msg.mediaUrl) : null;
+  const noText = !msg.deleted && !(msg.text && String(msg.text).trim());
   const div = document.createElement("div");
-  div.className = "chat-msg" + (self ? " self" : "") + (msg.deleted ? " deleted" : "");
+  div.className = "chat-msg" + (self ? " self" : "") + (msg.deleted ? " deleted" : "") +
+                  (media ? " has-media" : "") + (noText ? " no-text" : "");
   div.dataset.sender   = msg.senderId || msg.username;
   div.dataset.senderId = uid;
-  div.dataset.role = roleOfUid(uid);
+  div.dataset.role     = roleOfUid(uid);
   div.dataset.id       = msg.id || "";
   div.dataset.ts       = new Date(msg.timestamp || Date.now()).getTime();
+  if (media)             div.dataset.media   = "1";
   if (msg.editedAt)      div.dataset.edited  = "1";
   if (msg.deletedByRole) div.dataset.delRole = msg.deletedByRole;
   if (msg.deletedByName) div.dataset.delName = msg.deletedByName;
@@ -376,9 +463,11 @@ export function buildMsgEl(msg) {
         '<time class="msg-ts" datetime="' + new Date(msg.timestamp || Date.now()).toISOString() +
           '" title="' + esc(fmtMsgFull(msg.timestamp)) + '">' + esc(fmtMsgStamp(msg.timestamp)) + "</time>" +
       "</div>" +
-      '<div class="msg-line">' + msgBubbleHTML(msg) + "</div>"
-    "</div>";
-  wireRowInteraction(div);         // desktop right-click + touch long-press
+      '<div class="msg-line">' + msgBubbleHTML(msg) + "</div>" +
+      mediaHTML(media) +
+    "</div>";                                              // ← the "+" that was missing
+  if (media) mountMedia(div);
+  wireRowInteraction(div);
   return div;
 }
 /* ── right-click (desktop) + long-press (touch) open the same menu ──
@@ -558,9 +647,10 @@ function enterEdit(el) {
   const cancel = () => exitEdit(el);
   const save = () => {
     const next = ta.value.trim();
-    if (next && next !== current && getSocket())
+    const hasMedia = el.dataset.media === "1";             // a GIF/image can live without a caption
+    if ((next || hasMedia) && next !== current && getSocket())
       sockEmit("chat-edit", { id: el.dataset.id, text: next });
-    exitEdit(el);                               // server broadcast repaints the bubble
+    exitEdit(el);                                          // server broadcast repaints the bubble
   };
   box.querySelector(".msg-edit-cancel").onclick = cancel;
   box.querySelector(".msg-edit-save").onclick   = save;
@@ -662,10 +752,11 @@ function applyEdit({ id, text, editedAt }) {
   if (!el || el.classList.contains("deleted")) return;
   exitEdit(el);
   el.dataset.edited = "1";
+  el.classList.toggle("no-text", !text);
   const textEl = el.querySelector(".msg-text");
   if (textEl)
-    textEl.innerHTML = esc(text) +
-      ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgFull(editedAt)) + '">(edited)</span>'
+    textEl.innerHTML = esc(text || "") +
+      ' <span class="msg-edited" title="' + esc("Edited " + fmtMsgFull(editedAt)) + '">(edited)</span>';
 }
 function applyDelete({ id, byId, byName, byRole }) {
   if (MsgMenu.forId === id) MsgMenu.close();
@@ -673,7 +764,9 @@ function applyDelete({ id, byId, byName, byRole }) {
   if (!el) return;
   exitEdit(el);
   el.classList.add("deleted");
-  delete el.dataset.edited;
+  removeMedia(el);
+  delete el.dataset.media;
+  el.classList.remove("has-media", "no-text");
   el.dataset.delRole = byRole || "";
   el.dataset.delName = byName || "";
   const trigger = el.querySelector(".msg-actions");
@@ -688,6 +781,7 @@ function applyDelete({ id, byId, byName, byRole }) {
 }
 function applyClear({ byId, byName }) {
   MsgMenu.close();
+  if (mediaRO) mediaRO.disconnect();
   dom.chatMsgs.querySelectorAll(".chat-msg, .chat-loader, .chat-start")
     .forEach((el) => el.remove());
   oldestMsgId = null;
@@ -710,12 +804,27 @@ export function wireChatInput() {
   $("sendBtn").onclick = sendMessage;
   dom.chatInput.addEventListener("input", growChatInput);
   dom.chatInput.addEventListener("keydown", (e) => {
-    if (e.isComposing) return;                       // IME candidate, not a send
+    if (e.isComposing) return;                             // IME candidate, not a send
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  });                                                // Shift+Enter → newline
+  });                                                      // Shift+Enter → newline
   window.addEventListener("resize", () => autoGrow(dom.chatInput));
   dom.chatMsgs.addEventListener("scroll", onChatScroll);
   autoGrow(dom.chatInput);
+  /* image links → thumbnails. The strip and any text removal change the composer
+     height, so re-measure and keep the log pinned around every change. */
+  wireAttachments({
+    input: dom.chatInput,
+    strip: $("chatAttach"),
+    layout: (mutate) => {
+      const pinned = Unread.atBottom(8);
+      mutate();
+      autoGrow(dom.chatInput);
+      if (pinned) Unread.toEnd();
+    },
+  });
+  wireGifPicker({ onPick: onGifPicked });
+  document.querySelectorAll(".sp-tab").forEach((t) => t.addEventListener("click", closeGifPicker));
+  wireLightbox(dom.chatMsgs);                              // .msg-media clicks → fullscreen viewer
 }
 /* ── side-panel unread ── — the late block of wireEvents() */
 export function wireChatUnread() {
