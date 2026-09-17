@@ -12,6 +12,8 @@ const {
   canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope,
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
+const { logRoomEvent, announce, logJoin, logLeave } = require("../utils/roomEvents");
+
 const recentKicks = new Map();                       // "roomId:userId" → expiry ms
 const KICK_COOLDOWN = 10000;
 
