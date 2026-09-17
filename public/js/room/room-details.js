@@ -17,7 +17,7 @@
  * State touched:  S.detailsOpen (null → bool on first render) — in place.
  * State read:     S.room
  * DOM touched:    dom.hdrName, dom.hdrBadge, dom.hdrDot, dom.details,
- *                 dom.chatOnline
+ *                 dom.chatOnline (commented out for now)
  * ───────────────────────────────────────────────────────────── */
 "use strict";
 import { MODES } from "./config.js";
@@ -74,7 +74,7 @@ export function renderDetails() {
   dom.details.classList.add("rd-loaded");
   dom.details.classList.toggle("expanded", S.detailsOpen);
   dom.details.setAttribute("aria-expanded", String(S.detailsOpen));
-  dom.chatOnline.textContent = parts.length + " in room";
+  // dom.chatOnline.textContent = parts.length + " in room";
 }
 // update everything together
 export function renderRoomDetails() {

@@ -968,7 +968,14 @@ async function handleChatMessage(payload) {
     else if (i === room.queueIndex) room.queueIndex = -1;   // keep playing, just detach
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    sysMsg(io, roomId, `${user.username} removed “${gone.title}” from the queue`, user.id);
+    // NEW: Call announce directly instead of sysMsg
+    announce(io, roomId, {
+      kind: "queue",
+      action: "queue.remove",
+      actor: user, // 'user' works perfectly here because it is defined in the handler!
+      text: "{actor} removed {detail} from the queue",
+      detail: gone.title
+    });
   }));
   socket.on("queue-move", queueAction(async (room, roomId, { id, to } = {}) => {
     const from = findItem(room, id);
