@@ -4,7 +4,7 @@ const router = express.Router();
 const Room = require('../models/Room');
 const Message = require('../models/Message');
 const { authenticateToken } = require('../middleware/auth');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const { sanitizeRoomPatch, serializeMessage, canModerate, isBanned, ROOM_CAP } = require('../utils/roomConfigAndPermissions');
 
 // Get user's joined rooms
@@ -88,7 +88,7 @@ router.post('/create', authenticateToken, async (req, res) => {
     if (!Number.isInteger(cap)) cap = ROOM_CAP;
     cap = Math.min(ROOM_CAP, Math.max(2, cap));
     const newRoom = new Room({
-      roomId: uuidv4(), roomName, description, mode,
+      roomId: crypto.randomUUID(), roomName, description, mode,
       maxParticipants: cap,
       isPublic, tags, video, thumbnail,
       admin: { userId: req.user.id, username: req.user.username },
