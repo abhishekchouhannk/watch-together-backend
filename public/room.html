@@ -475,18 +475,23 @@
           </div>
           <div class="sp-panes">
             <!-- ── CHAT ── -->
-            <section class="sp-pane active" id="paneChat" role="tabpanel">
-              <div class="chat-scroll-wrap">
-                <div class="chat-messages" id="chatMessages"></div>
-                <button class="chat-jump" id="chatJump" type="button" hidden>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                      stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                  <span id="chatJumpN">1</span> new
-                </button>
+            <section class="sp-pane active" id="paneChat" role="tabpanel" data-view="chat">
+              <!-- both views stay laid out; only one is visible → neither loses its scroll position -->
+              <div class="chat-stage" id="chatStage">
+                <div class="chat-scroll-wrap">
+                  <div class="chat-messages" id="chatMessages"></div>
+                  <button class="chat-jump" id="chatJump" type="button" hidden>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                    <span id="chatJumpN">1</span> new
+                  </button>
+                </div>
+                <div class="sys-log-wrap" id="sysLogWrap" aria-hidden="true" inert>
+                  <div class="sys-log" id="sysLog" role="log" aria-label="System transcript" aria-live="off" tabindex="0"></div>
+                </div>
               </div>
-              <!-- composer = GIF popover + attachment preview + input row -->
               <div class="chat-composer" id="chatComposer">
                 <!-- GIPHY picker (absolutely positioned above the composer) -->
                 <div class="gif-picker" id="gifPicker" role="dialog" aria-label="Choose a GIF" hidden>
@@ -510,20 +515,35 @@
                   </div>
                   <div class="gif-foot">Powered by <b>GIPHY</b></div>
                 </div>
-                <!-- "image recognised" preview — shown when the textarea contains an image link -->
-                <!-- attachment strip: a row of thumbnails, rendered by chat-attach.js -->
+                <!-- attachment strip: unchanged -->
                 <div class="chat-attach" id="chatAttach" role="list" aria-label="Attachments" hidden></div>
                 <div class="chat-bar">
-                  <button class="chat-clear-btn" id="chatClearBtn" type="button"
-                          title="Clear chat for everyone" data-confirm="0" hidden>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="3 6 5 6 21 6"/>
-                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                      <path d="M10 11v6M14 11v6"/>
-                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-                    </svg>
-                  </button>
+                  <!-- LEFT TOOLS — members/mods: just the Sys toggle. Host: trigger + upward menu (Sys moves in there) -->
+                  <div class="chat-tools" id="chatTools" data-mode="member">
+                    <button class="chat-tool sys-toggle" id="sysToggle" type="button"
+                            aria-pressed="false" aria-controls="sysLogWrap" title="System transcript">Sys</button>
+                    <button class="chat-tool chat-tools-trigger" id="chatToolsTrigger" type="button"
+                            aria-haspopup="true" aria-expanded="false" aria-controls="chatToolsMenu"
+                            title="Chat tools" hidden>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+                          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="6 15 12 9 18 15"/>
+                      </svg>
+                    </button>
+                    <div class="chat-tools-menu" id="chatToolsMenu" hidden>
+                      <button class="chat-clear-btn" id="chatClearBtn" type="button"
+                              title="Clear chat for everyone" data-confirm="0" hidden>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="3 6 5 6 21 6"/>
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                          <path d="M10 11v6M14 11v6"/>
+                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                        </svg>
+                      </button>
+                      <!-- #sysToggle is moved here (below the trash, nearest the trigger) for the host -->
+                    </div>
+                  </div>
                   <textarea class="chat-input" id="chatInput" rows="1"
                     placeholder="Type a message…" autocomplete="off" maxlength="500"
                     enterkeyhint="send" aria-label="Message"></textarea>

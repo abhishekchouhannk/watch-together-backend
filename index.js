@@ -72,6 +72,12 @@ const server = http.createServer(app); // <-- wrap express
 const initSocket = require("./socket"); // our socket bootstrap
 initSocket(server);
 
+// Capture the io instance (ensure socket.js file has 'return io; )
+const io = initSocket(server);
+
+// Attaches socket to Express so routes/rooms.js can use req.app.get("io")
+app.set("io", io);
+
 //  PORT CONFIGURATION
 const SERVER_PORT = process.env.SERVER_PORT || 5000;
 const FRONTEND_URL = process.env.FRONTEND_URL || `http://localhost:3000`;

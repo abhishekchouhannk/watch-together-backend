@@ -111,7 +111,7 @@ function emitLoad(io, roomId, it, by, play) {
 }
 const findItem = (room, id) => (room.queue || []).findIndex((i) => i.itemId === id);
 function sysMsg(io, roomId, text, byId = null) {
-  io.to(roomId).emit("chat-system", { text, byId: byId ? String(byId) : null });
+  announce(io, roomId, { kind: "queue", action: "queue.clear", actor: user, text: "{actor} cleared the playlist" });
 }
 /* emit only to sockets in the room whose user may review reports */
 async function emitToMods(io, room, event, payload) {
@@ -278,6 +278,7 @@ async function handleLeave(io, socket) {
     count: room.participants.length,
   });
   io.to(roomId).emit("user-left", { username: user.username });
+  logLeave(io, roomId, user);
   checkSeekBarrier(io, roomId);
 }
 /* a kick must survive the client's auto-reconnect for a few seconds,
@@ -377,7 +378,10 @@ module.exports = function registerRoomHandlers(io, socket) {
         count: room.participants.length,
       });
       await broadcastPermissions(io, roomId, room);     // roster/badges for everyone (incl. admin)
-      if (isNewParticipant) socket.to(roomId).emit("user-joined", { username: user.username });
+      if (isNewParticipant) {
+        socket.to(roomId).emit("user-joined", { username: user.username });
+        logJoin(io, roomId, user);
+      }
     } catch (err) {
       console.error("join-room error:", err);
       socket.emit("room-error", { message: "Failed to join room" });
@@ -476,6 +480,11 @@ async function handleChatMessage(payload) {
       } else {
         const r = await Report.deleteMany({ roomId, messageId: msg._id });
         if (r.deletedCount) await pushReports(io, room);
+        logRoomEvent(io, roomId, {
+          kind: "chat", action: "chat.delete", actor: user,
+          target: { id: msg.senderId, username: msg.senderName },
+          text: "{actor} deleted a message from {target}",
+        });
       }
     } catch (err) { console.error("chat-delete error:", err); }
   });
@@ -492,9 +501,16 @@ async function handleChatMessage(payload) {
         });
       }
       await Message.deleteMany({ roomId });
+      const { deletedCount } = await Message.deleteMany({ roomId });
       await Report.deleteMany({ roomId });
       io.to(roomId).emit("chat-cleared", {
         byId: String(user.id), byName: user.username,
+      });
+      logRoomEvent(io, roomId, {
+        kind: "chat", action: "chat.clear", actor: user,
+        text: "{actor} cleared the chat ({detail})",
+        detail: deletedCount === 1 ? "1 message" : deletedCount + " messages",
+        meta: { count: deletedCount },
       });
       await pushReports(io, room);
     } catch (err) { console.error("chat-clear error:", err); }

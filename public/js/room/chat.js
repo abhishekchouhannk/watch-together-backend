@@ -53,8 +53,9 @@ import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onUserJoined, onUserLeft } from "./socket-core.js";
 import { normalizeImageUrl } from "./chat_modules/media-embed.js";
 import { wireGifPicker, closeGifPicker } from "./chat_modules/gif-picker.js";
-import { wireAttachments, takeOutgoing, resetAttachments, stageGif } from "./chat_modules/chat-attach.js";
+import { wireAttachments, takeOutgoing, resetAttachments, stageGif, suspendAttachments } from "./chat_modules/chat-attach.js";
 import { wireLightbox } from "./chat_modules/lightbox.js";
+import { wireSysLog, isSysView, setSysView, setToolsMode, closeChatTools, onSysPaneShown } from "./chat_modules/sys-log.js";
 /* ── history pagination bookkeeping ── */
 let startMarkerShown = false;
 let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
@@ -84,7 +85,7 @@ export const Unread = {
   stick: true,            // should the log snap to the bottom next time it's shown?
   _title: document.title,
   _raf: 0,
-  chatOnScreen() { return dom.paneChat.classList.contains("active"); },
+  chatOnScreen() { return dom.paneChat.classList.contains("active") && !isSysView(); },
   atBottom(slack) {
     const el = dom.chatMsgs;
     return el.scrollHeight - el.scrollTop - el.clientHeight <= (slack == null ? 120 : slack);
@@ -206,7 +207,7 @@ export const SYS = {
   /* is this notice actually on screen *and* being looked at? */
   visible(el) {
     if (document.hidden) return false;
-    if (!dom.paneChat.classList.contains("active")) return false;
+    if (!Unread.chatOnScreen()) return false;          // other tab, or the Sys view is up
     const c = dom.chatMsgs;
     if (!c.clientHeight || !el.offsetParent) return false;   // display:none ⇒ not rendered
     const r = el.getBoundingClientRect(), cr = c.getBoundingClientRect();
@@ -256,6 +257,7 @@ export const SYS = {
 };
 
 function onGifPicked({ url }) {
+  if (isSysView()) return;
   const clean = normalizeImageUrl(url);
   if (!clean) return;
   if (!GIF_INSTANT_SEND) {
@@ -330,7 +332,7 @@ function removeMedia(row) {
 }
 /* ═══════ CHAT ═══════ */
 export function sendMessage() {
-  if (!getSocket()) return;
+  if (!getSocket() || isSysView()) return;
   /* [{ text, mediaUrl: img1 }, { text: "", mediaUrl: img2 }, …] — one message per image */
   const batch = takeOutgoing();
   if (!batch.length) return;
@@ -587,6 +589,7 @@ const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
    isn't loaded yet. Resolves false if the message isn't in the log. */
 export async function jumpToMessage(id) {
   if (!id) return false;
+  if (isSysView()) setSysView(false);                     // e.g. opened from a report
   /* show the chat pane (goes through the normal tab handlers) */
   if (!dom.paneChat.classList.contains("active")) dom.tabChat.click();
   let row = rowById(id);
@@ -623,6 +626,35 @@ function growChatInput() {
   const pinned = Unread.atBottom(8);
   autoGrow(dom.chatInput);
   if (pinned) Unread.toEnd();
+}
+/* Sys view: keep the row, make it read-only. The draft is parked so the
+   placeholder is visible, then restored (with its caret) on the way back. */
+const READ_ONLY_PH = "System Transcript - Read Only";
+let parkedDraft = null, normalPh = null;
+function lockComposer(locked) {
+  const ta = dom.chatInput, send = $("sendBtn"), gif = $("gifBtn");
+  if (locked) {
+    closeGifPicker();
+    suspendAttachments(true);
+    if (parkedDraft === null)
+      parkedDraft = { value: ta.value, s: ta.selectionStart, e: ta.selectionEnd };
+    if (normalPh === null) normalPh = ta.placeholder;
+    ta.value = "";
+    ta.placeholder = READ_ONLY_PH;
+    ta.disabled = true;
+  } else {
+    ta.disabled = false;
+    if (normalPh !== null) ta.placeholder = normalPh;
+    if (parkedDraft) {
+      ta.value = parkedDraft.value;                        // same string → attachment anchors stay valid
+      try { ta.setSelectionRange(parkedDraft.s, parkedDraft.e); } catch (_) {}
+      parkedDraft = null;
+    }
+    suspendAttachments(false);
+  }
+  send.disabled = locked;
+  if (gif) gif.disabled = locked;
+  autoGrow(ta);
 }
 function enterEdit(el) {
   if (!el || el.classList.contains("editing") || el.classList.contains("deleted")) return;
@@ -825,6 +857,14 @@ export function wireChatInput() {
   wireGifPicker({ onPick: onGifPicked });
   document.querySelectorAll(".sp-tab").forEach((t) => t.addEventListener("click", closeGifPicker));
   wireLightbox(dom.chatMsgs);                              // .msg-media clicks → fullscreen viewer
+  wireSysLog({
+    onViewChange: (v) => {
+      lockComposer(v === "sys");
+      if (v === "chat") requestAnimationFrame(() => { Unread.onChatShown(); SYS.sweep(); });
+      else Unread.paint();                                 // hides the jump pill
+    },
+    onToolsClose: resetClearBtn,                           // closing the host menu cancels a pending confirm
+  });
 }
 /* ── side-panel unread ── — the late block of wireEvents() */
 export function wireChatUnread() {
@@ -832,7 +872,7 @@ export function wireChatUnread() {
   /* the click fires before/after Q.switchTab depending on order — defer a frame so the
      pane's .active class is already settled */
   dom.tabChat.addEventListener("click", () =>
-    requestAnimationFrame(() => { Unread.onChatShown(); SYS.sweep(); }));
+    requestAnimationFrame(() => { Unread.onChatShown(); SYS.sweep(); onSysPaneShown(); }));
   document.addEventListener("visibilitychange", () => { Unread.sync(); SYS.sweep(); });
   window.addEventListener("focus", () => Unread.sync());
   Unread.paint();
@@ -847,7 +887,7 @@ function resetClearBtn() {
 }
 /* call this again whenever the viewer's role changes (member → mod, etc.) */
 export function applyChatPerms() {
-  if (dom.chatClear) dom.chatClear.hidden = !(S.perms && S.perms.isAdmin);
+  setToolsMode(!!(S.perms && S.perms.isAdmin));            // host → expanding menu; others → Sys toggle
   dom.chatMsgs.querySelectorAll(".chat-msg").forEach((el) => {
     paintRole(el);
   });
@@ -890,6 +930,7 @@ export function wireChatActions() {
       if (b.dataset.confirm === "1") {
         if (getSocket()) sockEmit("chat-clear");
         resetClearBtn();
+        closeChatTools();
       } else {
         b.dataset.confirm = "1";
         b.classList.add("confirm");

@@ -4,10 +4,10 @@ const router = express.Router();
 const Room = require('../models/Room');
 const Message = require('../models/Message');
 const RoomEvent = require('../models/RoomEvent');
-const { serializeEvent } = require('../utils/roomEvents');
 const { authenticateToken } = require('../middleware/auth');
 const crypto = require('crypto');
 const { sanitizeRoomPatch, serializeMessage, canModerate, isBanned, ROOM_CAP } = require('../utils/roomConfigAndPermissions');
+const { serializeEvent, logRoomEvent } = require('../utils/roomEvents');
 
 // Get user's joined rooms
 router.get('/joined', authenticateToken, async (req, res) => {
@@ -114,6 +114,20 @@ router.patch('/:roomId', authenticateToken, async (req, res) => {
     if (errors.length) return res.status(400).json({ error: errors[0] });
     Object.assign(room, patch);
     await room.save();
+
+    const LABELS = { roomName: "name", description: "description", isPublic: "visibility",
+                     maxParticipants: "capacity", tags: "tags", thumbnail: "thumbnail", mode: "mode" };
+    // Notice it correctly uses `patch` here, as that contains your sanitized changes
+    const fields = Object.keys(patch).map((k) => LABELS[k] || k);
+    
+    if (fields.length) {
+      logRoomEvent(req.app.get("io"), room.roomId, {
+        kind: "room", action: "room.update",
+        actor: { id: req.user.id, username: req.user.username },
+        text: "{actor} updated the room {detail}", detail: fields.join(", "),
+      });
+    }
+
     res.json({ room });
   } catch (e) { res.status(500).json({ error: 'Failed to update room' }); }
 });

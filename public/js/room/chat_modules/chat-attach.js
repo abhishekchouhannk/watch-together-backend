@@ -30,6 +30,7 @@ const items = [];
 const skip = new Set();
 let ta = null, strip = null, layout = (fn) => fn();
 let prev = "", sel = null, idleT = 0, composing = false, uid = 0;
+let suspended = false;
 const X_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">' +
   '<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
@@ -61,6 +62,10 @@ function shiftAfterCut(start, end) {
     it.anchor = it.anchor >= end ? it.anchor - n : start;
   }
 }
+export function suspendAttachments(on) {
+  suspended = !!on;
+  clearTimeout(idleT);
+}
 /* ── extraction ───────────────────────────────────────────── */
 function pruneSkip() {
   if (!skip.size) return;
@@ -69,7 +74,7 @@ function pruneSkip() {
 }
 /* mode "terminated" → only finished tokens; "all" → paste / idle / send */
 function extract(mode) {
-  if (composing) return false;
+  if (composing || suspended) return false;
   pruneSkip();
   let did = false;
   while (items.length < MAX_ATTACHMENTS) {

@@ -820,6 +820,116 @@ html.lb-lock,html.lb-lock body{overflow:hidden}
   .chat-attach-item.loading::after{animation:none}
 }
 
+/* ======== 7g. Chat stage — chat log and Sys transcript share one area ======== */
+.chat-stage{position:relative;flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.chat-stage>.chat-scroll-wrap{flex:1 1 auto;min-height:0}
+/* visibility (not display) → both keep their scroll positions while hidden */
+.chat-scroll-wrap{transition:opacity .16s ease,visibility 0s linear 0s}
+.sys-log-wrap{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  opacity:0;visibility:hidden;
+  transition:opacity .16s ease,visibility 0s linear .16s;
+}
+#paneChat[data-view="sys"] .sys-log-wrap{opacity:1;visibility:visible;transition:opacity .16s ease,visibility 0s}
+#paneChat[data-view="sys"] .chat-scroll-wrap{opacity:0;visibility:hidden;transition:opacity .16s ease,visibility 0s linear .16s}
+#paneChat[data-view="sys"] .chat-attach{display:none}     /* draft attachments are parked too */
+/* ======== 7h. Left composer tools ======== */
+.chat-tools{position:relative;display:flex;flex-shrink:0;align-self:flex-end}
+.chat-tool{
+  position:relative;
+  width:var(--chat-row);height:var(--chat-row);border-radius:9px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--in-bg);border:1px solid var(--in-bdr);color:var(--t3);
+  transition:color .2s,border-color .2s,background .2s,transform .1s;
+}
+.chat-tool[hidden]{display:none}
+.chat-tool:hover{color:var(--t1)}
+.chat-tool:active{transform:scale(.92)}
+.sys-toggle{font-size:.58rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.sys-toggle.active{
+  color:var(--acc);border-color:var(--acc);
+  background:color-mix(in srgb,var(--acc) 14%,var(--in-bg));
+}
+.chat-tools-trigger svg{width:14px;height:14px;transition:transform .2s cubic-bezier(.16,1,.3,1)}
+.chat-tools.open .chat-tools-trigger{color:var(--t1);border-color:var(--in-foc)}
+.chat-tools.open .chat-tools-trigger svg{transform:rotate(180deg)}
+/* host in Sys view: the trigger carries a small accent dot so the way back is obvious */
+.chat-tools-trigger.sys-on{color:var(--acc);border-color:color-mix(in srgb,var(--acc) 55%,var(--in-bdr))}
+.chat-tools-trigger.sys-on::after{
+  content:"";position:absolute;top:4px;right:4px;
+  width:6px;height:6px;border-radius:50%;background:var(--acc);
+}
+.chat-tools-menu{
+  position:absolute;left:-.3rem;bottom:calc(100% + .4rem);z-index:45;
+  display:flex;flex-direction:column;gap:.3rem;padding:.3rem;
+  background:var(--card);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--card-bdr);border-radius:12px;box-shadow:var(--card-sh);
+  transform-origin:bottom center;
+  animation:toolsIn .16s cubic-bezier(.16,1,.3,1) both;
+}
+.chat-tools-menu[hidden]{display:none}
+@keyframes toolsIn{from{opacity:0;transform:translateY(6px) scale(.96)}to{opacity:1;transform:none}}
+/* read-only composer */
+.chat-input:disabled{cursor:not-allowed;opacity:.75}
+.chat-input:disabled::placeholder{font-style:italic;letter-spacing:.01em}
+.send-btn:disabled,.gif-btn:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+/* ======== 7i. System transcript ======== */
+.sys-log{
+  flex:1;min-height:0;overflow-y:auto;overflow-anchor:none;overscroll-behavior:contain;
+  padding:0 .55rem .5rem;
+  scrollbar-width:thin;scrollbar-color:var(--scr-th) transparent;
+}
+.sys-log:focus-visible{outline:none}
+.sys-log::-webkit-scrollbar{width:6px}
+.sys-log::-webkit-scrollbar-thumb{background:var(--scr-th);border-radius:6px}
+/* sticky day pill */
+.sl-day{position:sticky;top:.35rem;z-index:1;display:flex;justify-content:center;margin:.55rem 0 .25rem;pointer-events:none}
+.sl-day>span{
+  padding:.12rem .55rem;border-radius:999px;
+  background:var(--surf);border:1px solid var(--card-bdr);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  font-size:.6rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--t3);
+}
+/* one receipt: time · dot · sentence */
+.sl-row{
+  display:grid;grid-template-columns:auto auto minmax(0,1fr);
+  align-items:baseline;column-gap:.5rem;
+  padding:.24rem .4rem;border-radius:7px;
+  font-size:.74rem;line-height:1.45;
+}
+@media (hover:hover){ .sl-row:hover{background:color-mix(in srgb,var(--t2) 6%,transparent)} }
+.sl-time{font-size:.64rem;color:var(--t3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sl-dot{
+  align-self:center;width:.42rem;height:.42rem;border-radius:50%;
+  background:var(--sl-c,var(--t3));
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--sl-c,var(--t3)) 18%,transparent);
+}
+.sl-text{color:var(--t2);word-break:break-word;overflow-wrap:anywhere}
+.sl-who{color:var(--t1);font-weight:650}
+.sl-detail{color:var(--t1)}
+/* category colours — small dots only, nothing loud */
+.sl-row[data-kind="presence"]{--sl-c:#94a3b8}
+.sl-row[data-kind="presence"] .sl-text{color:var(--t3)}      /* joins/leaves are the quietest lines */
+.sl-row[data-kind="chat"]    {--sl-c:#f59e0b}
+.sl-row[data-kind="queue"]   {--sl-c:#3b82f6}
+.sl-row[data-kind="playback"]{--sl-c:#14b8a6}
+.sl-row[data-kind="perm"]    {--sl-c:#a855f7}
+.sl-row[data-kind="room"]    {--sl-c:var(--acc)}
+.sl-row[data-kind="voice"]   {--sl-c:#22c55e}
+.sl-loader{display:flex;align-items:center;justify-content:center;gap:.45rem;padding:.7rem;font-size:.68rem;color:var(--t3)}
+.sl-start{text-align:center;font-size:.66rem;color:var(--t3);padding:.8rem 0 .2rem}
+.sl-error{text-align:center;font-size:.7rem;color:var(--t3);padding:.8rem .5rem}
+.sl-error button{color:var(--acc);font-weight:600;background:transparent;text-decoration:underline}
+@media(max-width:768px){
+  .sys-log{padding:0 .4rem .4rem}
+  .sl-row{font-size:.72rem;padding:.22rem .3rem}
+}
+@media (prefers-reduced-motion:reduce){
+  .chat-scroll-wrap,.sys-log-wrap{transition:none}
+  .chat-tools-menu{animation:none}
+  .chat-tools-trigger svg{transition:none}
+}
+
 /* ═══════════ SYSTEM / ROOM-UPDATE NOTICES (ephemeral) ═══════════ */
 /* we do all the scroll math ourselves — don't let the browser also "help" */
 .chat-messages{overflow-anchor:none}
