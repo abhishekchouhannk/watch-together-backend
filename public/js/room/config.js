@@ -79,3 +79,5 @@ export const GIPHY_RATING = "r";          // g | pg | pg-13 | r
 /* true  → clicking a GIF sends it immediately (Discord-style)
    false → it's staged in the preview strip so the user can add a caption */
 export const GIF_INSTANT_SEND = true;
+/* max images per send — each becomes its own message; extra links stay as text */
+export const MAX_ATTACHMENTS = 4;

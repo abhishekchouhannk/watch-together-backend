@@ -51,8 +51,10 @@ import { $, dom } from "./dom.js";
 import { esc, fmtMsgStamp, fmtMsgFull, avColor, fmtBadge, isMe, delay } from "./utils.js";
 import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onUserJoined, onUserLeft } from "./socket-core.js";
-import { normalizeImageUrl, findImageUrls, interceptOutgoing } from "./media-embed.js";
-import { wireGifPicker, closeGifPicker } from "./gif-picker.js";
+import { normalizeImageUrl } from "./chat_modules/media-embed.js";
+import { wireGifPicker, closeGifPicker } from "./chat_modules/gif-picker.js";
+import { wireAttachments, takeOutgoing, resetAttachments, stageGif } from "./chat_modules/chat-attach.js";
+import { wireLightbox } from "./chat_modules/lightbox.js";
 /* ── history pagination bookkeeping ── */
 let startMarkerShown = false;
 let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
@@ -252,102 +254,17 @@ export const SYS = {
     if (el.dataset.unread === "1") { delete el.dataset.unread; Unread.drop(1); }
   },
 };
-/* ══════════════════════════════════════
-   COMPOSER ATTACHMENT — the "image recognised" preview strip
-   ──────────────────────────────────────
-   source "link": the first image URL in the textarea. × → the url goes into
-                  `skip`, the preview goes away, and the text is sent verbatim.
-   source "gif":  staged from the picker (only when GIF_INSTANT_SEND=false).
-   The textarea is NEVER rewritten; the link is stripped only at send time,
-   so "un-embedding" needs no revert.
-   ══════════════════════════════════════ */
-const Attach = {
-  url: null,          // canonical href that will ship as mediaUrl
-  source: null,       // "link" | "gif"
-  ok: null,           // null = loading, true = loaded, false = failed → send as text
-  seq: 0,
-  skip: new Set(),    // links the user chose to keep as plain links
-};
-function hostOf(u) {
-  try { return new URL(u).hostname.replace(/^www\./, ""); } catch (_) { return ""; }
-}
-function setAttach(url, source) {
-  source = url ? source : null;
-  if (url === Attach.url && source === Attach.source) return;
-  Attach.url = url;
-  Attach.source = source;
-  Attach.ok = null;
-  paintAttach();
-}
-function paintAttach() {
-  const box = $("chatAttach"), img = $("chatAttachImg");
-  if (!box || !img) return;
-  const label = $("chatAttachLabel"), host = $("chatAttachHost"), x = $("chatAttachX");
-  const pinned = Unread.atBottom(8);             // the strip squeezes the log — keep it pinned
-  const seq = ++Attach.seq;
-  img.onload = img.onerror = null;
-  if (!Attach.url) {
-    box.hidden = true;
-    img.removeAttribute("src");
-  } else {
-    const gif = Attach.source === "gif";
-    box.hidden = false;
-    box.classList.add("loading");
-    box.classList.remove("broken");
-    label.textContent = gif ? "GIF attached" : "Image will be embedded";
-    host.textContent  = hostOf(Attach.url);
-    const tip = gif ? "Remove GIF" : "Send as a plain link instead";
-    x.title = tip;
-    x.setAttribute("aria-label", tip);
-    img.onload = () => {
-      if (seq !== Attach.seq) return;
-      Attach.ok = true;
-      box.classList.remove("loading");
-    };
-    img.onerror = () => {
-      if (seq !== Attach.seq) return;
-      Attach.ok = false;
-      box.classList.remove("loading");
-      box.classList.add("broken");
-      label.textContent = gif ? "Couldn't load this GIF" : "Couldn't load — will send as a link";
-    };
-    img.src = Attach.url;
-  }
-  if (pinned) Unread.toEnd();
-}
-/* runs on every input/paste: which image link (if any) should be previewed? */
-function syncAttach() {
-  if (Attach.source === "gif") return;           // a staged GIF isn't tied to the text
-  const hits = findImageUrls(dom.chatInput.value);
-  /* forget dismissals for links that are no longer in the text (re-paste → preview again) */
-  for (const u of Attach.skip) if (!hits.some((h) => h.url === u)) Attach.skip.delete(u);
-  const hit = hits.find((h) => !Attach.skip.has(h.url));
-  setAttach(hit ? hit.url : null, "link");
-}
-function dismissAttach() {
-  if (Attach.source === "link" && Attach.url) Attach.skip.add(Attach.url);
-  setAttach(null, null);
-  syncAttach();                                  // a second image link may take its place
-  dom.chatInput.focus();
-}
-function resetAttach() {
-  Attach.skip.clear();
-  setAttach(null, null);
-}
-export function stageMedia(url) {
-  const clean = normalizeImageUrl(url);
-  if (clean) setAttach(clean, "gif");
-}
+
 function onGifPicked({ url }) {
   const clean = normalizeImageUrl(url);
   if (!clean) return;
   if (!GIF_INSTANT_SEND) {
-    stageMedia(clean);
+    stageGif(clean);                                       // joins the thumbnail row
     dom.chatInput.focus();
     return;
   }
   if (!getSocket()) return;
-  sockEmit("chat-message", { text: "", mediaUrl: clean });   // the typed draft stays untouched
+  sockEmit("chat-message", { text: "", mediaUrl: clean }); // the typed draft stays untouched
   Unread.stick = true;
   Unread.clear();
   if (matchMedia("(hover: hover)").matches) dom.chatInput.focus();
@@ -382,7 +299,7 @@ function mediaHTML(url) {
   const u = esc(url);
   return '<div class="msg-media-wrap loading">' +
     '<a class="msg-media-link" href="' + u + '" target="_blank" rel="noopener noreferrer nofollow" ' +
-       'aria-label="Open image in a new tab">' +
+       'aria-label="View image">' +
       '<img class="msg-media" src="' + u + '" alt="" loading="lazy" decoding="async" ' +
            'referrerpolicy="no-referrer" draggable="false">' +
     "</a></div>";
@@ -414,19 +331,12 @@ function removeMedia(row) {
 /* ═══════ CHAT ═══════ */
 export function sendMessage() {
   if (!getSocket()) return;
-  syncAttach();                                            // text may have changed since the last input event
-  const raw = dom.chatInput.value;
-  let out;
-  if (Attach.source === "gif") {
-    out = { text: raw.trim(), mediaUrl: Attach.ok === false ? null : Attach.url };
-  } else {
-    /* × on the preview → url is in `skip`; failed preview → don't embed at all */
-    out = interceptOutgoing(raw, { skip: Attach.skip, embed: Attach.ok !== false });
-  }
-  if (!out.text && !out.mediaUrl) return;
-  sockEmit("chat-message", { text: out.text, mediaUrl: out.mediaUrl });
+  /* [{ text, mediaUrl: img1 }, { text: "", mediaUrl: img2 }, …] — one message per image */
+  const batch = takeOutgoing();
+  if (!batch.length) return;
+  batch.forEach((payload) => sockEmit("chat-message", payload));  // server keeps them in order
   dom.chatInput.value = "";
-  resetAttach();
+  resetAttachments();
   growChatInput();
   dom.chatInput.focus();
   Unread.stick = true;
@@ -893,7 +803,6 @@ function applyClear({ byId, byName }) {
 export function wireChatInput() {
   $("sendBtn").onclick = sendMessage;
   dom.chatInput.addEventListener("input", growChatInput);
-  dom.chatInput.addEventListener("input", syncAttach);     // covers typing AND paste
   dom.chatInput.addEventListener("keydown", (e) => {
     if (e.isComposing) return;                             // IME candidate, not a send
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -901,10 +810,21 @@ export function wireChatInput() {
   window.addEventListener("resize", () => autoGrow(dom.chatInput));
   dom.chatMsgs.addEventListener("scroll", onChatScroll);
   autoGrow(dom.chatInput);
-  /* attachment preview + GIF picker */
-  $("chatAttachX").addEventListener("click", dismissAttach);
+  /* image links → thumbnails. The strip and any text removal change the composer
+     height, so re-measure and keep the log pinned around every change. */
+  wireAttachments({
+    input: dom.chatInput,
+    strip: $("chatAttach"),
+    layout: (mutate) => {
+      const pinned = Unread.atBottom(8);
+      mutate();
+      autoGrow(dom.chatInput);
+      if (pinned) Unread.toEnd();
+    },
+  });
   wireGifPicker({ onPick: onGifPicked });
   document.querySelectorAll(".sp-tab").forEach((t) => t.addEventListener("click", closeGifPicker));
+  wireLightbox(dom.chatMsgs);                              // .msg-media clicks → fullscreen viewer
 }
 /* ── side-panel unread ── — the late block of wireEvents() */
 export function wireChatUnread() {

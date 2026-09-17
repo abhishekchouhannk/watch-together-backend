@@ -12,9 +12,9 @@
  * gets clipped by .chat-section{overflow:hidden}.
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { GIPHY_KEY, GIPHY_RATING } from "./config.js";
-import { $ } from "./dom.js";
-import { esc } from "./utils.js";
+import { GIPHY_KEY, GIPHY_RATING } from "../config.js";
+import { $ } from "../dom.js";
+import { esc } from "../utils.js";
 import { normalizeImageUrl } from "./media-embed.js";
 const API      = "https://api.giphy.com/v1/gifs/";
 const PAGE     = 24;

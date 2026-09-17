@@ -511,24 +511,8 @@
                   <div class="gif-foot">Powered by <b>GIPHY</b></div>
                 </div>
                 <!-- "image recognised" preview — shown when the textarea contains an image link -->
-                <div class="chat-attach" id="chatAttach" hidden>
-                  <div class="chat-attach-card">
-                    <div class="chat-attach-thumb">
-                      <img id="chatAttachImg" alt="" referrerpolicy="no-referrer" draggable="false" />
-                    </div>
-                    <div class="chat-attach-meta">
-                      <span class="chat-attach-label" id="chatAttachLabel">Image will be embedded</span>
-                      <span class="chat-attach-host" id="chatAttachHost"></span>
-                    </div>
-                    <button class="chat-attach-x" id="chatAttachX" type="button"
-                            title="Send as a plain link instead" aria-label="Send as a plain link instead">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                          stroke-width="2.6" stroke-linecap="round">
-                        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+                <!-- attachment strip: a row of thumbnails, rendered by chat-attach.js -->
+                <div class="chat-attach" id="chatAttach" role="list" aria-label="Attachments" hidden></div>
                 <div class="chat-bar">
                   <button class="chat-clear-btn" id="chatClearBtn" type="button"
                           title="Clear chat for everyone" data-confirm="0" hidden>
