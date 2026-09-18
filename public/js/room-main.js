@@ -45,6 +45,7 @@ import { wireReactions, closeRail } from "./room/reactions.js";
 import { Q } from "./room/queue.js";
 import { wirePermissions, closeConfig } from "./room/permissions.js";
 import { wireVoice } from "./room/voice.js";
+import { wireFocusMode } from "./room/focus-mode.js";
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {
   initTheme();
@@ -55,7 +56,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 /* ═══════ EVENT WIRING ═══════ */
 function wireEvents() {
   $("backBtn").onclick  = leaveRoom;
-  $("leaveBtn").onclick = leaveRoom;
   wireChatInput();
   dom.container.addEventListener("touchstart", () => {
     dom.controls.classList.add("show");
@@ -81,6 +81,7 @@ function wireEvents() {
   wireChatActions();
   // add the queue functionality
   Q.wire();
+  wireFocusMode();
 }
 /* ═══════ FETCH ME ═══════ */
 async function fetchMe() {
