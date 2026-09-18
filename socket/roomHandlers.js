@@ -957,7 +957,13 @@ async function handleChatMessage(payload) {
     if (startNow) applyCurrent(room, room.queue.length - 1, false);
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    sysMsg(io, roomId, `${user.username} added “${item.title}” to the queue`, user.id);
+    announce(io, roomId, {
+      kind: "queue",
+      action: "queue.add",
+      actor: user,
+      text: "{actor} added {detail} to the queue",
+      detail: item.title
+    });
     if (startNow) emitLoad(io, roomId, room.queue[room.queueIndex], user.username, false);
   }));
   socket.on("queue-remove", queueAction(async (room, roomId, { id } = {}) => {
@@ -968,7 +974,7 @@ async function handleChatMessage(payload) {
     else if (i === room.queueIndex) room.queueIndex = -1;   // keep playing, just detach
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    // NEW: Call announce directly instead of sysMsg
+    // Call announce directly instead of sysMsg
     announce(io, roomId, {
       kind: "queue",
       action: "queue.remove",
@@ -994,7 +1000,12 @@ async function handleChatMessage(payload) {
     room.queueIndex = cur ? 0 : -1;
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    sysMsg(io, roomId, `${user.username} cleared the queue`, user.id);
+    announce(io, roomId, {
+      kind: "queue",
+      action: "queue.clear",
+      actor: user,
+      text: "{actor} cleared the queue"
+    });
   }));
   /* play a specific item (also powers the prev/next buttons) */
   socket.on("queue-play", queueAction(async (room, roomId, { id } = {}) => {
@@ -1007,7 +1018,13 @@ async function handleChatMessage(payload) {
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
     emitLoad(io, roomId, it, user.username, true);
-    sysMsg(io, roomId, `${user.username} started “${it.title}”`, user.id);
+    announce(io, roomId, {
+      kind: "playback",
+      action: "video.change",
+      actor: user,
+      text: "{actor} started playing {detail}",
+      detail: it.title
+    });
   }));
   socket.on("queue-autoplay", queueAction(async (room, roomId, { on } = {}) => {
     const v = !!on;
@@ -1015,7 +1032,12 @@ async function handleChatMessage(payload) {
     room.settings.autoplay = v;
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
-    io.to(roomId).emit("perm-notice", { text: `${user.username} turned autoplay ${v ? "on" : "off"}`, byId: user.id });
+    announce(io, roomId, {
+      kind: "room",
+      action: "room.update",
+      actor: user,
+      text: `{actor} turned autoplay ${v ? "on" : "off"}`
+    });
   }));
   /* a controller learned the real runtime — cache it so everyone sees it */
   socket.on("queue-duration", async ({ id, duration } = {}) => {
@@ -1049,7 +1071,12 @@ async function handleChatMessage(payload) {
       await room.save();
       io.to(roomId).emit("queue-update", serializeQueue(room));
       emitLoad(io, roomId, it, null, true);
-      sysMsg(io, roomId, `▶ Now playing “${it.title}”`, user.id);
+      announce(io, roomId, {
+        kind: "playback",
+        action: "video.change",
+        text: "▶ Now playing {detail}",
+        detail: it.title
+      });
     } else {
       room.video.isPlaying = false;
       room.video.updatedAt = new Date();
