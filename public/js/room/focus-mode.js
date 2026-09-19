@@ -1,8 +1,12 @@
 /* public/js/room/focus-mode.js
  * ─────────────────────────────────────────────────────────────
- * MOBILE FOCUS VIEW — pull up from the bottom of the stacked
- * layout to pin the player to the top and let the side panel
- * fill the rest of the screen. Escape / the header chevron exit.
+ * MOBILE FOCUS VIEW — pull up from a settled page-bottom to pin
+ * the player to the top and let the side panel fill the screen.
+ * Escape / the header chevron exit.
+ *
+ * The pull only starts from a FRESH swipe: the touch must begin
+ * with the page and every scroller under the finger already at
+ * rest at the bottom. If a swipe scrolls anything it can't pull.
  *
  *   wireFocusMode()   gesture + exit button + escape + breakpoint guard
  *
@@ -11,44 +15,59 @@
 "use strict";
 import { $, dom } from "./dom.js";
 const MOBILE_MQ = window.matchMedia("(max-width:768px)");
-const SLACK     = 26;          // dead-zone before the bubble shows
-const THRESHOLD = 88;          // pull this far past the dead-zone to commit
-const RISE_RATE = 1.6;         // bubble px per pull px
-const HIDE_Y    = 80;          // resting (hidden) offset — keep in sync with room.css
+const SLACK     = 26;      // total upward travel before the bubble arms
+const SLOP      = 6;       // ignore movement smaller than this (taps / tremor)
+const THRESHOLD = 88;      // pull this far past SLACK to commit
+const RISE_RATE = 1.6;
+const HIDE_Y    = 80;      // keep in sync with .pull-hint transform in room.css
 const RISE_CAP  = HIDE_Y + 26;
+const REST_MS   = 120;     // the page must have been still this long for a fresh swipe
 let hint = null, ring = null, ringLen = 151;
-let tracking = false, capturing = false, startY = 0, pull = 0, maxScroll = 0;
+/* touch state */
+let touchActive = false;       // a finger is down
+let eligible    = false;       // this swipe began from a valid resting bottom
+let armed       = false;       // the pull is captured; the bubble is on screen
+let startY      = 0;
+let pull        = 0;
+let maxScroll   = 0;
+let baseScrollY = 0;
+let scroller    = null;        // nearest scrollable ancestor under the touch
+let baseScrollerTop = 0;
+let lastScrollAt = 0;          // timestamp of the most recent scroll anywhere
 const reduced  = () => window.matchMedia("(prefers-reduced-motion:reduce)").matches;
 const inFocus  = () => document.documentElement.classList.contains("room-focus");
 const atBottom = () => window.scrollY >= maxScroll - 2;
-function scrollableBelow(node) {
-  for (let el = node; el && el !== document.body; el = el.parentElement) {
+function inspectScrollers(node){
+  let nearest = null, allBottom = true;
+  for (let el = node; el && el !== document.body && el !== document.documentElement; el = el.parentElement){
     if (!(el instanceof HTMLElement)) continue;
     const oy = getComputedStyle(el).overflowY;
-    if ((oy === "auto" || oy === "scroll") &&
-        el.scrollHeight - el.clientHeight - el.scrollTop > 1) return true;
+    if ((oy === "auto" || oy === "scroll") && el.scrollHeight - el.clientHeight > 1){
+      if (!nearest) nearest = el;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 1) allBottom = false;
+    }
   }
-  return false;
+  return { nearest, allBottom };
 }
-function modalOpen() {
+function modalOpen(){
   if (dom.container && dom.container.classList.contains("pseudo-fs")) return true;
   return [dom.cfgSheet, dom.profCard, dom.vcCard]
     .some((el) => el && el.getAttribute("aria-hidden") === "false");
 }
-/* ── bubble ── */
-function showBubble() {
+/* ── bubble (unchanged) ── */
+function showBubble(){
   hint.classList.remove("resetting");
   hint.classList.add("active");
   ring.style.transition = "";
 }
-function moveBubble(p) {
+function moveBubble(p){
   const rise = Math.min(p * RISE_RATE, RISE_CAP);
   hint.style.transform = "translate(-50%," + (HIDE_Y - rise) + "px)";
   const prog = Math.min(p / THRESHOLD, 1);
   ring.style.strokeDashoffset = String(ringLen * (1 - prog));
   hint.classList.toggle("ready", prog >= 1);
 }
-function cancelBubble() {
+function cancelBubble(){
   hint.classList.add("resetting");
   hint.classList.remove("active", "ready");
   hint.style.transform = "";
@@ -58,18 +77,18 @@ function cancelBubble() {
     if (hint.classList.contains("resetting")) clearBubble();
   }, 420);
 }
-function commitBubble() {
+function commitBubble(){
   hint.classList.remove("active");
   window.setTimeout(clearBubble, 260);
 }
-function clearBubble() {
+function clearBubble(){
   hint.classList.remove("active", "ready", "resetting");
   hint.style.transform = "";
   ring.style.transition = "";
   ring.style.strokeDashoffset = String(ringLen);
 }
-/* ── mode switch (FLIP on the player + panel block) ── */
-function switchMode(toFocus) {
+/* ── mode switch (unchanged) ── */
+function switchMode(toFocus){
   const willAnimate = MOBILE_MQ.matches && !reduced();
   const block = document.querySelector(".room-content");
   const before = (willAnimate && block) ? block.getBoundingClientRect().top : 0;
@@ -77,50 +96,84 @@ function switchMode(toFocus) {
   dom.root.classList.toggle("focus-mode", toFocus);
   if (!willAnimate || !block || !block.animate) return;
   const dy = before - block.getBoundingClientRect().top;
-  if (Math.abs(dy) > 1 && Math.abs(dy) < 200) {
+  if (Math.abs(dy) > 1 && Math.abs(dy) < 200){
     block.animate(
       [{ transform: "translateY(" + dy + "px)" }, { transform: "translateY(0)" }],
       { duration: 320, easing: "cubic-bezier(.22,1,.36,1)" }
     );
   }
 }
-export function enterFocus() { if (!inFocus() && MOBILE_MQ.matches) switchMode(true); }
-export function exitFocus()  { if (inFocus()) switchMode(false); }
+export function enterFocus(){ if (!inFocus() && MOBILE_MQ.matches) switchMode(true); }
+export function exitFocus(){ if (inFocus()) switchMode(false); }
 /* ── touch gesture ── */
-function onStart(e) {
+function resetTouch(){
+  touchActive = false;
+  eligible = false;
+  armed = false;
+  pull = 0;
+  scroller = null;
+}
+function markScroll(){ lastScrollAt = performance.now(); }
+function onStart(e){
+  if (armed) cancelBubble();
+  resetTouch();
   if (!MOBILE_MQ.matches || inFocus() || e.touches.length !== 1) return;
   const t = e.target;
-  if (t && t.closest && t.closest("input,textarea,[contenteditable]")) return;
+  if (!t || (t.closest && t.closest("input,textarea,[contenteditable]"))) return;
   if (modalOpen()) return;
-  tracking = true; capturing = false; pull = 0;
-  startY = e.touches[0].clientY;
-  maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+  touchActive = true;
+  startY      = e.touches[0].clientY;
+  baseScrollY = window.scrollY;
+  maxScroll   = document.documentElement.scrollHeight - window.innerHeight;
+  const info = inspectScrollers(t);
+  scroller = info.nearest;
+  baseScrollerTop = scroller ? scroller.scrollTop : 0;
+  eligible =
+    atBottom() &&
+    performance.now() - lastScrollAt > REST_MS &&
+    info.allBottom;
 }
-function onMove(e) {
-  if (!tracking) return;
-  const dy = startY - e.touches[0].clientY;        // finger up → positive
-  if (!capturing) {
-    if (dy > SLACK && atBottom() && !scrollableBelow(e.target)) {
-      capturing = true;
-      showBubble();
-    } else {
-      if (dy < -4) tracking = false;               // headed back up the page
-      return;
-    }
+function onMove(e){
+  if (!touchActive || !e.touches || !e.touches.length) return;
+  const dy = startY - e.touches[0].clientY;      // finger up → positive
+  if (armed){
+    e.preventDefault();
+    pull = Math.max(0, dy - SLACK);
+    moveBubble(pull);
+    return;
   }
-  e.preventDefault();
-  pull = Math.max(0, dy - SLACK);
-  moveBubble(pull);
+  if (!eligible) return;                          // normal scrolling continues
+  if (dy < -SLOP){ eligible = false; return; }    // going down → hand it back to the page
+  if (dy < SLOP) return;                          // within tap slop → leave it alone
+  if (Math.abs(window.scrollY - baseScrollY) > 1 ||
+      (scroller && Math.abs(scroller.scrollTop - baseScrollerTop) > 1)){
+    eligible = false;                             // something scrolled under us
+    return;
+  }
+  e.preventDefault();                             // kill the rubber-band from the first real pixel
+  if (dy > SLACK){
+    armed = true;
+    showBubble();
+    pull = Math.max(0, dy - SLACK);
+    moveBubble(pull);
+  }
 }
-function onEnd() {
-  if (!tracking) return;
-  tracking = false;
-  if (!capturing) return;
-  capturing = false;
-  if (pull >= THRESHOLD) { commitBubble(); enterFocus(); }
-  else                   { cancelBubble(); }
+function onEnd(){
+  if (!touchActive) return;
+  const wasArmed = armed;
+  const finalPull = pull;
+  resetTouch();
+  if (!wasArmed) return;
+  if (finalPull >= THRESHOLD){ commitBubble(); enterFocus(); }
+  else                       { cancelBubble(); }
 }
-export function wireFocusMode() {
+function onCancel(){
+  if (!touchActive) return;
+  const wasArmed = armed;
+  resetTouch();
+  if (wasArmed) cancelBubble();
+}
+export function wireFocusMode(){
   hint = $("pullHint");
   ring = hint && hint.querySelector(".pr-prog");
   if (!hint || !ring) return;
@@ -133,10 +186,11 @@ export function wireFocusMode() {
     if (e.target === hint && e.propertyName === "transform" &&
         hint.classList.contains("resetting")) clearBubble();
   });
-  dom.root.addEventListener("touchstart",  onStart, { passive: true });
-  dom.root.addEventListener("touchmove",   onMove,  { passive: false });
+  window.addEventListener("scroll", markScroll, { passive: true, capture: true });
+  dom.root.addEventListener("touchstart",  onStart,  { passive: true });
+  dom.root.addEventListener("touchmove",   onMove,   { passive: false });
   dom.root.addEventListener("touchend",    onEnd);
-  dom.root.addEventListener("touchcancel", onEnd);
+  dom.root.addEventListener("touchcancel", onCancel);
   const exitBtn = $("focusExitBtn");
   if (exitBtn) exitBtn.addEventListener("click", exitFocus);
   document.addEventListener("keydown", (e) => {
