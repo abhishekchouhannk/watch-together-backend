@@ -368,12 +368,14 @@ export const ytLetterbox = (() => {
   const CFG = { pad: 80, crop: 80, aspect: 16 / 9 };
   const DEFAULT_AR = CFG.aspect;
   const desktopMQ = window.matchMedia("(min-width:769px)");
+  const noScrollMQ = window.matchMedia("(orientation:landscape) and (max-height:500px)");
   let container = null, iframe = null, ro = null, raf = 0;
   const visibleBar = () => Math.max(0, CFG.pad - CFG.crop);
   const schedule   = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); };
   function layout() {
     if (!container || !iframe) return;
     const fixedH = desktopMQ.matches ||
+                  noScrollMQ.matches ||
                    container.classList.contains("pseudo-fs") ||
                    !!document.fullscreenElement;
     if (fixedH) {
@@ -407,12 +409,14 @@ export const ytLetterbox = (() => {
     ro = new ResizeObserver(schedule);
     ro.observe(container);
     desktopMQ.addEventListener("change", schedule);
+    noScrollMQ.addEventListener("change", schedule);
     document.addEventListener("fullscreenchange", schedule);
     layout();
   }
   function detach() {
     if (ro) { ro.disconnect(); ro = null; }
     desktopMQ.removeEventListener("change", schedule);
+    noScrollMQ.removeEventListener("change", schedule);
     document.removeEventListener("fullscreenchange", schedule);
     if (container) { container.classList.remove("yt-boxed"); container.style.height = ""; }
     if (iframe) iframe.style.cssText = "";

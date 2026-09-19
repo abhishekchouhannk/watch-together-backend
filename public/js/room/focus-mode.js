@@ -37,6 +37,9 @@ let lastScrollAt = 0;          // timestamp of the most recent scroll anywhere
 const reduced  = () => window.matchMedia("(prefers-reduced-motion:reduce)").matches;
 const inFocus  = () => document.documentElement.classList.contains("room-focus");
 const atBottom = () => window.scrollY >= maxScroll - 2;
+
+const LANDSHORT_MQ = window.matchMedia("(orientation: landscape) and (max-height: 500px)");
+
 function inspectScrollers(node){
   let nearest = null, allBottom = true;
   for (let el = node; el && el !== document.body && el !== document.documentElement; el = el.parentElement){
@@ -117,7 +120,7 @@ function markScroll(){ lastScrollAt = performance.now(); }
 function onStart(e){
   if (armed) cancelBubble();
   resetTouch();
-  if (!MOBILE_MQ.matches || inFocus() || e.touches.length !== 1) return;
+  if (!MOBILE_MQ.matches || LANDSHORT_MQ.matches || inFocus() || e.touches.length !== 1) return;
   const t = e.target;
   if (!t || (t.closest && t.closest("input,textarea,[contenteditable]"))) return;
   if (modalOpen()) return;
@@ -197,4 +200,10 @@ export function wireFocusMode(){
     if (e.key === "Escape" && inFocus()) exitFocus();
   });
   MOBILE_MQ.addEventListener("change", (e) => { if (!e.matches) exitFocus(); });
+  LANDSHORT_MQ.addEventListener("change", (e) => {
+    if (e.matches && inFocus()){
+      document.documentElement.classList.remove("room-focus");
+      dom.root.classList.remove("focus-mode");
+    }
+  });
 }
