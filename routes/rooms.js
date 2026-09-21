@@ -63,19 +63,15 @@ router.get('/search', authenticateToken, async (req, res) => {
   try {
     const { q, type } = req.query;
     let query = { isPublic: true, 'bannedUsers.userId': { $ne: req.user.id } };
-    
-    if (type && type !== 'all') {
+    if (type && type !== 'all' && Room.ROOM_TYPES.includes(type)) {
       query.roomType = type;
     }
-    
     if (q) {
       query.$text = { $search: q };
     }
-    
     const rooms = await Room.find(query)
       .sort({ score: { $meta: 'textScore' } })
       .limit(20);
-    
     res.json({ rooms });
   } catch (error) {
     res.status(500).json({ error: 'Failed to search rooms' });
@@ -85,12 +81,15 @@ router.get('/search', authenticateToken, async (req, res) => {
 // Create new room
 router.post('/create', authenticateToken, async (req, res) => {
   try {
-    const { roomName, description, mode, maxParticipants, isPublic, tags, thumbnail, video } = req.body;
+    const { roomName, description, roomType, maxParticipants, isPublic, tags, thumbnail, video } = req.body;
     let cap = Number(maxParticipants);
     if (!Number.isInteger(cap)) cap = ROOM_CAP;
     cap = Math.min(ROOM_CAP, Math.max(2, cap));
+    // roomType is fixed here for the life of the room
+    const type = Room.ROOM_TYPES.includes(roomType) ? roomType : 'entertainment';
     const newRoom = new Room({
-      roomId: crypto.randomUUID(), roomName, description, mode,
+      roomId: crypto.randomUUID(), roomName, description,
+      roomType: type,
       maxParticipants: cap,
       isPublic, tags, video, thumbnail,
       admin: { userId: req.user.id, username: req.user.username },
@@ -110,13 +109,16 @@ router.patch('/:roomId', authenticateToken, async (req, res) => {
     const room = await Room.findOne({ roomId: req.params.roomId });
     if (!room) return res.status(404).json({ error: 'Room not found' });
     if (!canModerate(room, req.user.id)) return res.status(403).json({ error: 'Not allowed' });
+    // roomType can't change after creation
+    if ('roomType' in req.body && req.body.roomType !== room.roomType) {
+      return res.status(400).json({ error: "A room's type can't be changed after it's created" });
+    }
     const { patch, errors } = sanitizeRoomPatch(room, req.body);
     if (errors.length) return res.status(400).json({ error: errors[0] });
     Object.assign(room, patch);
     await room.save();
-
     const LABELS = { roomName: "name", description: "description", isPublic: "visibility",
-                     maxParticipants: "capacity", tags: "tags", thumbnail: "thumbnail", mode: "mode" };
+                     maxParticipants: "capacity", tags: "tags", thumbnail: "thumbnail" };
     // Notice it correctly uses `patch` here, as that contains your sanitized changes
     const fields = Object.keys(patch).map((k) => LABELS[k] || k);
     

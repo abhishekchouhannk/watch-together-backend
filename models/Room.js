@@ -1,6 +1,7 @@
 // models/Room.js
 const mongoose = require("mongoose");
-const ROOM_CAP = 10;   // hard ceiling, app-wide
+const ROOM_CAP = 10;                              // hard ceiling, app-wide
+const ROOM_TYPES = ["entertainment", "music"];    // functional room types
 /* persistent per-user permission record — survives leave / rejoin / refresh */
 const MemberSchema = new mongoose.Schema({
   userId:      { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -51,7 +52,13 @@ const RoomSchema = new mongoose.Schema({
   roomName: { type: String, required: true, trim: true, minlength: 3, maxlength: 60 },
   description: { type: String, maxlength: 200 },
   thumbnail: { type: String },
-  mode: { type: String, enum: ["study", "gaming", "entertainment", "casual"], default: "casual" },
+  // what kind of room this is — locked in at creation, never changes
+  roomType: {
+    type: String,
+    enum: ROOM_TYPES,
+    default: "entertainment",
+    immutable: true,
+  },
   isPublic: { type: Boolean, default: true },
   maxParticipants: {
     type: Number, default: ROOM_CAP,
@@ -98,7 +105,8 @@ const RoomSchema = new mongoose.Schema({
   status: { type: String, enum: ["active", "idle", "ended"], default: "active" }
 }, { timestamps: true });
 RoomSchema.index({ roomName: 'text', description: 'text', tags: 'text' });
-RoomSchema.index({ mode: 1, isPublic: 1, status: 1 });
+RoomSchema.index({ roomType: 1, isPublic: 1, status: 1 });
 RoomSchema.index({ "bannedUsers.userId": 1 });
-RoomSchema.statics.ROOM_CAP = ROOM_CAP;
+RoomSchema.statics.ROOM_CAP   = ROOM_CAP;
+RoomSchema.statics.ROOM_TYPES = ROOM_TYPES;
 module.exports = mongoose.model("Room", RoomSchema);

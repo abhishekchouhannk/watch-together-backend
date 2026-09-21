@@ -150,27 +150,19 @@
       color-scheme:dark;
     }
     /* ---- Room-type badge colours (light themes) ---- */
-    [data-theme="morning"] .badge-study,
-    [data-theme="afternoon"] .badge-study{background:rgba(37,99,235,.1);color:#1e40af}
-    [data-theme="morning"] .badge-gaming,
-    [data-theme="afternoon"] .badge-gaming{background:rgba(147,51,234,.1);color:#6b21a8}
     [data-theme="morning"] .badge-entertainment,
     [data-theme="afternoon"] .badge-entertainment{background:rgba(217,119,6,.1);color:#92400e}
-    [data-theme="morning"] .badge-casual,
-    [data-theme="afternoon"] .badge-casual{background:rgba(5,150,105,.1);color:#065f46}
+    [data-theme="morning"] .badge-music,
+    [data-theme="afternoon"] .badge-music{background:rgba(147,51,234,.1);color:#6b21a8}
     [data-theme="morning"] .badge-default,
     [data-theme="afternoon"] .badge-default{background:rgba(100,116,139,.1);color:#475569}
     [data-theme="morning"] .owner-badge,
     [data-theme="afternoon"] .owner-badge{background:rgba(217,119,6,.14);color:#92400e}
     /* ---- Room-type badge colours (dark themes) ---- */
-    [data-theme="evening"] .badge-study,
-    [data-theme="night"] .badge-study{background:rgba(96,165,250,.15);color:#93c5fd}
-    [data-theme="evening"] .badge-gaming,
-    [data-theme="night"] .badge-gaming{background:rgba(168,85,247,.14);color:#d8b4fe}
     [data-theme="evening"] .badge-entertainment,
     [data-theme="night"] .badge-entertainment{background:rgba(251,191,36,.13);color:#fcd34d}
-    [data-theme="evening"] .badge-casual,
-    [data-theme="night"] .badge-casual{background:rgba(52,211,153,.13);color:#6ee7b7}
+    [data-theme="evening"] .badge-music,
+    [data-theme="night"] .badge-music{background:rgba(168,85,247,.14);color:#d8b4fe}
     [data-theme="evening"] .badge-default,
     [data-theme="night"] .badge-default{background:rgba(148,163,184,.12);color:#94a3b8}
     [data-theme="evening"] .owner-badge,
@@ -599,11 +591,9 @@
       </div>
     </div>
     <div class="filters-section" id="filters">
-      <button class="filter-btn active" data-mode="all">All</button>
-      <button class="filter-btn" data-mode="study">📚 Study</button>
-      <button class="filter-btn" data-mode="gaming">🎮 Gaming</button>
-      <button class="filter-btn" data-mode="entertainment">🎬 Entertainment</button>
-      <button class="filter-btn" data-mode="casual">☕ Casual</button>
+      <button class="filter-btn active" data-type="all">All</button>
+      <button class="filter-btn" data-type="entertainment">🎬 Entertainment</button>
+      <button class="filter-btn" data-type="music">🎵 Music</button>
     </div>
     <section class="rooms-section">
       <div class="rooms-header">
@@ -640,12 +630,10 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label" for="f_mode">Room Type</label>
-              <select class="form-select" id="f_mode">
-                <option value="casual" selected>☕ Casual</option>
-                <option value="study">📚 Study</option>
-                <option value="gaming">🎮 Gaming</option>
-                <option value="entertainment">🎬 Entertainment</option>
+              <label class="form-label" for="f_roomType">Room Type</label>
+              <select class="form-select" id="f_roomType">
+                <option value="entertainment" selected>🎬 Entertainment</option>
+                <option value="music">🎵 Music</option>
               </select>
             </div>
             <div class="form-group">
@@ -690,11 +678,9 @@
 (function () {
   'use strict';
   /* ---------- room-type config (matches Room model enum) ---------- */
-  const MODES = {
-    study:         { label: 'Study',         icon: '📚' },
-    gaming:        { label: 'Gaming',        icon: '🎮' },
+  const ROOM_TYPES = {
     entertainment: { label: 'Entertainment', icon: '🎬' },
-    casual:        { label: 'Casual',        icon: '☕' },
+    music:         { label: 'Music',         icon: '🎵' },
   };
   const MAX_TAGS = 8;
   const ROOM_CAP = 10;
@@ -703,7 +689,7 @@
     myRooms: [],
     pubRooms: [],
     view: 'public',
-    mode: 'all',
+    type: 'all',
     query: '',
     loading: true,
     userId: null,
@@ -776,9 +762,9 @@
     // room-type filters
     document.querySelectorAll('.filter-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        S.mode = this.dataset.mode;
+        S.type = this.dataset.type;
         document.querySelectorAll('.filter-btn').forEach(function (b) {
-          b.classList.toggle('active', b.dataset.mode === S.mode);
+          b.classList.toggle('active', b.dataset.type === S.type);
         });
         render();
       });
@@ -787,12 +773,12 @@
     document.querySelectorAll('.toggle-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         S.view = this.dataset.view;
-        S.mode = 'all'; S.query = ''; dom.search.value = '';
+        S.type = 'all'; S.query = ''; dom.search.value = '';
         document.querySelectorAll('.toggle-btn').forEach(function (b) {
           b.classList.toggle('active', b.dataset.view === S.view);
         });
         document.querySelectorAll('.filter-btn').forEach(function (b) {
-          b.classList.toggle('active', b.dataset.mode === 'all');
+          b.classList.toggle('active', b.dataset.type === 'all');
         });
         render();
       });
@@ -903,7 +889,7 @@
     var body = {
       roomName:        $('f_name').value.trim(),
       description:     $('f_desc').value.trim(),
-      mode:            $('f_mode').value,
+      roomType:        $('f_roomType').value,
       maxParticipants: maxP,
       isPublic:        S.draftPublic,
       tags:            S.draftTags.slice(),
@@ -945,7 +931,7 @@
   /* ---------- filtering ---------- */
   function filtered() {
     var list = S.view === 'public' ? S.pubRooms : S.myRooms;
-    if (S.mode !== 'all') list = list.filter(function(r){ return r.mode === S.mode; });
+    if (S.type !== 'all') list = list.filter(function(r){ return r.roomType === S.type; });
     if (S.query.trim()) {
       var q = S.query.toLowerCase();
       list = list.filter(function(r){
@@ -978,8 +964,8 @@
     return false;
   }
   function cardHTML(r) {
-    var cfg   = MODES[r.mode] || { label: r.mode || 'Room', icon: '📺' };
-    var badge = MODES[r.mode] ? 'badge-' + r.mode : 'badge-default';
+    var cfg   = ROOM_TYPES[r.roomType] || { label: r.roomType || 'Room', icon: '📺' };
+    var badge = ROOM_TYPES[r.roomType] ? 'badge-' + r.roomType : 'badge-default';
     var tags  = (r.tags || []).slice(0, 4);
     var rid   = esc(r.roomId || r._id || '');
     var owned = isOwned(r);
@@ -1034,7 +1020,7 @@
   function emptyHTML() {
     var icon, msg;
     if (S.view === 'my')       { icon = '🏠'; msg = "You haven't created or joined any rooms yet."; }
-    else if (S.mode !== 'all') { icon = '🔍'; msg = 'No ' + (MODES[S.mode]||{label:S.mode}).label + ' rooms found.'; }
+    else if (S.type !== 'all') { icon = '🔍'; msg = 'No ' + (ROOM_TYPES[S.type]||{label:S.type}).label + ' rooms found.'; }
     else if (S.query.trim())   { icon = '🔍'; msg = 'No rooms match your search.'; }
     else                       { icon = '📺'; msg = 'No rooms available right now.'; }
     return '<div class="empty-state">'

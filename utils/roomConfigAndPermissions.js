@@ -27,10 +27,6 @@ function sanitizeRoomPatch(room, raw = {}) {
     if (d.length > 200) errors.push("Description must be 200 characters or fewer");
     else patch.description = d;
   }
-  if (raw.mode !== undefined) {
-    if (!MODE_VALUES.includes(raw.mode)) errors.push("Unknown room mode");
-    else patch.mode = raw.mode;
-  }
   if (raw.tags !== undefined) {
     const list = (Array.isArray(raw.tags) ? raw.tags : String(raw.tags).split(","))
       .map((t) => String(t).trim().replace(/^#/, "").toLowerCase())
