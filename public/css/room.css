@@ -2553,3 +2553,124 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
     margin:0 1rem 1rem 0;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   MUSIC ROOM LAYOUT
+   Shown instead of the theater video layout when roomType === "music".
+   The YouTube iframe is NEVER display:none'd — #videoContainer stays
+   rendered (just visually hidden) so the IFrame API keeps working.
+   ═══════════════════════════════════════════════════════════ */
+/* mode badge — music (mirrors the dashboard) */
+#roomPage[data-theme="morning"] .badge-music,#roomPage[data-theme="afternoon"] .badge-music{background:rgba(147,51,234,.1);color:#6b21a8}
+#roomPage[data-theme="evening"] .badge-music,#roomPage[data-theme="night"] .badge-music{background:rgba(168,85,247,.14);color:#d8b4fe}
+/* hidden by default; only the music room reveals it */
+#musicLayout{ display:none; }
+#roomPage[data-room-type="music"] .video-section{
+  position:relative;          /* containing block for the hidden player */
+  overflow:hidden;
+}
+#roomPage[data-room-type="music"] #videoContainer{
+  position:absolute;
+  inset:0;
+  opacity:0;                  /* invisible but still painted → YT keeps playing */
+  pointer-events:none;
+}
+#roomPage[data-room-type="music"] #musicLayout{
+  position:relative;
+  z-index:1;
+  flex:1;min-height:0;
+  display:flex;flex-direction:column;gap:.9rem;
+  padding:1.15rem 1.25rem 1rem;
+  background:var(--card);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--card-bdr);
+  border-radius:12px;
+  box-shadow:var(--card-sh);
+  overflow:hidden;
+}
+/* ── stage: album art + track meta ── */
+.ml-stage{ display:flex;flex-direction:column;align-items:center;gap:.75rem;flex-shrink:0; }
+.ml-art{
+  position:relative;
+  width:clamp(140px, 34vh, 300px);
+  aspect-ratio:1/1;
+  border-radius:16px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 30% 22%, var(--acc-glow), transparent 62%), var(--surf);
+  box-shadow:0 14px 34px rgba(0,0,0,.22);
+}
+.ml-art-img{ position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block; }
+.ml-art-img[hidden]{ display:none; }
+.ml-art-fallback{ font-size:3rem;opacity:.55; }
+.ml-meta{ max-width:100%;min-width:0;text-align:center; }
+.ml-title{
+  font-size:1.12rem;font-weight:700;color:var(--t1);line-height:1.3;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.ml-artist{
+  margin-top:.2rem;font-size:.85rem;color:var(--t3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+/* ── lyrics ── */
+.ml-lyrics{
+  flex:1;min-height:0;overflow-y:auto;
+  display:flex;align-items:center;justify-content:center;
+  padding:1rem;text-align:center;
+  border:1px solid var(--card-bdr);border-radius:12px;background:var(--glass);
+}
+.ml-lyrics-ph{ font-size:.85rem;color:var(--t3);font-style:italic; }
+/* ── controls ── */
+.ml-controls{ flex-shrink:0;display:flex;flex-direction:column;gap:.55rem; }
+.ml-progress{ width:100%; }
+.ml-ctl-row{ display:flex;align-items:center;gap:.6rem; }
+.ml-time{ font-size:.72rem;color:var(--t3);font-variant-numeric:tabular-nums;white-space:nowrap; }
+.ml-time-cur{ flex:0 0 auto; }
+.ml-transport{ flex:1;display:flex;align-items:center;justify-content:center;gap:.45rem; }
+.ml-right{ flex:0 0 auto;display:flex;align-items:center;gap:.4rem; }
+.ml-volpct{
+  font-size:.72rem;color:var(--t3);font-variant-numeric:tabular-nums;
+  min-width:2.6rem;text-align:right;
+}
+.ml-btn{
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;color:var(--t2);border-radius:50%;
+  transition:background .15s,color .15s,transform .1s;
+}
+.ml-btn svg{ display:block; }
+.ml-btn:hover{ background:var(--surf);color:var(--t1); }
+.ml-btn:active{ transform:scale(.92); }
+.ml-btn[disabled]{ opacity:.3;pointer-events:none; }
+.ml-side{ width:34px;height:34px; }
+.ml-side svg{ width:18px;height:18px; }
+.ml-mute{ width:28px;height:28px; }
+.ml-mute svg{ width:16px;height:16px; }
+.ml-play{
+  width:48px;height:48px;
+  background:var(--acc);color:var(--acc-t);
+  box-shadow:0 4px 14px var(--acc-glow);
+}
+.ml-play svg{ width:22px;height:22px; }
+.ml-play:hover{ background:var(--acc-h);color:var(--acc-t); }
+.ml-play.is-loading{ opacity:.85;cursor:default; }
+/* range inputs here sit on a glass card, not a dark video overlay */
+.ml-progress,.ml-volume{ height:5px;border-radius:3px;background:var(--in-bdr); }
+.ml-volume{ width:84px;flex:0 0 auto; }
+.ml-progress::-webkit-slider-thumb,.ml-volume::-webkit-slider-thumb{
+  width:13px;height:13px;background:var(--acc);box-shadow:0 1px 4px rgba(0,0,0,.3);
+}
+.ml-progress::-moz-range-thumb,.ml-volume::-moz-range-thumb{
+  width:13px;height:13px;background:var(--acc);border:none;
+}
+/* ── mobile ── */
+@media(max-width:768px){
+  #roomPage[data-room-type="music"] .video-section{
+    position:relative;top:auto;z-index:auto;   /* drop the sticky behaviour */
+    padding:.65rem;background:none;
+    backdrop-filter:none;-webkit-backdrop-filter:none;
+  }
+  #roomPage[data-room-type="music"] .video-section::after{ display:none; }
+  #roomPage[data-room-type="music"] #musicLayout{ padding:1rem;gap:.75rem; }
+  #roomPage[data-room-type="music"] .ml-lyrics{ min-height:90px; }
+  #roomPage[data-room-type="music"] .chat-section{ height:auto;min-height:60vh; }
+  .ml-volume{ width:64px; }
+}

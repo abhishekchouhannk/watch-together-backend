@@ -46,6 +46,7 @@ import { Q } from "./room/queue.js";
 import { wirePermissions, closeConfig } from "./room/permissions.js";
 import { wireVoice } from "./room/voice.js";
 import { wireFocusMode } from "./room/focus-mode.js";
+import "./room/room-layout.js";   // ← registers the roomType → layout switch (phase 5)
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {
   initTheme();

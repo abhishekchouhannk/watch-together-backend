@@ -184,7 +184,7 @@ function serializeRoom(room) {
     roomId: room.roomId,
     roomName: room.roomName,
     description: room.description,
-    mode: room.mode,
+    roomType: room.roomType,
     status: room.status,
     isPublic: room.isPublic,
     maxParticipants: room.maxParticipants,

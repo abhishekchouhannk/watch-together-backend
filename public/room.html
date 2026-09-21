@@ -447,6 +447,61 @@
               </button>
             </div>
           </div>
+          <!-- ===== MUSIC LAYOUT (shown only when roomType === "music") ===== -->
+          <div class="music-layout" id="musicLayout" aria-hidden="true">
+            <!-- album art + track meta -->
+            <div class="ml-stage">
+              <div class="ml-art" id="musicArt">
+                <span class="ml-art-fallback" id="musicArtFallback" aria-hidden="true">🎵</span>
+                <img class="ml-art-img" id="musicArtImg" alt="" hidden />
+              </div>
+              <div class="ml-meta">
+                <div class="ml-title" id="musicTitle">Nothing playing</div>
+                <div class="ml-artist" id="musicArtist">Add a track to the queue to start listening</div>
+              </div>
+            </div>
+            <!-- lyrics (synced lyrics come later) -->
+            <div class="ml-lyrics" id="musicLyrics">
+              <p class="ml-lyrics-ph">Synced lyrics will appear here later</p>
+            </div>
+            <!-- custom audio controls -->
+            <div class="ml-controls" id="musicControls">
+              <input type="range" class="vc-range ml-progress" id="mProgressBar"
+                     min="0" max="1000" value="0" step="1" aria-label="Seek" />
+              <div class="ml-ctl-row">
+                <span class="ml-time ml-time-cur" id="mCurTime">0:00</span>
+                <div class="ml-transport">
+                  <button class="ml-btn ml-side" id="mPrevBtn" type="button" title="Previous track" disabled>
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="19 20 9 12 19 4 19 20" /><rect x="4" y="4" width="2.5" height="16" />
+                    </svg>
+                  </button>
+                  <button class="ml-btn ml-play" id="mPlayBtn" type="button" title="Play / Pause" aria-label="Play">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="6 3 20 12 6 21 6 3" />
+                    </svg>
+                  </button>
+                  <button class="ml-btn ml-side" id="mNextBtn" type="button" title="Next track" disabled>
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 4 15 12 5 20 5 4" /><rect x="17.5" y="4" width="2.5" height="16" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="ml-right">
+                  <button class="ml-btn ml-mute" id="mMuteBtn" type="button" title="Mute">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    </svg>
+                  </button>
+                  <input type="range" class="vc-range ml-volume" id="mVolBar"
+                         min="0" max="100" value="100" step="1" aria-label="Volume" />
+                  <span class="ml-volpct" id="mVolPct">100%</span>
+                  <span class="ml-time ml-time-dur" id="mDurTime">0:00</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <!-- SIDE PANEL (Chat + Queue + Voice) -->
         <div class="chat-section" id="chatSection">

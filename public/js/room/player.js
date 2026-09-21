@@ -67,6 +67,28 @@ export const playerHooks = {
   queueTick(t, d)    {},
   closeRail()        {},
 };
+
+/* ══════════════════════════════════════
+   ACTIVE-LAYOUT CONTROL MAP
+   The music room and the entertainment room drive the SAME engine (P) but
+   render different on-screen controls. cid() returns the element id for
+   whichever layout is on screen now. S.roomType is set by room-layout.js at
+   room-state phase 5, so it's always valid by the time a track loads.
+   ══════════════════════════════════════ */
+function isMusic() { return S.roomType === "music"; }
+function cid(name) {
+  const m = isMusic();
+  switch (name) {
+    case "prog":    return m ? "mProgressBar" : "progressBar";
+    case "curTime": return m ? "mCurTime"     : "curTime";
+    case "durTime": return m ? "mDurTime"     : "durTime";
+    case "mute":    return m ? "mMuteBtn"     : "muteBtn";
+    case "vol":     return m ? "mVolBar"      : "volBar";
+    case "volPct":  return m ? "mVolPct"      : null;
+    default:        return null;
+  }
+}
+
 /* ═══════════════════════════════════════════
    PLAYER ABSTRACTION  (direct <video> + YT)
    ═══════════════════════════════════════════ */
@@ -342,11 +364,14 @@ export function isSilent() { return P.isMuted() || P.vol() === 0; }
 export function syncVolumeUI() {
   if (!P.ready) return;
   const m = isSilent();
-  $("muteBtn").innerHTML = m ? mutedSVG : volSVG;
-  if (volDragging || document.activeElement === $("volBar")) return;
+  const volBar = $(cid("vol")), muteBtn = $(cid("mute"));
+  if (muteBtn) muteBtn.innerHTML = m ? mutedSVG : volSVG;
+  if (!volBar) return;
+  if (volDragging || document.activeElement === volBar) return;
   const v = m ? 0 : Math.round(P.vol() * 100);
-  const vb = $("volBar");
-  if (+vb.value !== v) { vb.value = v; fillSlider(vb, v, 100); }
+  if (+volBar.value !== v) { volBar.value = v; fillSlider(volBar, v, 100); }
+  const pctId = cid("volPct");
+  if (pctId && $(pctId)) $(pctId).textContent = v + "%";
 }
 /* ═══════ YOUTUBE IFRAME API (loaded once, on demand) ═══════ */
 let ytAPIReady = false, ytAPIProm = null;
@@ -446,12 +471,13 @@ export async function fetchYTMeta(videoId) {
 }
 export async function showVideoInfo(ytId) {
   const meta = await fetchYTMeta(ytId);
-  if (meta.aspect) ytLetterbox.setAspect(meta.aspect);       // replaces old auto-detect
+  if (meta.aspect) ytLetterbox.setAspect(meta.aspect);
   setChannelAvatar(meta.author, meta.authorUrl);
   $("viTitle").textContent  = meta.title  || "YouTube video";
   $("viAuthor").textContent = meta.author || "";
   $("viBar").style.display = "";
   flashInfoBar(4000);
+  updateMusicMeta({ title: meta.title, author: meta.author, videoId: ytId, thumb: meta.thumb });
 }
 export function setChannelAvatar(author, authorUrl) {
   const img = $("viThumb"), av = $("viAv");
@@ -473,6 +499,54 @@ export function flashInfoBar(ms = 3000) {
   bar.classList.add("show");
   clearTimeout(flashInfoBar._t);
   flashInfoBar._t = setTimeout(() => bar.classList.remove("show"), ms);
+}
+/* ══════════════════════════════════════
+   MUSIC LAYOUT — track metadata
+   No-ops outside a music room (the elements live in the hidden layout there).
+   ══════════════════════════════════════ */
+function resetMusicMeta(mode) {
+  if (!isMusic()) return;
+  const img = $("musicArtImg"), fb = $("musicArtFallback");
+  if (img) { img.onload = img.onerror = null; img.hidden = true; img.removeAttribute("src"); }
+  if (fb)  fb.hidden = false;
+  const t = $("musicTitle"), a = $("musicArtist");
+  if (mode === "loading") {
+    if (t) t.textContent = "Loading…";
+    if (a) a.textContent = "";
+  } else {
+    if (t) t.textContent = "Nothing playing";
+    if (a) a.textContent = "Add a track to the queue to start listening";
+  }
+}
+function updateMusicMeta(meta) {
+  if (!isMusic()) return;
+  meta = meta || {};
+  const t = $("musicTitle"), a = $("musicArtist");
+  if (t) t.textContent = meta.title || "Unknown track";
+  if (a) a.textContent = meta.author || "";
+  const img = $("musicArtImg"), fb = $("musicArtFallback");
+  if (!img || !fb) return;
+  const srcs = [];
+  if (meta.videoId) {
+    srcs.push("https://i.ytimg.com/vi/" + meta.videoId + "/maxresdefault.jpg");
+    srcs.push("https://i.ytimg.com/vi/" + meta.videoId + "/hqdefault.jpg");
+  }
+  if (meta.thumb) srcs.push(meta.thumb);
+  let i = 0;
+  img.onload  = () => { img.hidden = false; fb.hidden = true; };
+  img.onerror = () => {
+    if (i < srcs.length) { img.src = srcs[i++]; return; }
+    img.hidden = true; fb.hidden = false;
+  };
+  if (srcs.length) img.src = srcs[i++];
+  else { img.hidden = true; fb.hidden = false; }
+}
+function prettyNameFromUrl(url) {
+  try {
+    const path = new URL(url, location.href).pathname;
+    const base = decodeURIComponent((path.split("/").pop() || "").split("?")[0]);
+    return base.replace(/\.[a-z0-9]+$/i, "").replace(/[._\-]+/g, " ").trim() || "Audio track";
+  } catch (_) { return "Audio track"; }
 }
 /* ═══════ SETTINGS MENU — informative only (YouTube) ═══════ */
 export const settingsUI = (() => {
@@ -528,6 +602,7 @@ export async function loadVideo(url, fromRemote, opts) {
   volDragging = false;
   playerHooks.queueResetUpNext();                 // ← was Q.resetUpNext()
   $("viBar").style.display = "none";
+  resetMusicMeta("loading");
   if (dom.fxLayer) dom.fxLayer.innerHTML = "";
   pendingAutoplay = !!opts.play;              // ← remember whether to auto-start
   const ytId = extractYT(url);
@@ -554,6 +629,7 @@ export async function loadVideo(url, fromRemote, opts) {
     P.el = $("videoEl");
     P.el.src = url;
     wireDirectVideoEvents();
+    updateMusicMeta({ title: prettyNameFromUrl(url) });   // ← add
     P.el.addEventListener("canplay", onPlayerReady, { once: true });
   }
   dom.controls.style.display = "";
@@ -577,7 +653,8 @@ export function onPlayerReady() {
   if (P.type === "youtube") settingsUI.onYTReady();
   P.ready = true;
   /* YT hands a muted player; force it into the state the UI claims */
-  P.setVol(($("volBar").value || 100) / 100);
+  const _vb = $(cid("vol"));
+  P.setVol((((_vb && _vb.value) || 100)) / 100);
   P.setMuted(false);
   syncVolumeUI();
   if (!S.needsSync) return;
@@ -633,29 +710,38 @@ export function visualState() {
 }
 export function updateProgressUI() {
   if (!P.ready) return;
-  const prog = $("progressBar"), t = P.time() || 0, d = P.dur() || 0;
-  if (!progDragging) {
+  const prog = $(cid("prog")), t = P.time() || 0, d = P.dur() || 0;
+  if (prog && !progDragging) {
     prog.max = Math.max(1, Math.floor(d * 100));
     prog.value = Math.floor(t * 100);
     fillSlider(prog, prog.value, prog.max);
-    $("curTime").textContent = fmtTime(t);
+    const ct = $(cid("curTime")); if (ct) ct.textContent = fmtTime(t);
   }
   syncVolumeUI();
-  $("durTime").textContent = fmtTime(d);
+  const dt = $(cid("durTime")); if (dt) dt.textContent = fmtTime(d);
   renderPlayState(visualState());
   playerHooks.queueTick(t, d);
 }
 function renderPlayState(vs) {
   if (vs === lastVisual) return;
   lastVisual = vs;
-  const c = $("cPlayBtn"), b = $("playBtn");
   const loading = vs === "loading";
-  c.classList.toggle("is-loading", loading);
   dom.container.classList.toggle("is-loading", loading);
+  if (isMusic()) {
+    const p = $("mPlayBtn");
+    if (!p) return;
+    p.classList.toggle("is-loading", loading);
+    if (loading)               { p.innerHTML = spinnerSVG; p.setAttribute("aria-label", "Syncing…"); }
+    else if (vs === "playing") { p.innerHTML = bigPause;   p.setAttribute("aria-label", "Pause"); }
+    else                       { p.innerHTML = bigPlay;    p.setAttribute("aria-label", "Play"); }
+    return;
+  }
+  const c = $("cPlayBtn"), b = $("playBtn");
+  c.classList.toggle("is-loading", loading);
   if (loading) {
     c.innerHTML = spinnerSVG;
     c.setAttribute("aria-label", "Syncing…");
-    b.innerHTML = pauseSVG;            // the room is (about to be) playing — offer "pause"
+    b.innerHTML = pauseSVG;
   } else if (vs === "playing") {
     c.innerHTML = bigPause;
     c.setAttribute("aria-label", "Pause");
@@ -708,6 +794,14 @@ export function wirePlayerControls() {
   $("fsBtn").onclick = toggleFullscreen;
   $("cPlayBtn").onclick = () => { if (guardSync()) P.toggle(); };
   $("settingsBtn").onclick = (e) => { e.stopPropagation(); settingsUI.toggle(); };
+
+  /* ── MUSIC LAYOUT — same engine, its own on-screen controls ── */
+  wireTransportCluster({
+    play: "mPlayBtn", prog: "mProgressBar", mute: "mMuteBtn",
+    vol: "mVolBar", volPct: "mVolPct", curTime: "mCurTime",
+  });
+  wireMusicTransportLinks();
+
   /* keyboard */
   document.addEventListener("keydown", (e) => {
     const t = e.target;
@@ -719,6 +813,71 @@ export function wirePlayerControls() {
     else if (k === "arrowleft")  { if (guardSync()) P.act("seek", Math.max(0, P.time() - 5)); }
     else if (k === "m") { P.setMuted(!isSilent()); syncVolumeUI(); }
   });
+}
+/* Wire a transport cluster (play / seek / volume / mute) to the shared P engine.
+   The entertainment cluster is still wired inline in wirePlayerControls() for
+   historical reasons; this drives the music cluster. Safe to call when the
+   elements don't exist — every lookup is guarded. */
+function wireTransportCluster(ids) {
+  const playBtn = ids.play && $(ids.play);
+  const prog    = ids.prog && $(ids.prog);
+  const muteBtn = ids.mute && $(ids.mute);
+  const volBar  = ids.vol  && $(ids.vol);
+  if (playBtn) playBtn.onclick = () => { if (guardSync()) P.toggleUser(); };
+  if (prog) {
+    prog.addEventListener("input", () => {
+      if (!S.perms.canSync) return;
+      progDragging = true;
+      const t = prog.value / 100;
+      if (ids.curTime && $(ids.curTime)) $(ids.curTime).textContent = fmtTime(t);
+      fillSlider(prog, prog.value, prog.max);
+      if (P.type === "direct") P.seek(t);
+    });
+    prog.addEventListener("change", () => {
+      progDragging = false;
+      if (!S.perms.canSync) { updateProgressUI(); return; }
+      P.act("seek", prog.value / 100);
+    });
+  }
+  if (muteBtn && volBar) {
+    muteBtn.onclick = () => {
+      if (isSilent()) {
+        P.setMuted(false);
+        if (P.vol() === 0) P.setVol(volBar.value > 0 ? volBar.value / 100 : 1);
+      } else {
+        P.setMuted(true);
+      }
+      syncVolumeUI();
+    };
+    volBar.addEventListener("pointerdown", () => (volDragging = true));
+    volBar.addEventListener("pointerup",   () => (volDragging = false));
+    volBar.addEventListener("input", () => {
+      const v = volBar.value / 100;
+      P.setVol(v);
+      P.setMuted(v === 0);
+      fillSlider(volBar, volBar.value, 100);
+      muteBtn.innerHTML = v === 0 ? mutedSVG : volSVG;
+      if (ids.volPct && $(ids.volPct)) $(ids.volPct).textContent = volBar.value + "%";
+    });
+    fillSlider(volBar, 100, 100);
+    if (ids.volPct && $(ids.volPct)) $(ids.volPct).textContent = "100%";
+  }
+}
+/* The music layout's prev/next just forward to the entertainment layout's
+   queue buttons (wired by queue.js) and mirror their disabled state, so
+   queue.js never needs to know the music layout exists. */
+function wireMusicTransportLinks() {
+  const mPrev = $("mPrevBtn"), mNext = $("mNextBtn");
+  const prev  = $("prevBtn"),  next  = $("nextBtn");
+  if (mPrev && prev) mPrev.onclick = () => { if (!prev.disabled) prev.click(); };
+  if (mNext && next) mNext.onclick = () => { if (!next.disabled) next.click(); };
+  const pairs = [[prev, mPrev], [next, mNext]];
+  const sync = () => pairs.forEach(([src, dst]) => {
+    if (src && dst) dst.toggleAttribute("disabled", src.hasAttribute("disabled"));
+  });
+  sync();
+  const mo = new MutationObserver(sync);
+  [prev, next].forEach((el) => el && mo.observe(el, { attributes: true, attributeFilter: ["disabled"] }));
 }
 export function wireDirectVideoEvents() {
   const v = P.el;
@@ -866,7 +1025,9 @@ onConnect(() => {
 /* phase 35: after queue reconcile (30, still in room.js) — same order as the
    original room-state body: Q.applyRemote(...) then loadVideo(...) */
 onRoomState(({ room }) => {
+  lastVisual = null;                      // the layout may have flipped (music ⇄ video)
   if (room.video && room.video.url) {
+    if (isMusic()) renderPlayState("loading");
     S.currentItemId = room.video.itemId || null;
     S.initialVideoState = { currentTime: room.video.currentTime, isPlaying: room.video.isPlaying };
     S.needsSync = true;
