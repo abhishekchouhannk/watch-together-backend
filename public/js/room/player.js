@@ -66,6 +66,7 @@ export const playerHooks = {
   queueOnEnded()     {},
   queueTick(t, d)    {},
   closeRail()        {},
+  lyricsSetTrack()   {},
 };
 
 /* ══════════════════════════════════════
@@ -517,6 +518,7 @@ function resetMusicMeta(mode) {
     if (t) t.textContent = "Nothing playing";
     if (a) a.textContent = "Add a track to the queue to start listening";
   }
+  playerHooks.lyricsSetTrack({ loading: mode === "loading" });
 }
 function updateMusicMeta(meta) {
   if (!isMusic()) return;
@@ -524,6 +526,9 @@ function updateMusicMeta(meta) {
   const t = $("musicTitle"), a = $("musicArtist");
   if (t) t.textContent = meta.title || "Unknown track";
   if (a) a.textContent = meta.author || "";
+
+  playerHooks.lyricsSetTrack({ title: meta.title, author: meta.author, videoId: meta.videoId });
+
   const img = $("musicArtImg"), fb = $("musicArtFallback");
   if (!img || !fb) return;
   const srcs = [];

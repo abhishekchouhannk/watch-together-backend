@@ -47,6 +47,7 @@ import { wirePermissions, closeConfig } from "./room/permissions.js";
 import { wireVoice } from "./room/voice.js";
 import { wireFocusMode } from "./room/focus-mode.js";
 import "./room/room-layout.js";   // ← registers the roomType → layout switch (phase 5)
+import { wireLyrics } from "./room/lyrics.js";
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {
   initTheme();
@@ -77,6 +78,7 @@ function wireEvents() {
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
   wirePlayerControls();
+  wireLyrics();
   wirePermissions();
   wireChatUnread();
   wireChatActions();

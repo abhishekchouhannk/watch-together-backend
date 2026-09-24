@@ -2556,43 +2556,32 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 
 /* ═══════════════════════════════════════════════════════════
    MUSIC ROOM LAYOUT
-   Shown instead of the theater video layout when roomType === "music".
-   The YouTube iframe is NEVER display:none'd — #videoContainer stays
-   rendered (just visually hidden) so the IFrame API keeps working.
    ═══════════════════════════════════════════════════════════ */
-/* mode badge — music (mirrors the dashboard) */
 #roomPage[data-theme="morning"] .badge-music,#roomPage[data-theme="afternoon"] .badge-music{background:rgba(147,51,234,.1);color:#6b21a8}
 #roomPage[data-theme="evening"] .badge-music,#roomPage[data-theme="night"] .badge-music{background:rgba(168,85,247,.14);color:#d8b4fe}
-/* hidden by default; only the music room reveals it */
 #musicLayout{ display:none; }
-#roomPage[data-room-type="music"] .video-section{
-  position:relative;          /* containing block for the hidden player */
-  overflow:hidden;
-}
+#roomPage[data-room-type="music"] .video-section{ position:relative;overflow:hidden; }
 #roomPage[data-room-type="music"] #videoContainer{
-  position:absolute;
-  inset:0;
-  opacity:0;                  /* invisible but still painted → YT keeps playing */
-  pointer-events:none;
+  position:absolute;inset:0;opacity:0;pointer-events:none;
 }
 #roomPage[data-room-type="music"] #musicLayout{
-  position:relative;
-  z-index:1;
+  position:relative;z-index:1;
   flex:1;min-height:0;
-  display:flex;flex-direction:column;gap:.9rem;
-  padding:1.15rem 1.25rem 1rem;
-  background:var(--card);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  display:flex;flex-direction:column;gap:.75rem;
+  padding:1rem 1.15rem;
+  /* FIX 1 — fully opaque, no sky showing through */
+  background-color:var(--sky-fb);
+  background-image:linear-gradient(var(--menu-bg), var(--menu-bg));
   border:1px solid var(--card-bdr);
   border-radius:12px;
   box-shadow:var(--card-sh);
   overflow:hidden;
 }
-/* ── stage: album art + track meta ── */
-.ml-stage{ display:flex;flex-direction:column;align-items:center;gap:.75rem;flex-shrink:0; }
+/* ── stage ── */
+.ml-stage{ display:flex;flex-direction:column;align-items:center;gap:.65rem;flex-shrink:0; }
 .ml-art{
   position:relative;
-  width:clamp(140px, 34vh, 300px);
+  width:clamp(120px, 28vh, 240px);
   aspect-ratio:1/1;
   border-radius:16px;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
@@ -2601,35 +2590,95 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 }
 .ml-art-img{ position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block; }
 .ml-art-img[hidden]{ display:none; }
-.ml-art-fallback{ font-size:3rem;opacity:.55; }
+.ml-art-fallback{ font-size:2.8rem;opacity:.55; }
 .ml-meta{ max-width:100%;min-width:0;text-align:center; }
 .ml-title{
-  font-size:1.12rem;font-weight:700;color:var(--t1);line-height:1.3;
+  font-size:1.06rem;font-weight:700;color:var(--t1);line-height:1.3;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 }
 .ml-artist{
-  margin-top:.2rem;font-size:.85rem;color:var(--t3);
+  margin-top:.15rem;font-size:.82rem;color:var(--t3);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-/* ── lyrics ── */
+/* ── lyrics ──
+   FIX 3 — the view takes whatever height is left; short = fewer lines.
+   The player box itself never scrolls. */
 .ml-lyrics{
-  flex:1;min-height:0;overflow-y:auto;
-  display:flex;align-items:center;justify-content:center;
-  padding:1rem;text-align:center;
-  border:1px solid var(--card-bdr);border-radius:12px;background:var(--glass);
+  position:relative;flex:1;min-height:0;
+  display:flex;flex-direction:column;
+  border:1px solid var(--card-bdr);border-radius:12px;
+  background:var(--glass);overflow:hidden;
 }
-.ml-lyrics-ph{ font-size:.85rem;color:var(--t3);font-style:italic; }
+.ml-lyrics-toggle{
+  position:absolute;top:.4rem;right:.4rem;z-index:2;
+  width:26px;height:26px;border-radius:7px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--surf);color:var(--t2);
+  transition:background .15s,color .15s;
+}
+.ml-lyrics-toggle svg{ width:14px;height:14px; }
+.ml-lyrics-toggle:hover,.ml-lyrics-toggle.is-open{ background:var(--surf-h);color:var(--t1); }
+.ml-lyrics-view{
+  position:relative;flex:1;min-height:0;
+  overflow-y:auto;padding:.6rem 1.1rem;
+  display:flex;flex-direction:column;
+}
+.ml-lyrics:not(.has-lyrics) .ml-lyrics-view{ align-items:center;justify-content:center;text-align:center; }
+.ml-lyrics-ph{ font-size:.82rem;color:var(--t3);font-style:italic; }
+.mll{
+  margin:0;padding:.26rem 0;
+  font-size:.92rem;line-height:1.35;color:var(--t3);
+  opacity:.6;cursor:pointer;transition:color .2s,opacity .2s;
+}
+.mll:hover{ color:var(--t2);opacity:.85; }
+.mll.active{ color:var(--t1);opacity:1;font-weight:700; }
+.mll-empty{ opacity:.35;cursor:default; }
+.ml-lyrics-search{
+  flex:1;min-height:0;
+  display:flex;flex-direction:column;gap:.5rem;
+  padding:.55rem;border-top:1px solid var(--card-bdr);
+}
+.ml-lyrics-search[hidden]{ display:none; }
+.ml-lyrics.searching:not(.has-lyrics) .ml-lyrics-view{ display:none; }
+.ml-lyrics.searching:not(.has-lyrics) .ml-lyrics-search{ border-top:none;padding-top:2.4rem; }
+.ml-lyrics.searching.has-lyrics .ml-lyrics-search{ flex:2; }
+.mls-bar{ display:flex;gap:.4rem;flex-shrink:0; }
+.mls-bar .url-input{ font-size:.8rem;padding:.4rem .55rem; }
+.mls-bar .btn-sm{ padding:.4rem .7rem;font-size:.78rem; }
+.mls-results{ flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:.3rem; }
+.mls-status{ font-size:.76rem;color:var(--t3);padding:.3rem .1rem; }
+.mls-result{
+  display:flex;flex-direction:column;align-items:flex-start;gap:.1rem;
+  text-align:left;padding:.4rem .55rem;border-radius:8px;background:var(--surf);
+  transition:background .15s;
+}
+.mls-result:hover{ background:var(--surf-h); }
+.mls-r-title{ font-size:.8rem;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%; }
+.mls-r-artist{ font-size:.7rem;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%; }
+.mls-nav{ display:flex;gap:.4rem;flex-shrink:0; }
+.mls-nav:empty{ display:none; }
+.mls-nav-more{ margin-left:auto; }
+.mls-nav-btn{
+  font-size:.74rem;font-weight:600;padding:.3rem .6rem;border-radius:7px;
+  background:var(--surf);color:var(--surf-t);transition:background .15s;
+}
+.mls-nav-btn:hover{ background:var(--surf-h); }
 /* ── controls ── */
-.ml-controls{ flex-shrink:0;display:flex;flex-direction:column;gap:.55rem; }
+.ml-controls{ flex-shrink:0;display:flex;flex-direction:column;gap:.5rem;container-type:inline-size; }
 .ml-progress{ width:100%; }
-.ml-ctl-row{ display:flex;align-items:center;gap:.6rem; }
+/* FIX 4 — equal side columns keep the transport dead-centre */
+.ml-ctl-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+  align-items:center;gap:.6rem;
+}
 .ml-time{ font-size:.72rem;color:var(--t3);font-variant-numeric:tabular-nums;white-space:nowrap; }
-.ml-time-cur{ flex:0 0 auto; }
-.ml-transport{ flex:1;display:flex;align-items:center;justify-content:center;gap:.45rem; }
-.ml-right{ flex:0 0 auto;display:flex;align-items:center;gap:.4rem; }
+.ml-time-cur{ justify-self:start; }
+.ml-transport{ display:flex;align-items:center;gap:.45rem; }
+.ml-right{ justify-self:end;display:flex;align-items:center;gap:.4rem;min-width:0; }
 .ml-volpct{
   font-size:.72rem;color:var(--t3);font-variant-numeric:tabular-nums;
-  min-width:2.6rem;text-align:right;
+  min-width:2.4rem;text-align:right;
 }
 .ml-btn{
   display:flex;align-items:center;justify-content:center;
@@ -2645,32 +2694,54 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .ml-mute{ width:28px;height:28px; }
 .ml-mute svg{ width:16px;height:16px; }
 .ml-play{
-  width:48px;height:48px;
+  width:46px;height:46px;
   background:var(--acc);color:var(--acc-t);
   box-shadow:0 4px 14px var(--acc-glow);
 }
 .ml-play svg{ width:22px;height:22px; }
 .ml-play:hover{ background:var(--acc-h);color:var(--acc-t); }
 .ml-play.is-loading{ opacity:.85;cursor:default; }
-/* range inputs here sit on a glass card, not a dark video overlay */
 .ml-progress,.ml-volume{ height:5px;border-radius:3px;background:var(--in-bdr); }
-.ml-volume{ width:84px;flex:0 0 auto; }
+.ml-volume{ width:78px;flex:0 0 auto; }
 .ml-progress::-webkit-slider-thumb,.ml-volume::-webkit-slider-thumb{
   width:13px;height:13px;background:var(--acc);box-shadow:0 1px 4px rgba(0,0,0,.3);
 }
 .ml-progress::-moz-range-thumb,.ml-volume::-moz-range-thumb{
   width:13px;height:13px;background:var(--acc);border:none;
 }
-/* ── mobile ── */
+/* shed the volume UI on a narrow panel so the transport stays centred */
+@container (max-width: 520px){ .ml-volume{ display:none; } }
+@container (max-width: 400px){ .ml-volpct{ display:none; } }
+/* ── mobile portrait ── */
 @media(max-width:768px){
   #roomPage[data-room-type="music"] .video-section{
-    position:relative;top:auto;z-index:auto;   /* drop the sticky behaviour */
+    position:relative;top:auto;z-index:auto;
     padding:.65rem;background:none;
     backdrop-filter:none;-webkit-backdrop-filter:none;
   }
   #roomPage[data-room-type="music"] .video-section::after{ display:none; }
-  #roomPage[data-room-type="music"] #musicLayout{ padding:1rem;gap:.75rem; }
-  #roomPage[data-room-type="music"] .ml-lyrics{ min-height:90px; }
+  #roomPage[data-room-type="music"] #musicLayout{ padding:1rem;gap:.7rem; }
+  #roomPage[data-room-type="music"] .ml-lyrics{ min-height:110px; }
+  #roomPage[data-room-type="music"] .ml-lyrics.searching{ min-height:300px; }
   #roomPage[data-room-type="music"] .chat-section{ height:auto;min-height:60vh; }
-  .ml-volume{ width:64px; }
+}
+/* ── FIX 2 — tablet landscape: details moves above the side panel so the
+      taller music player gets the whole left column ── */
+@media (orientation: landscape) and (min-width: 769px)
+   and (min-height: 501px) and (pointer: coarse){
+  #roomPage[data-room-type="music"]{
+    grid-template-areas:
+      "header  header"
+      "video   details"
+      "video   chat";
+  }
+  #roomPage[data-room-type="music"] .room-details{ margin:0 1rem 0 0; }
+  #roomPage[data-room-type="music"] #musicLayout{ padding:1rem;gap:.55rem; }
+  #roomPage[data-room-type="music"] .ml-art{ width:clamp(110px, 22vh, 180px); }
+}
+/* ── landscape phones ── */
+@media (orientation: landscape) and (max-height: 500px){
+  #roomPage[data-room-type="music"] #musicLayout{ padding:.7rem;gap:.5rem; }
+  #roomPage[data-room-type="music"] .ml-art{ width:clamp(84px, 24vh, 130px); }
+  #roomPage[data-room-type="music"] .ml-title{ -webkit-line-clamp:1;font-size:.98rem; }
 }
