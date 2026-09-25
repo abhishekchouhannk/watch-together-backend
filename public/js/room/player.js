@@ -935,6 +935,7 @@ export function revertToRoomState(state) {
 export function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
 export function exitFs() { (document.exitFullscreen || document.webkitExitFullscreen || function () {}).call(document); }
 export function toggleFullscreen() {
+  if (S.roomType === "music") return;
   const el = dom.container;
   if (fsEl()) { exitFs(); return; }
   if (el.classList.contains("pseudo-fs")) { setPseudoFs(false); return; }
