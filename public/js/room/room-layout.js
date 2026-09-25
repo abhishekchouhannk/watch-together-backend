@@ -18,6 +18,18 @@ import { S } from "./state.js";
 import { $ } from "./dom.js";
 import { onRoomState } from "./socket-core.js";
 const TYPES = ["entertainment", "music"];
+let reactionsMoved = false;
+
+function relocateReactions() {
+  if (reactionsMoved) return;
+  const layout = $("musicLayout");
+  const stage  = layout && layout.querySelector(".ml-stage");
+  const rail   = $("reactRail");
+  const fx     = $("fxLayer");
+  if (stage && rail) stage.appendChild(rail);
+  if (layout && fx)  layout.appendChild(fx);
+  reactionsMoved = true;
+}
 export function applyRoomLayout(roomType) {
   const type = TYPES.includes(roomType) ? roomType : "entertainment";
   S.roomType = type;
@@ -27,9 +39,5 @@ export function applyRoomLayout(roomType) {
   if (vc) vc.toggleAttribute("aria-hidden", type === "music");
   const ml = $("musicLayout");
   if (ml) ml.toggleAttribute("aria-hidden", type !== "music");
+  if (type === "music") relocateReactions();
 }
-/* roomType is immutable, so only the first room-state really matters —
-   re-applying on later events is harmless (idempotent). */
-onRoomState(({ room }) => {
-  applyRoomLayout(room && room.roomType);
-}, 5);

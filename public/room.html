@@ -462,13 +462,16 @@
             </div>
             <!-- lyrics (synced lyrics come later) -->
             <div class="ml-lyrics" id="musicLyrics">
-              <button class="ml-lyrics-toggle" id="lyricsSearchToggle" type="button"
-                      title="Search for lyrics" aria-label="Search for lyrics" aria-expanded="false">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-              </button>
+              <div class="ml-lyrics-head">
+                <span class="ml-lyrics-label">Lyrics</span>
+                <button class="ml-lyrics-toggle" id="lyricsSearchToggle" type="button"
+                        title="Search for lyrics" aria-label="Search for lyrics" aria-expanded="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </button>
+              </div>
               <div class="ml-lyrics-view" id="lyricsView">
                 <p class="ml-lyrics-ph">Lyrics will appear here</p>
               </div>
