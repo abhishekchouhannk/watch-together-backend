@@ -11,8 +11,13 @@
 import { $ } from "./dom.js";
 import { S } from "./state.js";
 import { P, playerHooks } from "./player.js";
+import { emit as sockEmit, getSocket } from "./socket-ref.js";
+import { onConnect } from "./socket-core.js";
 const API = "https://lrclib.net/api";
 const PAGE_SIZE = 4;
+const lyricsCache = new Map();   // itemId → LRC (this session + what the server sends)
+let currentLrc = null;           // what's on screen — de-dupes re-renders
+let lyricsSockWired = false;
 let el = {};
 let token = 0;
 let lines = null;        // [{ time, text }]
@@ -48,6 +53,13 @@ export function wireLyrics() {
   }
   playerHooks.lyricsSetTrack = handleTrack;
 }
+function storedLyrics(id) {
+  if (!id) return null;
+  if (lyricsCache.has(id)) return lyricsCache.get(id);
+  const items = (S.queue && S.queue.items) || [];
+  const it = items.find((x) => x && (x.id === id || x.itemId === id));
+  return (it && it.lyrics) || null;
+}
 /* ═══════ track change ═══════ */
 async function handleTrack(info) {
   info = info || {};
@@ -56,6 +68,9 @@ async function handleTrack(info) {
   el.nav.innerHTML = "";
   results = [];
   page = 0;
+  const id = S.currentItemId;
+  const stored = storedLyrics(id);
+  if (stored) { renderLyrics(stored); return; }
   const title = (info.title || "").trim();
   if (info.loading || !title) { showMessage("Looking for lyrics…"); return; }
   showMessage("Looking for lyrics…");
@@ -64,8 +79,12 @@ async function handleTrack(info) {
     const list = await search(title);
     if (mine !== token) return;
     const hit = list.find((x) => x.syncedLyrics);
-    if (hit) renderLyrics(hit.syncedLyrics);
-    else showMessage("No synced lyrics found — use the search icon above.");
+    if (hit) {
+      if (id) lyricsCache.set(id, hit.syncedLyrics);
+      renderLyrics(hit.syncedLyrics);
+    } else {
+      showMessage("No synced lyrics found — use the search icon above.");
+    }
   } catch (_) {
     if (mine !== token) return;
     showMessage("Couldn't reach the lyrics service.");
@@ -121,12 +140,23 @@ function renderResults() {
     b.innerHTML = '<span class="mls-r-title"></span><span class="mls-r-artist"></span>';
     b.querySelector(".mls-r-title").textContent  = r.trackName || r.name || "Unknown title";
     b.querySelector(".mls-r-artist").textContent = r.artistName || "Unknown artist";
-    b.addEventListener("click", () => { renderLyrics(r.syncedLyrics); closeSearch(); });
+    b.addEventListener("click", () => pickResult(r));
     el.results.appendChild(b);
   });
   if (page > 0) el.nav.appendChild(navBtn("← Back", () => { page--; renderResults(); }));
   if (start + PAGE_SIZE < results.length)
     el.nav.appendChild(navBtn("More →", () => { page++; renderResults(); }, "mls-nav-more"));
+}
+function pickResult(r) {
+  const lrc = r && r.syncedLyrics;
+  if (!lrc) return;
+  renderLyrics(lrc);
+  closeSearch();
+  const id = S.currentItemId;
+  if (id) {
+    lyricsCache.set(id, lrc);
+    sockEmit("sync-lyrics", { id, lyrics: lrc });
+  }
 }
 function navBtn(label, onClick, extra) {
   const b = document.createElement("button");
@@ -144,21 +174,11 @@ async function search(q) {
   return Array.isArray(data) ? data.filter(Boolean) : [];
 }
 /* ═══════ render ═══════ */
-function showMessage(text) {
-  stopTimer();
-  lines = null;
-  activeIdx = -1;
-  el.root.classList.remove("has-lyrics");
-  el.view.textContent = "";
-  const p = document.createElement("p");
-  p.className = "ml-lyrics-ph";
-  p.textContent = text;
-  el.view.appendChild(p);
-  el.view.scrollTop = 0;
-}
 function renderLyrics(lrc) {
+  if (lrc && lrc === currentLrc && lines) return;
   const parsed = parseLRC(lrc);
   if (!parsed.length) { showMessage("Those lyrics aren't time-synced."); return; }
+  currentLrc = lrc;
   lines = parsed;
   activeIdx = -1;
   el.root.classList.add("has-lyrics");
@@ -175,6 +195,19 @@ function renderLyrics(lrc) {
   el.view.scrollTop = 0;
   startTimer();
   tick();
+}
+function showMessage(text) {
+  currentLrc = null;
+  stopTimer();
+  lines = null;
+  activeIdx = -1;
+  el.root.classList.remove("has-lyrics");
+  el.view.textContent = "";
+  const p = document.createElement("p");
+  p.className = "ml-lyrics-ph";
+  p.textContent = text;
+  el.view.appendChild(p);
+  el.view.scrollTop = 0;
 }
 /* ═══════ synced highlight ═══════ */
 function startTimer() { stopTimer(); timer = setInterval(tick, 250); }
@@ -235,3 +268,13 @@ function parseLRC(lrc) {
   });
   return out.sort((a, b) => a.time - b.time);
 }
+onConnect(() => {
+  if (lyricsSockWired) return;
+  lyricsSockWired = true;
+  getSocket().on("sync-lyrics", ({ id, lyrics } = {}) => {
+    if (!el.root || S.roomType !== "music") return;
+    if (!id || !lyrics) return;
+    lyricsCache.set(id, lyrics);
+    if (id === S.currentItemId) renderLyrics(lyrics);
+  });
+});

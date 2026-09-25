@@ -20,17 +20,17 @@
  *                 dom.chatOnline (commented out for now)
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { MODES } from "./config.js";
+import { ROOM_TYPES } from "./config.js";
 import { S } from "./state.js";
 import { dom } from "./dom.js";
 import { esc, avColor } from "./utils.js";
 /* ═══════ RENDER ═══════ */
 export function renderHeader() {
   const r = S.room; if (!r) return;
-  const cfg = MODES[r.mode] || { label: r.mode || "Room", icon: "📺" };
-  const bc  = "badge-" + (MODES[r.mode] ? r.mode : "casual");
+  const type = ROOM_TYPES[r.roomType] ? r.roomType : "entertainment";
+  const cfg  = ROOM_TYPES[type];
   dom.hdrName.textContent  = r.roomName;
-  dom.hdrBadge.className   = "mode-badge " + bc;
+  dom.hdrBadge.className   = "mode-badge badge-" + type;
   dom.hdrBadge.textContent = cfg.icon + " " + cfg.label;
   dom.hdrBadge.style.display = "";
   dom.hdrDot.className = "status-dot status-" + (r.status || "active");
@@ -44,19 +44,18 @@ export function toggleDetails() {
 }
 export function renderDetails() {
   const r = S.room; if (!r) return;
-  if (S.detailsOpen === null) S.detailsOpen = window.innerWidth > 768;  // mobile → collapsed by default
-  const cfg   = MODES[r.mode] || { label: r.mode || "Room", icon: "📺" };
-  const bc    = "badge-" + (MODES[r.mode] ? r.mode : "casual");
+  if (S.detailsOpen === null) S.detailsOpen = window.innerWidth > 768;
+  const type  = ROOM_TYPES[r.roomType] ? r.roomType : "entertainment";
+  const cfg   = ROOM_TYPES[type];
+  const bc    = "badge-" + type;
   const parts = r.participants || [];
   dom.details.innerHTML =
-    /* ── always-visible header row ── */
     '<div class="rd-head">' +
       '<h2 class="rd-name">' + esc(r.roomName) + "</h2>" +
       '<span class="mode-badge ' + bc + '">' + cfg.icon + " " + cfg.label + "</span>" +
       '<span class="rd-count">👥 ' + parts.length + "/" + (r.maxParticipants || 10) + "</span>" +
       '<svg class="rd-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>' +
     "</div>" +
-    /* ── expandable body ── */
     '<div class="rd-body"><div class="rd-body-in">' +
       (r.description ? '<p class="rd-desc">' + esc(r.description) + "</p>" : "") +
       '<div class="rd-meta">' +
@@ -74,7 +73,6 @@ export function renderDetails() {
   dom.details.classList.add("rd-loaded");
   dom.details.classList.toggle("expanded", S.detailsOpen);
   dom.details.setAttribute("aria-expanded", String(S.detailsOpen));
-  // dom.chatOnline.textContent = parts.length + " in room";
 }
 // update everything together
 export function renderRoomDetails() {

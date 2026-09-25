@@ -46,6 +46,7 @@ const QueueItemSchema = new mongoose.Schema({
   addedByName: { type: String },
   addedAt:     { type: Date, default: Date.now },
   playedAt:    { type: Date },
+  lyrics: { type: String, default: "", maxlength: 25000 },
 }, { _id: false });
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },

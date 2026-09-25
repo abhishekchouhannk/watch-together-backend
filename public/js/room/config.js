@@ -81,3 +81,7 @@ export const GIPHY_RATING = "r";          // g | pg | pg-13 | r
 export const GIF_INSTANT_SEND = true;
 /* max images per send — each becomes its own message; extra links stay as text */
 export const MAX_ATTACHMENTS = 4;
+export const ROOM_TYPES = {
+  entertainment: { label: "Entertainment", icon: "🎬" },
+  music:         { label: "Music",         icon: "🎵" },
+};

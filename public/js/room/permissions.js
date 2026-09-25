@@ -46,7 +46,7 @@
  *  room-details.js. Nothing imports this module — it is a leaf consumer.
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { MODES, ROOM_CAP, ROLE_LABEL, FIELD_LABEL, MOD_EVT } from "./config.js";
+import { ROOM_TYPES, ROOM_CAP, ROLE_LABEL, FIELD_LABEL, MOD_EVT } from "./config.js";
 import { CHEV_SVG, STEP_UP, STEP_DN, SEC_CLOSE } from "./svg.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
@@ -266,6 +266,7 @@ export function renderConfig() {
   /* ── room details (host + mods → editable) ── */
   if (p.canEditRoom) {
     const f    = roomFormValues();
+    const rtCfg = ROOM_TYPES[r.roomType] || ROOM_TYPES.entertainment;
     const tags = parseTags(f.tags);
     const full = tags.length >= 8;
     h += secOpen("room", "Room details", true, 'data-sec="room"');
@@ -274,12 +275,8 @@ export function renderConfig() {
             '<input id="cfgName" data-room-field type="text" maxlength="60" value="' + esc(f.roomName) + '"></label>' +
          '<label class="cfg-field"><span>Description</span>' +
             '<textarea id="cfgDesc" data-room-field rows="2" maxlength="200">' + esc(f.description) + "</textarea></label>" +
-         '<label class="cfg-field"><span>Mode</span>' +
-            '<select id="cfgMode" data-room-field>' +
-              Object.keys(MODES).map((k) =>
-                '<option value="' + k + '"' + (f.mode === k ? " selected" : "") + ">" +
-                MODES[k].icon + " " + MODES[k].label + "</option>").join("") +
-            "</select></label>" +
+         '<label class="cfg-field"><span>Room type <span class="cfg-note" style="margin:0">(can\'t be changed)</span></span>' +
+            '<input type="text" value="' + esc(rtCfg.icon + " " + rtCfg.label) + '" disabled></label>' +
          /* tags: <div>, not <label> — a label would hijack clicks on the chip ✕ buttons */
          '<div class="cfg-field"><span>Tags ' +
             '<span class="cfg-note" id="cfgTagCnt" style="margin:0">' + tags.length + "/8</span></span>" +
@@ -454,7 +451,6 @@ function normRoom(v) {
   return {
     roomName:        String(v.roomName || "").trim().replace(/\s+/g, " "),
     description:     String(v.description || "").trim(),
-    mode:            v.mode || "casual",
     tags:            parseTags(v.tags).join(","),
     isPublic:        !!v.isPublic,
     maxParticipants: parseInt(v.maxParticipants, 10) || 0,
@@ -493,7 +489,7 @@ function addTagFromInput() {
 function serverRoomVals() {
   const r = S.room || {};
   return normRoom({
-    roomName: r.roomName, description: r.description, mode: r.mode || "casual",
+    roomName: r.roomName, description: r.description,
     tags: (r.tags || []).join(","), isPublic: r.isPublic !== false,
     maxParticipants: r.maxParticipants || 10,
   });
@@ -506,7 +502,6 @@ function roomFormValues() {
   return {
     roomName:        pick("roomName", r.roomName || ""),
     description:     pick("description", r.description || ""),
-    mode:            pick("mode", r.mode || "casual"),
     tags:            pick("tags", (r.tags || []).join(", ")),
     isPublic:        pick("isPublic", r.isPublic !== false),
     maxParticipants: pick("maxParticipants", r.maxParticipants || 10),
@@ -516,7 +511,6 @@ function readRoomForm() {
   return {
     roomName:        $("cfgName").value,
     description:     $("cfgDesc").value,
-    mode:            $("cfgMode").value,
     tags:            $("cfgTags").value,
     isPublic:        $("cfgVis").value === "public",
     maxParticipants: $("cfgMax").value,

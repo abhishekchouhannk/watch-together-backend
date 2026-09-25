@@ -2745,3 +2745,20 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
   #roomPage[data-room-type="music"] .ml-art{ width:clamp(84px, 24vh, 130px); }
   #roomPage[data-room-type="music"] .ml-title{ -webkit-line-clamp:1;font-size:.98rem; }
 }
+
+/* ── wide screens: album art on the left, lyrics on the right ── */
+@media (min-width: 1100px) and (min-height: 560px){
+  #roomPage[data-room-type="music"] #musicLayout{
+    display:grid;
+    grid-template-columns: clamp(200px, 22vw, 300px) 1fr;
+    grid-template-rows: minmax(0,1fr) auto;
+    grid-template-areas:
+      "stage    lyrics"
+      "controls controls";
+    gap: 1rem 1.2rem;
+  }
+  #roomPage[data-room-type="music"] .ml-stage   { grid-area:stage; overflow:hidden; padding:.25rem .5rem 0; }
+  #roomPage[data-room-type="music"] .ml-lyrics  { grid-area:lyrics; }
+  #roomPage[data-room-type="music"] .ml-controls{ grid-area:controls; }
+  #roomPage[data-room-type="music"] .ml-art     { width:min(100%, 34vh); }
+}

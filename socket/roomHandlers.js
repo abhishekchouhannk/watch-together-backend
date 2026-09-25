@@ -88,6 +88,7 @@ const serializeQueue = (room) => ({
     id: i.itemId, url: i.url, type: i.type, videoId: i.videoId,
     title: i.title, author: i.author, thumb: i.thumb, duration: i.duration || 0,
     addedBy: i.addedBy ? i.addedBy.toString() : null, addedByName: i.addedByName || "",
+    lyrics: i.lyrics || "",
   })),
   index:    typeof room.queueIndex === "number" ? room.queueIndex : -1,
   autoplay: room.settings?.autoplay !== false,
@@ -1052,6 +1053,27 @@ async function handleChatMessage(payload) {
     if (room.video && room.video.itemId === id) room.video.duration = d;
     await room.save();
     io.to(roomId).emit("queue-update", serializeQueue(room));
+  });
+  /* music rooms: one person finds the right lyrics, everyone gets them */
+  socket.on("sync-lyrics", async ({ id, lyrics } = {}) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    if (typeof id !== "string" || !id) return;
+    if (typeof lyrics !== "string" || !lyrics.trim()) return;
+    if (lyrics.length > 20000)
+      return socket.emit("perm-toast", { message: "Those lyrics are too long to share", type: "error" });
+    if (rateLimited("lyrRL", 6, 15000))
+      return socket.emit("perm-toast", { message: "Slow down a little ✋", type: "error" });
+    try {
+      const room = await Room.findOne({ roomId });
+      if (!room) return;
+      const i = findItem(room, id);
+      if (i < 0) return;                             // not in the queue (e.g. detached)
+      if (room.queue[i].lyrics === lyrics) return;   // already stored
+      room.queue[i].lyrics = lyrics;
+      await room.save();
+      socket.to(roomId).emit("sync-lyrics", { id, lyrics });
+    } catch (_) { /* sender still has the lyrics locally */ }
   });
   /* ── SERVER-AUTHORITATIVE AUTO-ADVANCE ──
      Any client may report the end; the lock means exactly one advance happens. */
