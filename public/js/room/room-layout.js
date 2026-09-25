@@ -41,3 +41,8 @@ export function applyRoomLayout(roomType) {
   if (ml) ml.toggleAttribute("aria-hidden", type !== "music");
   if (type === "music") relocateReactions();
 }
+/* roomType is immutable, so only the first room-state really matters —
+   re-applying on later events is harmless (idempotent). */
+onRoomState(({ room }) => {
+  applyRoomLayout(room && room.roomType);
+}, 5);
