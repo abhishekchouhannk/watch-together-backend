@@ -24,12 +24,12 @@
  * roomId                parsed once from location.pathname
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-export const MODES = {
-  study:         { label: "Study",         icon: "📚" },
-  gaming:        { label: "Gaming",        icon: "🎮" },
-  entertainment: { label: "Entertainment", icon: "🎬" },
-  casual:        { label: "Casual",        icon: "☕" },
-};
+// export const MODES = {
+//   study:         { label: "Study",         icon: "📚" },
+//   gaming:        { label: "Gaming",        icon: "🎮" },
+//   entertainment: { label: "Entertainment", icon: "🎬" },
+//   casual:        { label: "Casual",        icon: "☕" },
+// };
 export const THEMES = {
   morning:   { icon: "🌅", label: "Morning"   },
   afternoon: { icon: "☀️", label: "Afternoon" },
@@ -84,4 +84,5 @@ export const MAX_ATTACHMENTS = 4;
 export const ROOM_TYPES = {
   entertainment: { label: "Entertainment", icon: "🎬" },
   music:         { label: "Music",         icon: "🎵" },
+  study:         { label: "Study",         icon: "📚" },
 };

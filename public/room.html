@@ -447,6 +447,25 @@
               </button>
             </div>
           </div>
+          <div id="studyLayout" class="study-layout">
+            <section class="study-board" id="studyBoard">
+              <div class="study-board-ph">
+                <span class="sb-icon">🖊️</span>
+                <span class="sb-text">Whiteboard coming soon</span>
+              </div>
+            </section>
+            <aside class="study-pomo" id="studyPomo" data-phase="focus">
+              <div class="pomo-phase" id="pomoPhase">Focus</div>
+              <div class="pomo-time" id="pomoTime">25:00</div>
+              <div class="pomo-controls">
+                <button type="button" class="btn-sm" id="pomoToggle">Start</button>
+                <button type="button" class="pomo-btn" id="pomoReset" title="Reset this phase">↺</button>
+                <button type="button" class="pomo-btn" id="pomoSkip" title="Skip to next phase">⏭</button>
+              </div>
+              <div class="pomo-cycle" id="pomoCycle">Session 0</div>
+              <p class="pomo-hint" id="pomoHint" hidden>Only the host or people with playback control can change the timer.</p>
+            </aside>
+          </div>
           <!-- ===== MUSIC LAYOUT (shown only when roomType === "music") ===== -->
           <div class="music-layout" id="musicLayout" aria-hidden="true">
             <!-- album art + track meta -->

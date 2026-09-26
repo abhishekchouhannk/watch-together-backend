@@ -1,4 +1,13 @@
 Ongoing Development:
+1. Add a new roomType - 'Study'
+    - Include features like
+        A Pomodoro Timer
+        A shared whiteboard for everyone to utilize and brainstorm
+        Task lists and management etc. within the room
+        The current QUEUE instead becomes a task management list
+        Attendance for people to be present in the room
+        Occasional checks, manually by the host/mods or automatic checks to check users who are laacking or drifting into their own different world LOL.
+        
 
 Need to work on:
 1. Make the flexbox of the arrows be percentage width of the video container instead of a fixed pixel width or gap.
@@ -45,6 +54,11 @@ Completed:
     - Fixed layout issues in general on mobile and tablet resolutions.
 17. (DONE) Optimize performance and make it such that buffering does not destroy the sync.
     - All members player's now wait until every instance is done buffering to start at the same time, keeping everyone in sync very closely (few milliseconds of difference).
+18. (DONE) Updated room schema to remove the 'mode' of rooms field. Rooms don't have a mode now, instead there will be different types of rooms.
+    - New field 'RoomType' replacing old 'mode' for rooms.
+    - 'RoomType' is immutable and cannot be changed. Only selected at room creation. 
+    - Right now, Entertainment (watch videos together) and music rooms exist. 
+    - Planning on adding a study room now, with features for studying such as a Pomodoro timer synced for everyone, a whiteboard, attendance, etc. 
 
 Other important but later -
 1. Fix register page functionality - specifically an email such as dev.abhishekchouhan@gmail.com

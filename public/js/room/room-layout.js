@@ -1,25 +1,22 @@
 /* public/js/room/room-layout.js
- * ─────────────────────────────────────────────────────────────
  * Picks the room's visual layout from room.roomType.
  *
  *   "entertainment" (or missing) → theater video layout  (#videoContainer)
  *   "music"                      → music player layout   (#musicLayout)
+ *   "study"                      → whiteboard + timer    (#studyLayout)
  *
- * It only flips DOM flags — it never touches the player engine. The YouTube
- * iframe is NEVER display:none'd: in music mode #videoContainer stays fully
- * rendered (just visually hidden via CSS) so the IFrame API keeps working.
- * player.js reads S.roomType to decide which on-screen controls to drive.
- *
- * Runs at room-state phase 5 — before queue (30) and player (35), so the DOM
- * is already in the right shape by the time the first track loads.
+ * Only DOM flags change. The YouTube iframe is never display:none'd; inactive
+ * layouts are hidden with opacity + pointer-events in CSS.
+ * Runs at room-state phase 5, before queue (30) and player (35).
  * ───────────────────────────────────────────────────────────── */
 "use strict";
 import { S } from "./state.js";
 import { $ } from "./dom.js";
 import { onRoomState } from "./socket-core.js";
-const TYPES = ["entertainment", "music"];
+const TYPES = ["entertainment", "music", "study"];
+/* the layout container that is visible for each type */
+const LAYOUT_ID = { entertainment: "videoContainer", music: "musicLayout", study: "studyLayout" };
 let reactionsMoved = false;
-
 function relocateReactions() {
   if (reactionsMoved) return;
   const layout = $("musicLayout");
@@ -35,14 +32,14 @@ export function applyRoomLayout(roomType) {
   S.roomType = type;
   const page = $("roomPage");
   if (page) page.setAttribute("data-room-type", type);
-  const vc = $("videoContainer");
-  if (vc) vc.toggleAttribute("aria-hidden", type === "music");
-  const ml = $("musicLayout");
-  if (ml) ml.toggleAttribute("aria-hidden", type !== "music");
+  for (const [t, id] of Object.entries(LAYOUT_ID)) {
+    const el = $(id);
+    if (el) el.toggleAttribute("aria-hidden", type !== t);
+  }
   if (type === "music") relocateReactions();
+  // study: reactions stay in the hidden #videoContainer (no relocation).
+  // Add a relocateReactions branch if you want them in study.
 }
-/* roomType is immutable, so only the first room-state really matters —
-   re-applying on later events is harmless (idempotent). */
 onRoomState(({ room }) => {
   applyRoomLayout(room && room.roomType);
 }, 5);

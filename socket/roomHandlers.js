@@ -200,8 +200,58 @@ function serializeRoom(room) {
     video: { url: v.url || null, itemId: v.itemId || null, title: v.title || null,
              thumb: v.thumb || null, currentTime, isPlaying: !!v.isPlaying },
     queue: serializeQueue(room),
+    pomodoro: serializePomodoro(room),
     participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
   };
+}
+/* ── pomodoro ─────────────────────────────────────────── */
+const pomoTimers = new Map();                          // roomId → timeout id
+function serializePomodoro(room) {
+  const p = room.pomodoro || {};
+  return {
+    phase:       p.phase || "focus",
+    running:     !!p.running,
+    endsAt:      p.running && p.endsAt ? new Date(p.endsAt).toISOString() : null,
+    remainingMs: p.running ? null : (p.remainingMs ?? Room.POMO_MS.focus),
+    cycle:       p.cycle || 0,
+    durations:   Room.POMO_MS,
+    serverNow:   Date.now(),                           // lets clients correct clock skew
+  };
+}
+function clearPomoTimer(roomId) {
+  clearTimeout(pomoTimers.get(roomId));
+  pomoTimers.delete(roomId);
+}
+function setPomoPhase(p, phase) {
+  p.phase = phase;
+  p.running = false;
+  p.endsAt = null;
+  p.remainingMs = Room.POMO_MS[phase];
+}
+function nextPomoPhase(p) {
+  if (p.phase === "focus") {
+    p.cycle = (p.cycle || 0) + 1;
+    return p.cycle % 4 === 0 ? "long_break" : "short_break";
+  }
+  return "focus";
+}
+async function pomoAutoEnd(io, roomId) {
+  pomoTimers.delete(roomId);
+  const room = await Room.findOne({ roomId });
+  if (!room || !room.pomodoro || !room.pomodoro.running) return;
+  const done = room.pomodoro.phase;
+  setPomoPhase(room.pomodoro, nextPomoPhase(room.pomodoro));
+  await room.save();
+  io.to(roomId).emit("pomodoro-update", serializePomodoro(room));
+  announce(io, roomId, {
+    kind: "study", action: "pomodoro.end", actor: null,
+    text: done === "focus" ? "Focus session complete — time for a break"
+                           : "Break over — time to focus",
+  });
+}
+function schedulePomoEnd(io, roomId, endsAtMs) {
+  clearPomoTimer(roomId);
+  pomoTimers.set(roomId, setTimeout(() => pomoAutoEnd(io, roomId), Math.max(0, endsAtMs - Date.now())));
 }
 /* ── permission plumbing ───────────────────────────────── */
 function permPayload(room, uid) {
@@ -392,28 +442,28 @@ module.exports = function registerRoomHandlers(io, socket) {
   /* ── chat-message: strict FIFO per socket ──────────────────
     A send with N images emits N events back to back. Each handler awaits the DB,
     so without a queue they could finish — and broadcast — out of order. */
-const CHAT_QUEUE_MAX = 20;
-let chatChain = Promise.resolve();
-let chatPending = 0;
+  const CHAT_QUEUE_MAX = 20;
+  let chatChain = Promise.resolve();
+  let chatPending = 0;
 
-async function handleChatMessage(payload) {
-  try {
-    const roomId = socket.data.roomId;
-    if (!roomId) return;
-    const { text, mediaUrl } = payload || {};
-    const clean = cleanText(text);
-    const media = cleanMediaUrl(mediaUrl);
-    if (!clean && !media) return;
-    const msg = await Message.create({
-      roomId, senderId: user.id, senderName: user.username,
-      message: clean, mediaUrl: media,
-    });
-    io.to(roomId).emit("chat-message", {
-      id: msg._id.toString(), senderId: user.id, username: user.username,
-      text: clean, mediaUrl: media, timestamp: msg.timestamp,
-    });
-  } catch (err) { console.error("chat-message error:", err); }     // never rejects → chain survives
-}
+  async function handleChatMessage(payload) {
+    try {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      const { text, mediaUrl } = payload || {};
+      const clean = cleanText(text);
+      const media = cleanMediaUrl(mediaUrl);
+      if (!clean && !media) return;
+      const msg = await Message.create({
+        roomId, senderId: user.id, senderName: user.username,
+        message: clean, mediaUrl: media,
+      });
+      io.to(roomId).emit("chat-message", {
+        id: msg._id.toString(), senderId: user.id, username: user.username,
+        text: clean, mediaUrl: media, timestamp: msg.timestamp,
+      });
+    } catch (err) { console.error("chat-message error:", err); }     // never rejects → chain survives
+  }
   socket.on("chat-message", (payload) => {
     if (chatPending >= CHAT_QUEUE_MAX) return;             // flood guard
     chatPending++;
@@ -1107,6 +1157,53 @@ async function handleChatMessage(payload) {
       io.to(roomId).emit("queue-ended", {});
     }
   });
+  /* ═══════════════ STUDY ═══════════════ */
+  /* study rooms only; gated by the existing playback-control predicate */
+  const studyAction = (fn) => guarded(
+    (room, uid) => room.roomType === "study" && canSync(room, uid),
+    "Only the host or people with playback control can change the timer",
+    fn,
+  );
+  socket.on("pomodoro-start", studyAction(async (room, roomId) => {
+    const p = room.pomodoro;
+    if (p.running) return;
+    const ms = p.remainingMs > 0 ? p.remainingMs : Room.POMO_MS[p.phase];
+    p.running = true;
+    p.endsAt = new Date(Date.now() + ms);
+    p.remainingMs = ms;
+    await room.save();
+    schedulePomoEnd(io, roomId, p.endsAt.getTime());
+    io.to(roomId).emit("pomodoro-update", serializePomodoro(room));
+    announce(io, roomId, {
+      kind: "study", action: "pomodoro.start", actor: user,
+      text: `{actor} started a ${p.phase === "focus" ? "focus session" : "break"}`,
+    });
+  }));
+  socket.on("pomodoro-pause", studyAction(async (room, roomId) => {
+    const p = room.pomodoro;
+    if (!p.running) return;
+    clearPomoTimer(roomId);
+    p.remainingMs = Math.max(0, new Date(p.endsAt).getTime() - Date.now());
+    p.running = false;
+    p.endsAt = null;
+    await room.save();
+    io.to(roomId).emit("pomodoro-update", serializePomodoro(room));
+    announce(io, roomId, { kind: "study", action: "pomodoro.pause", actor: user, text: "{actor} paused the timer" });
+  }));
+  socket.on("pomodoro-reset", studyAction(async (room, roomId) => {
+    clearPomoTimer(roomId);
+    setPomoPhase(room.pomodoro, room.pomodoro.phase);
+    await room.save();
+    io.to(roomId).emit("pomodoro-update", serializePomodoro(room));
+    announce(io, roomId, { kind: "study", action: "pomodoro.reset", actor: user, text: "{actor} reset the timer" });
+  }));
+  socket.on("pomodoro-skip", studyAction(async (room, roomId) => {
+    clearPomoTimer(roomId);
+    setPomoPhase(room.pomodoro, nextPomoPhase(room.pomodoro));
+    await room.save();
+    io.to(roomId).emit("pomodoro-update", serializePomodoro(room));
+    announce(io, roomId, { kind: "study", action: "pomodoro.skip", actor: user, text: "{actor} skipped to the next phase" });
+  }));
 
   /* ═══════════════ REACTIONS (unchanged) ═══════════════ */
   const ALLOWED_REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👏", "💀"];

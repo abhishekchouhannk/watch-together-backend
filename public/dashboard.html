@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="morning">
+<html lang="en" data-theme="night">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -154,6 +154,8 @@
     [data-theme="afternoon"] .badge-entertainment{background:rgba(217,119,6,.1);color:#92400e}
     [data-theme="morning"] .badge-music,
     [data-theme="afternoon"] .badge-music{background:rgba(147,51,234,.1);color:#6b21a8}
+    [data-theme="morning"] .badge-study,
+    [data-theme="afternoon"] .badge-study{background:rgba(37,99,235,.1);color:#1e40af}
     [data-theme="morning"] .badge-default,
     [data-theme="afternoon"] .badge-default{background:rgba(100,116,139,.1);color:#475569}
     [data-theme="morning"] .owner-badge,
@@ -163,6 +165,8 @@
     [data-theme="night"] .badge-entertainment{background:rgba(251,191,36,.13);color:#fcd34d}
     [data-theme="evening"] .badge-music,
     [data-theme="night"] .badge-music{background:rgba(168,85,247,.14);color:#d8b4fe}
+    [data-theme="evening"] .badge-study,
+    [data-theme="night"] .badge-study{background:rgba(96,165,250,.15);color:#93c5fd}
     [data-theme="evening"] .badge-default,
     [data-theme="night"] .badge-default{background:rgba(148,163,184,.12);color:#94a3b8}
     [data-theme="evening"] .owner-badge,
@@ -594,6 +598,7 @@
       <button class="filter-btn active" data-type="all">All</button>
       <button class="filter-btn" data-type="entertainment">🎬 Entertainment</button>
       <button class="filter-btn" data-type="music">🎵 Music</button>
+      <button class="filter-btn" data-type="study">📚 Study</button>
     </div>
     <section class="rooms-section">
       <div class="rooms-header">
@@ -634,6 +639,7 @@
               <select class="form-select" id="f_roomType">
                 <option value="entertainment" selected>🎬 Entertainment</option>
                 <option value="music">🎵 Music</option>
+                <option value="study">📚 Study</option>
               </select>
             </div>
             <div class="form-group">
@@ -681,6 +687,7 @@
   const ROOM_TYPES = {
     entertainment: { label: 'Entertainment', icon: '🎬' },
     music:         { label: 'Music',         icon: '🎵' },
+    study:         { label: 'Study',         icon: '📚' },
   };
   const MAX_TAGS = 8;
   const ROOM_CAP = 10;

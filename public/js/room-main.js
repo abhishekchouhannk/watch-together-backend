@@ -48,6 +48,8 @@ import { wireVoice } from "./room/voice.js";
 import { wireFocusMode } from "./room/focus-mode.js";
 import "./room/room-layout.js";   // ← registers the roomType → layout switch (phase 5)
 import { wireLyrics } from "./room/lyrics.js";
+import { wireStudy } from "./room/study.js";
+
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {
   initTheme();
@@ -82,6 +84,7 @@ function wireEvents() {
   wirePermissions();
   wireChatUnread();
   wireChatActions();
+  wireStudy();
   // add the queue functionality
   Q.wire();
   wireFocusMode();

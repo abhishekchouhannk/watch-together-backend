@@ -2833,3 +2833,87 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
   }
   #roomPage[data-room-type="music"] .react-btn{ width:26px;height:26px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   STUDY ROOM LAYOUT
+   ═══════════════════════════════════════════════════════════ */
+#studyLayout{ display:none; }
+#roomPage[data-room-type="study"] .video-section{ position:relative;overflow:hidden; }
+#roomPage[data-room-type="study"] #videoContainer{
+  position:absolute;inset:0;opacity:0;pointer-events:none;
+}
+#roomPage[data-room-type="study"] #studyLayout{
+  position:relative;z-index:1;
+  flex:1;min-height:0;
+  display:flex;gap:.75rem;
+  padding:.75rem;
+  background-color:var(--sky-fb);
+  background-image:linear-gradient(var(--menu-bg), var(--menu-bg));
+  border:1px solid var(--card-bdr);
+  border-radius:12px;
+  box-shadow:var(--card-sh);
+  overflow:hidden;
+}
+/* whiteboard: takes all remaining space (placeholder for now) */
+.study-board{
+  flex:1;min-width:0;min-height:0;
+  position:relative;
+  border:1px dashed var(--card-bdr);
+  border-radius:10px;
+  background:var(--glass);
+  overflow:hidden;
+}
+.study-board-ph{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.3rem;color:var(--t3);user-select:none;
+}
+.sb-icon{ font-size:2rem;opacity:.6; }
+.sb-text{ font-size:.85rem;font-weight:600; }
+/* pomodoro card: fixed-width column beside the board */
+.study-pomo{
+  flex:0 0 clamp(180px, 22%, 260px);
+  min-width:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;
+  padding:1rem;
+  border:1px solid var(--card-bdr);
+  border-radius:12px;
+  background:var(--card);
+  text-align:center;
+}
+.pomo-phase{
+  font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t2);
+}
+.study-pomo[data-phase="focus"]       .pomo-phase{ color:var(--acc); }
+.study-pomo[data-phase="short_break"] .pomo-phase,
+.study-pomo[data-phase="long_break"]  .pomo-phase{ color:var(--t2); }
+.pomo-time{
+  font-size:clamp(2rem, 4vw, 3rem);font-weight:700;color:var(--t1);
+  font-variant-numeric:tabular-nums;line-height:1;
+}
+.pomo-controls{ display:flex;align-items:center;gap:.4rem; }
+.pomo-btn{
+  width:32px;height:32px;border-radius:8px;
+  background:var(--surf);color:var(--surf-t);font-size:.95rem;
+  transition:background .15s;
+}
+.pomo-btn:hover{ background:var(--surf-h); }
+.pomo-btn[disabled], #studyLayout .btn-sm[disabled]{ opacity:.35;pointer-events:none; }
+.pomo-cycle{ font-size:.72rem;color:var(--t3); }
+.pomo-hint{ font-size:.7rem;color:var(--t3);line-height:1.35; }
+.pomo-hint[hidden]{ display:none; }
+/* mobile portrait: stack board above the timer */
+@media(max-width:768px){
+  #roomPage[data-room-type="study"] .video-section{
+    position:relative;top:auto;z-index:auto;
+    padding:.65rem;background:none;
+    backdrop-filter:none;-webkit-backdrop-filter:none;
+  }
+  #roomPage[data-room-type="study"] .video-section::after{ display:none; }
+  #roomPage[data-room-type="study"] #studyLayout{
+    flex-direction:column;padding:.6rem;
+  }
+  #roomPage[data-room-type="study"] .study-board{ min-height:240px; }
+  #roomPage[data-room-type="study"] .study-pomo{ flex:0 0 auto;flex-direction:row;flex-wrap:wrap;gap:.6rem; }
+  #roomPage[data-room-type="study"] .chat-section{ height:auto;min-height:60vh; }
+}
