@@ -54,6 +54,25 @@ const QueueItemSchema = new mongoose.Schema({
   playedAt:    { type: Date },
   lyrics: { type: String, default: "", maxlength: 25000 },
 }, { _id: false });
+/* one person's share of a task — completion is tracked per assignee */
+const TaskAssigneeSchema = new mongoose.Schema({
+  userId:   { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  username: { type: String },
+  done:     { type: Boolean, default: false },
+  doneAt:   { type: Date },
+}, { _id: false });
+/* study-room task. `done` is DERIVED (every assignee done) — never set it directly */
+const TaskSchema = new mongoose.Schema({
+  taskId:      { type: String, required: true },                 // public id
+  text:        { type: String, required: true, maxlength: 200 },
+  audience:    { type: String, enum: ["room", "members"], default: "room" },  // who it was aimed at
+  assignees:   [TaskAssigneeSchema],                              // snapshot taken at creation
+  done:        { type: Boolean, default: false },
+  doneAt:      { type: Date },
+  addedBy:     { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  addedByName: { type: String },
+  addedAt:     { type: Date, default: Date.now },
+}, { _id: false });
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },
   roomName: { type: String, required: true, trim: true, minlength: 3, maxlength: 60 },
@@ -86,6 +105,7 @@ const RoomSchema = new mongoose.Schema({
     autoplay:          { type: Boolean, default: true },                               
     whoCanChangeVideo: { type: String, enum: ["host", "controllers", "everyone"], default: "host" }, // legacy, unused
   },
+  tasks: [TaskSchema],
   queue:      [QueueItemSchema],                 
   queueIndex: { type: Number, default: -1 },     // index of the item currently playing (-1 = detached)
   members: [MemberSchema],

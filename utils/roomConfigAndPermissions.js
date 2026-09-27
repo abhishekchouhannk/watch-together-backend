@@ -107,29 +107,69 @@ function ensureMember(room, user) {
   }
   return m;
 }
-/* ── playback ───────────────────────────────────────────── */
-function canSync(room, uid) {
-  if (isAdmin(room, uid) || isMod(room, uid)) return true;        // implicit, never revocable
-  if ((room.settings && room.settings.syncMode) === "everyone") return true;
+/* ── grant slots ──────────────────────────────────────────
+ * Two room-agnostic, per-member grants are persisted:
+ *   "sync"  — live control of the room's shared activity
+ *   "queue" — managing the room's shared content list
+ * Storage keeps the legacy field names (canSync / canQueue / …Request / …Mode),
+ * so no migration. What a slot MEANS is decided per room type (FEATURE_SCOPES).
+ * Feature code never reads slot names — it uses the named predicates below. */
+const GRANT_SLOTS = {
+  sync:  { flag: "canSync",  req: "syncRequest",  mode: "syncMode"  },
+  queue: { flag: "canQueue", req: "queueRequest", mode: "queueMode" },
+};
+/* the one implementation: host/mod → implicit, mode "everyone" → open, else per-member flag */
+function hasGrant(room, uid, scope) {
+  const slot = GRANT_SLOTS[scope];
+  if (!slot) return false;
+  if (isAdmin(room, uid) || isMod(room, uid)) return true;          // implicit, never revocable
+  if (((room.settings && room.settings[slot.mode]) || "host") === "everyone") return true;
   const m = getMember(room, uid);
-  return !!(m && m.canSync);
+  return !!(m && m[slot.flag]);
 }
-/* ── queue control: who may add / remove / reorder / play-from-queue ── */
-function canQueue(room, uid) {
-  if (isAdmin(room, uid) || isMod(room, uid)) return true;
-  const mode = (room.settings && room.settings.queueMode) || "host";
-  if (mode === "everyone") return true;
-  const m = getMember(room, uid);
-  return !!(m && m.canQueue);
-}
+const isStudyRoom = (room) => !!room && room.roomType === "study";
+/* raw slot checks — generic; used by resolvePerms/SCOPES, not by feature handlers */
+const canSync  = (room, uid) => hasGrant(room, uid, "sync");
+const canQueue = (room, uid) => hasGrant(room, uid, "queue");
+/* media rooms (entertainment / music) */
+const canControlPlayback = (room, uid) => !isStudyRoom(room) && hasGrant(room, uid, "sync");
+const canUseMediaQueue   = (room, uid) => !isStudyRoom(room) && hasGrant(room, uid, "queue");
 /* loading a video IS a queue action now — the URL bar is gone */
-const canChangeVideo = canQueue;
+const canChangeVideo = canUseMediaQueue;
+/* study rooms */
+const canControlTimer = (room, uid) => isStudyRoom(room) && hasGrant(room, uid, "sync");
+const canManageTasks  = (room, uid) => isStudyRoom(room) && hasGrant(room, uid, "queue");
 const canGrantQueue = canModerate;     // host + mods, same as canGrantSync
-/* scope table — lets one handler serve both permission kinds */
+/* ── per-room-type wording for the two slots ── */
+const MEDIA_SCOPES = {
+  sync:  { label: "playback control", short: "Playback", ask: "control playback",
+           modeTitle: "Who can play / pause / seek", on: "Can play / pause / seek",
+           everyone: "Everyone can now control playback", hostOnly: "Playback control is now host-only" },
+  queue: { label: "queue control", short: "Queue", ask: "manage the queue",
+           modeTitle: "Who can manage the queue", on: "Can manage the queue",
+           everyone: "Everyone can now manage the queue", hostOnly: "Queue management is now host & mods only" },
+};
+const FEATURE_SCOPES = {
+  entertainment: MEDIA_SCOPES,
+  music:         MEDIA_SCOPES,
+  study: {
+    sync:  { label: "timer control", short: "Timer", ask: "control the timer",
+             modeTitle: "Who can control the timer", on: "Can start / pause / skip the timer",
+             everyone: "Everyone can now control the timer", hostOnly: "Timer control is now host-only" },
+    queue: { label: "task management", short: "Tasks", ask: "manage tasks",
+             modeTitle: "Who can manage tasks", on: "Can add, assign and remove tasks",
+             everyone: "Everyone can now manage tasks", hostOnly: "Task management is now host & mods only" },
+  },
+};
+const scopeText = (room, scope) =>
+  (FEATURE_SCOPES[room && room.roomType] || MEDIA_SCOPES)[scope];
+const scopeLabels = (room) => ({ sync: scopeText(room, "sync"), queue: scopeText(room, "queue") });
+/* scope table — lets one handler serve both permission kinds.
+   `label` is the media default, kept for old call sites: prefer scopeText(room, scope).label */
 const SCOPES = {
-  sync:  { grant: "canSync",  req: "syncRequest",  label: "playback control",
+  sync:  { grant: "canSync",  req: "syncRequest",  label: MEDIA_SCOPES.sync.label,
            can: canSync,  mode: "syncMode",  grantedBy: canGrantSync },
-  queue: { grant: "canQueue", req: "queueRequest", label: "queue control",
+  queue: { grant: "canQueue", req: "queueRequest", label: MEDIA_SCOPES.queue.label,
            can: canQueue, mode: "queueMode", grantedBy: canGrantQueue },
 };
 const isScope = (s) => Object.prototype.hasOwnProperty.call(SCOPES, s);
@@ -172,6 +212,9 @@ function resolvePerms(room, uid) {
     canGrantQueue: canGrantQueue(room, uid),
     canSetRoles:   canSetRoles(room, uid),
     canBan:        canBan(room, uid),
+    canControlTimer: canControlTimer(room, uid),
+    canManageTasks:  canManageTasks(room, uid),
+    labels:          scopeLabels(room),
     requestState:      m.syncRequest  || "none",
     queueRequestState: m.queueRequest || "none",
   };
@@ -211,4 +254,6 @@ module.exports = {
   canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles, canBan, canReportMessage, canReviewReports, 
   canEditMessage, canDeleteMessage, canClearChat, serializeMessage,
   resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue, canQueue, canGrantQueue, SCOPES, isScope,
+  hasGrant, isStudyRoom, canControlPlayback, canUseMediaQueue,
+  canControlTimer, canManageTasks, scopeText, FEATURE_SCOPES,
 };

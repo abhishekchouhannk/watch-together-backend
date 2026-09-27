@@ -9,7 +9,7 @@ const Report = require("../models/Report");
 const {
   ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
   isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canDeleteMessage, canClearChat, canGrantSync, canSetRoles, canReportMessage, canReviewReports, 
-  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope,
+  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope, canControlTimer, canManageTasks, isStudyRoom, scopeText
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
 const { logRoomEvent, announce, logJoin, logLeave } = require("../utils/roomEvents");
@@ -23,6 +23,26 @@ const advanceLock = new Map();              // roomId → ts; de-dupes concurren
 const pendingSeeks = new Map();             // roomId → { seq, currentTime, waiting: Set, ready: Set, timer }
 const roomSeekSeqs = new Map();             // roomId → number
 const newItemId = () => crypto.randomBytes(8).toString("hex");
+
+/* ── tasks ────────────────────────────────────────────── */
+const MAX_TASKS = 100;
+const cleanTaskText = (t) =>
+  (typeof t === "string" ? t : "").replace(/\s+/g, " ").trim().slice(0, 200);
+/* finished assignees first (in the order they finished), pending keep creation order */
+const doneFirst = (a, b) =>
+  (Number(!!b.done) - Number(!!a.done)) ||
+  (a.done && b.done ? (+a.doneAt || 0) - (+b.doneAt || 0) : 0);
+const serializeTasks = (room) => ({
+  items: (room.tasks || []).map((t) => ({
+    id: t.taskId, text: t.text, audience: t.audience, done: !!t.done,
+    addedBy: t.addedBy ? t.addedBy.toString() : null, addedByName: t.addedByName || "",
+    addedAt: t.addedAt, doneAt: t.doneAt || null,
+    assignees: [...(t.assignees || [])].sort(doneFirst).map((a) => ({
+      userId: a.userId.toString(), username: a.username || "",
+      done: !!a.done, doneAt: a.doneAt || null,
+    })),
+  })),
+});
 
 // for giphy handling
 const MEDIA_URL_MAX = 2048;
@@ -201,6 +221,7 @@ function serializeRoom(room) {
              thumb: v.thumb || null, currentTime, isPlaying: !!v.isPlaying },
     queue: serializeQueue(room),
     pomodoro: serializePomodoro(room),
+    tasks: serializeTasks(room),
     participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
   };
 }
