@@ -449,9 +449,18 @@
           </div>
           <div id="studyLayout" class="study-layout">
             <section class="study-board" id="studyBoard">
-              <div class="study-board-ph">
-                <span class="sb-icon">🖊️</span>
-                <span class="sb-text">Whiteboard coming soon</span>
+              <canvas class="wb-canvas" id="wbCanvas"></canvas>
+              <div class="wb-cursors" id="wbCursors" aria-hidden="true"></div>
+              <div class="wb-toolbar" id="wbToolbar" role="toolbar" aria-label="Whiteboard tools">
+                <button type="button" class="wb-btn is-on" data-tool="pen" title="Pen">✏️</button>
+                <button type="button" class="wb-btn" data-tool="eraser" title="Eraser">🧽</button>
+                <input type="color" class="wb-color" id="wbColor" title="Pen colour (defaults to your avatar colour)">
+                <input type="range" class="wb-size" id="wbSize" min="2" max="24" value="4" title="Size">
+                <span class="wb-host" id="wbHostTools" hidden>
+                  <span class="wb-sep"></span>
+                  <button type="button" class="wb-btn wb-text" id="wbClear">Clear</button>
+                  <button type="button" class="wb-btn wb-text" id="wbClose">Close board</button>
+                </span>
               </div>
             </section>
             <aside class="study-pomo" id="studyPomo" data-phase="focus">
@@ -464,6 +473,7 @@
               </div>
               <div class="pomo-cycle" id="pomoCycle">Session 0</div>
               <p class="pomo-hint" id="pomoHint" hidden>Only the host, mods or people with timer control can change the timer.</p>
+              <button type="button" class="btn-sm" id="wbOpenBtn" hidden>Open whiteboard</button>
             </aside>
           </div>
           <!-- ===== MUSIC LAYOUT (shown only when roomType === "music") ===== -->
@@ -815,6 +825,15 @@
         </div>
       </div>
       <div class="toast-wrap" id="toastWrap"></div>
+      <div class="study-mobile-block" id="studyMobileBlock" role="alert">
+        <div class="sm-card">
+          <div class="sm-icons" aria-hidden="true">
+            <span class="sm-phone">📱</span><span class="sm-arrow">→</span><span class="sm-laptop">💻</span>
+          </div>
+          <p class="sm-text">Sorry, your display is too small to efficiently utilize the features of this room, please move to a larger display like a tablet or a laptop. (I'm still figuring out the UI for mobile phones sorry : ) </p>
+          <button type="button" class="btn-sm sm-back" id="smBack">← Back</button>
+        </div>
+      </div>
     </div>
     <!-- ===== SCRIPTS ===== -->
     <script type="module" src="/js/helpers/timeOfDay.js"></script>

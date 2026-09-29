@@ -59,6 +59,7 @@ import { Q } from "./queue.js";
 import { addSystemMsg, applyChatPerms, jumpToMessage } from "./chat.js";
 import { renderTimer } from "./study.js";
 import { renderTasks } from "./tasks.js";
+import { renderWhiteboardUI } from "./whiteboard.js";
 /* ═══════════════════════════════════════════
    COLLAPSIBLE SECTION HELPERS
    ═══════════════════════════════════════════ */
@@ -133,6 +134,7 @@ export function applyPerms() {
   Q.render();
   renderTimer();
   renderTasks();
+  renderWhiteboardUI();
 }
 // Check if the config sheet is open
 export const isConfigOpen = () => dom.cfgSheet.classList.contains("open");

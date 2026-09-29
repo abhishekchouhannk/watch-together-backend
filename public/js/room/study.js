@@ -71,5 +71,10 @@ export function wireStudy() {
     listening = true;
     getSocket().on("pomodoro-update", applyPomodoro);
   });
+  const back = $("smBack");
+  if (back) back.addEventListener("click", () => {
+    const b = document.querySelector(".back-btn");     // the header's own back button
+    if (b) b.click(); else history.back();
+  });
 }
 onRoomState(({ room }) => { if (room && room.pomodoro) applyPomodoro(room.pomodoro); }, 25);

@@ -50,6 +50,7 @@ import "./room/room-layout.js";   // ← registers the roomType → layout switc
 import { wireLyrics } from "./room/lyrics.js";
 import { wireStudy } from "./room/study.js";
 import { wireTasks } from "./room/tasks.js";
+import { wireWhiteboard } from "./room/whiteboard.js";
 
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {
@@ -86,6 +87,7 @@ function wireEvents() {
   wireChatUnread();
   wireChatActions();
   wireStudy();
+  wireWhiteboard();
   wireTasks();
   // add the queue functionality
   Q.wire();

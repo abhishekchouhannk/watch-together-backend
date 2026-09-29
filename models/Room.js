@@ -131,6 +131,9 @@ const RoomSchema = new mongoose.Schema({
     remainingMs: { type: Number, default: POMO_MS.focus },
     cycle:       { type: Number, default: 0 },           // completed focus sessions
   },
+  whiteboard: {                                    // study rooms only; strokes are NOT stored here
+    enabled: { type: Boolean, default: true },
+  },
   participants: [
     {
       userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },

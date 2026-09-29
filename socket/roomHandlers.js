@@ -24,6 +24,61 @@ const pendingSeeks = new Map();             // roomId → { seq, currentTime, wa
 const roomSeekSeqs = new Map();             // roomId → number
 const newItemId = () => crypto.randomBytes(8).toString("hex");
 
+/* ── whiteboard (study) ───────────────────────────────── */
+const WB = { W: 1600, H: 1000, MAX_STROKES: 3000, MAX_POINTS: 150000,
+             MAX_BATCH: 100, MAX_STROKE_PTS: 20000, MAX_SIZE: 40 };
+const boards = new Map();          // roomId → { enabled, strokes[], byId, points, touched }
+const HEX = /^#[0-9a-f]{6}$/i;
+const WB_ID = /^[\w-]{1,24}$/;
+/* tiny per-socket token bucket. (I didn't see rateLimited()'s signature, so this is local;
+   swap it in if you prefer.) */
+const bucket = (cap, perSec) => {
+  let tokens = cap, last = Date.now();
+  return () => {
+    const now = Date.now();
+    tokens = Math.min(cap, tokens + ((now - last) / 1000) * perSec);
+    last = now;
+    if (tokens < 1) return false;
+    tokens -= 1;
+    return true;
+  };
+};
+const clampPt = (v, max) => Math.max(0, Math.min(max, Math.round(+v) || 0));
+function cleanPts(arr) {
+  if (!Array.isArray(arr)) return [];
+  const n = Math.min(arr.length, WB.MAX_BATCH * 2) & ~1;          // even count, capped
+  const out = [];
+  for (let i = 0; i < n; i += 2) out.push(clampPt(arr[i], WB.W), clampPt(arr[i + 1], WB.H));
+  return out;
+}
+async function ensureBoard(roomId) {
+  let b = boards.get(roomId);
+  if (b) return b;
+  const room = await Room.findOne({ roomId }, "roomType whiteboard").lean();
+  if (!room || room.roomType !== "study") return null;
+  b = boards.get(roomId);                          // another socket may have created it while we awaited
+  if (b) return b;
+  b = {
+    enabled: !(room.whiteboard && room.whiteboard.enabled === false),
+    strokes: [], byId: new Map(), points: 0, touched: Date.now(),
+  };
+  boards.set(roomId, b);
+  return b;
+}
+function trimBoard(b) {                            // evict oldest strokes past the caps
+  while (b.strokes.length > WB.MAX_STROKES || b.points > WB.MAX_POINTS) {
+    const old = b.strokes.shift();
+    if (!old) break;
+    b.byId.delete(old.id);
+    b.points -= old.pts.length / 2;
+  }
+}
+function clearBoard(b) { b.strokes = []; b.byId.clear(); b.points = 0; b.touched = Date.now(); }
+setInterval(() => {                                // forget boards nobody has touched for 2h
+  const cutoff = Date.now() - 2 * 3600 * 1000;
+  for (const [id, b] of boards) if (b.touched < cutoff) boards.delete(id);
+}, 10 * 60 * 1000).unref();
+
 /* ── tasks ────────────────────────────────────────────── */
 const MAX_TASKS = 100;
 const cleanTaskText = (t) =>
@@ -221,6 +276,7 @@ function serializeRoom(room) {
              thumb: v.thumb || null, currentTime, isPlaying: !!v.isPlaying },
     queue: serializeQueue(room),
     pomodoro: serializePomodoro(room),
+    whiteboard: { enabled: !(room.whiteboard && room.whiteboard.enabled === false) },
     tasks: serializeTasks(room),
     participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
   };
@@ -753,6 +809,107 @@ module.exports = function registerRoomHandlers(io, socket) {
       }
     };
   }
+
+   /* ═══════════════ WHITEBOARD ═══════════════ */
+  const wbSyncOk   = bucket(5, 0.5);
+  const wbStartOk  = bucket(20, 10);
+  const wbPointsOk = bucket(60, 40);
+  const wbCursorOk = bucket(40, 40);
+  const hostBoardAction = (fn) => guarded(
+    (room, uid) => isStudyRoom(room) && isAdmin(room, uid),
+    "Only the host can do that", fn);
+  /* hot path: NO db reads. The in-memory board is the gate (exists only for study rooms). */
+  const liveBoard = () => {
+    const roomId = socket.data.roomId;
+    const b = roomId && boards.get(roomId);
+    return b && b.enabled ? { roomId, b } : null;
+  };
+  /* late join / reconnect / reopen: send the whole board to the caller */
+  socket.on("wb-sync-request", async () => {
+    if (!wbSyncOk()) return;
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    try {
+      const b = await ensureBoard(roomId);
+      if (!b) return;
+      socket.emit("wb-snapshot", {
+        enabled: b.enabled,
+        strokes: b.enabled
+          ? b.strokes.map(({ id, tool, color, size, pts }) => ({ id, tool, color, size, pts }))
+          : [],
+      });
+    } catch (err) { console.error("wb-sync-request:", err); }
+  });
+  socket.on("wb-stroke-start", (d = {}) => {
+    if (!wbStartOk()) return;
+    const live = liveBoard();
+    if (!live || typeof d.id !== "string" || !WB_ID.test(d.id)) return;
+    const pts = cleanPts(d.pts).slice(0, 2);
+    if (pts.length < 2) return;
+    const sid = user.id + ":" + d.id;              // namespaced: nobody can append to someone else's stroke
+    if (live.b.byId.has(sid)) return;
+    const stroke = {
+      id: sid,
+      tool:  d.tool === "eraser" ? "eraser" : "pen",
+      color: HEX.test(d.color) ? d.color : "#000000",
+      size:  Math.max(1, Math.min(WB.MAX_SIZE, Math.round(+d.size) || 4)),
+      pts,
+    };
+    live.b.strokes.push(stroke);
+    live.b.byId.set(sid, stroke);
+    live.b.points += 1;
+    live.b.touched = Date.now();
+    trimBoard(live.b);
+    socket.to(live.roomId).emit("wb-stroke-start",
+      { id: sid, tool: stroke.tool, color: stroke.color, size: stroke.size, pts });
+  });
+  socket.on("wb-stroke-points", (d = {}) => {
+    if (!wbPointsOk()) return;
+    const live = liveBoard();
+    if (!live || typeof d.id !== "string") return;
+    const sid = user.id + ":" + d.id;
+    const stroke = live.b.byId.get(sid);
+    if (!stroke || stroke.pts.length >= WB.MAX_STROKE_PTS) return;
+    const pts = cleanPts(d.pts);
+    if (!pts.length) return;
+    for (const v of pts) stroke.pts.push(v);
+    live.b.points += pts.length / 2;
+    live.b.touched = Date.now();
+    trimBoard(live.b);
+    socket.to(live.roomId).emit("wb-stroke-points", { id: sid, pts });
+  });
+  /* ephemeral + lossy by design: volatile, never stored. x == null hides the cursor. */
+  socket.on("wb-cursor", (d = {}) => {
+    if (!wbCursorOk()) return;
+    const live = liveBoard();
+    if (!live) return;
+    const hide = d.x == null || d.y == null;
+    socket.to(live.roomId).volatile.emit("wb-cursor", {
+      uid: user.id, name: user.username,           // identity comes from the socket, never the client
+      x: hide ? null : clampPt(d.x, WB.W),
+      y: hide ? null : clampPt(d.y, WB.H),
+    });
+  });
+  socket.on("wb-clear", hostBoardAction(async (room, roomId) => {
+    const b = await ensureBoard(roomId);
+    if (b) clearBoard(b);
+    io.to(roomId).emit("wb-cleared", { by: user.username });
+    announce(io, roomId, { kind: "study", action: "wb.clear", actor: user, text: "{actor} cleared the whiteboard" });
+  }));
+  /* close = hide the board for everyone (strokes are kept); open = bring it back */
+  socket.on("wb-set-enabled", hostBoardAction(async (room, roomId, { enabled } = {}) => {
+    const on = !!enabled;
+    if ((room.whiteboard.enabled !== false) === on) return;
+    room.whiteboard.enabled = on;
+    await room.save();
+    const b = await ensureBoard(roomId);
+    if (b) b.enabled = on;
+    io.to(roomId).emit("wb-enabled", { enabled: on });
+    announce(io, roomId, {
+      kind: "study", action: on ? "wb.open" : "wb.close", actor: user,
+      text: on ? "{actor} opened the whiteboard" : "{actor} closed the whiteboard",
+    });
+  }));
   
   const adminAction = (fn) => guarded(isAdmin, "Only the host can do that", fn);
   const modAction   = (fn) => guarded(canModerate, "Only the host and moderators can do that", fn);
