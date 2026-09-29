@@ -1,7 +1,8 @@
 // models/Room.js
 const mongoose = require("mongoose");
+const { ROOM_TYPE_IDS, DEFAULT_ROOM_TYPE } = require("../config/roomTypes");
+const ROOM_TYPES = ROOM_TYPE_IDS;                 // ← was ["entertainment", "music", "study"]
 const ROOM_CAP = 10;                              // hard ceiling, app-wide
-const ROOM_TYPES = ["entertainment", "music", "study"];    // functional room types
 const POMO_PHASES = ["focus", "short_break", "long_break"];
 const POMO_MS = {                                          // default durations
   focus:       25 * 60 * 1000,
@@ -82,7 +83,7 @@ const RoomSchema = new mongoose.Schema({
   roomType: {
     type: String,
     enum: ROOM_TYPES,
-    default: "entertainment",
+    default: DEFAULT_ROOM_TYPE,
     immutable: true,
   },
   isPublic: { type: Boolean, default: true },

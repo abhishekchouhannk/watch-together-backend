@@ -149,28 +149,23 @@
       --toast-ok:rgba(52,211,153,.92);--toast-err:rgba(248,113,113,.92);--toast-t:#fff;
       color-scheme:dark;
     }
-    /* ---- Room-type badge colours (light themes) ---- */
-    [data-theme="morning"] .badge-entertainment,
-    [data-theme="afternoon"] .badge-entertainment{background:rgba(217,119,6,.1);color:#92400e}
-    [data-theme="morning"] .badge-music,
-    [data-theme="afternoon"] .badge-music{background:rgba(147,51,234,.1);color:#6b21a8}
-    [data-theme="morning"] .badge-study,
-    [data-theme="afternoon"] .badge-study{background:rgba(37,99,235,.1);color:#1e40af}
-    [data-theme="morning"] .badge-default,
-    [data-theme="afternoon"] .badge-default{background:rgba(100,116,139,.1);color:#475569}
+
+    /* ---- Room-type badge colours ---- */
+    .type-badge {
+      background: hsl(var(--h) 70% 38% / .14);
+      color:      hsl(var(--h) 75% 30%);
+    }
+    [data-theme="evening"] .type-badge,
+    [data-theme="night"]   .type-badge {
+      background: hsl(var(--h) 70% 70% / .15);
+      color:      hsl(var(--h) 85% 80%);
+    }
+    /* ---- Owner badge stays hardcoded ---- */
     [data-theme="morning"] .owner-badge,
     [data-theme="afternoon"] .owner-badge{background:rgba(217,119,6,.14);color:#92400e}
-    /* ---- Room-type badge colours (dark themes) ---- */
-    [data-theme="evening"] .badge-entertainment,
-    [data-theme="night"] .badge-entertainment{background:rgba(251,191,36,.13);color:#fcd34d}
-    [data-theme="evening"] .badge-music,
-    [data-theme="night"] .badge-music{background:rgba(168,85,247,.14);color:#d8b4fe}
-    [data-theme="evening"] .badge-study,
-    [data-theme="night"] .badge-study{background:rgba(96,165,250,.15);color:#93c5fd}
-    [data-theme="evening"] .badge-default,
-    [data-theme="night"] .badge-default{background:rgba(148,163,184,.12);color:#94a3b8}
     [data-theme="evening"] .owner-badge,
     [data-theme="night"] .owner-badge{background:rgba(251,191,36,.16);color:#fcd34d}
+
     /* ============================================
        2. Layer stack
        ----------------------------------------------
@@ -594,12 +589,7 @@
                placeholder="Search rooms by name, description, or tags…" autocomplete="off">
       </div>
     </div>
-    <div class="filters-section" id="filters">
-      <button class="filter-btn active" data-type="all">All</button>
-      <button class="filter-btn" data-type="entertainment">🎬 Entertainment</button>
-      <button class="filter-btn" data-type="music">🎵 Music</button>
-      <button class="filter-btn" data-type="study">📚 Study</button>
-    </div>
+    <div class="filters-section" id="filters" data-room-type-chips></div>
     <section class="rooms-section">
       <div class="rooms-header">
         <div>
@@ -636,11 +626,7 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="f_roomType">Room Type</label>
-              <select class="form-select" id="f_roomType">
-                <option value="entertainment" selected>🎬 Entertainment</option>
-                <option value="music">🎵 Music</option>
-                <option value="study">📚 Study</option>
-              </select>
+              <select class="form-select" id="f_roomType" data-room-type-select></select>
             </div>
             <div class="form-group">
               <label class="form-label" for="f_max">Max Participants</label>
@@ -680,7 +666,9 @@
      is ready inside the init handler below.
      ============================================ -->
 <script type="module" src="/js/sky.js"></script>
-<script>
+<script type="module">
+import { initRoomTypes, renderTypeChips, badgeHTML, typeMeta } from "/js/room-types.js";
+
 (function () {
   'use strict';
   /* ---------- room-type config (matches Room model enum) ---------- */
@@ -713,11 +701,25 @@
     overlay: $('createModal'), form: $('createForm'),
     submitBtn: $('submitBtn'), toasts: $('toastWrap'),
     tagInput: $('f_tagInput'), tagChips: $('tagChips'),
-    welcome: $('welcomeTitle'),
+    welcome: $('welcomeTitle'), filters: $('filters'),
   };
   /* ---------- init ---------- */
   document.addEventListener('DOMContentLoaded', async () => {
     initSky();
+    initRoomTypes(); // Start loading dynamic types
+    
+    // Initialize the dynamic filter chips
+    renderTypeChips(dom.filters, {
+      active: '',
+      chipClass: 'filter-btn',
+      activeClass: 'active',
+      attr: 'type',
+      onChange: function (id) {
+        S.type = id === '' ? 'all' : id; // Map empty string to 'all'
+        render();
+      }
+    });
+
     wireEvents();
     drainNotice();
     await fetchMe();     // need identity before rendering owner badges
@@ -766,16 +768,7 @@
       clearTimeout(t);
       t = setTimeout(function () { S.query = e.target.value; render(); }, 220);
     });
-    // room-type filters
-    document.querySelectorAll('.filter-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        S.type = this.dataset.type;
-        document.querySelectorAll('.filter-btn').forEach(function (b) {
-          b.classList.toggle('active', b.dataset.type === S.type);
-        });
-        render();
-      });
-    });
+
     // public / my toggle
     document.querySelectorAll('.toggle-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -784,9 +777,7 @@
         document.querySelectorAll('.toggle-btn').forEach(function (b) {
           b.classList.toggle('active', b.dataset.view === S.view);
         });
-        document.querySelectorAll('.filter-btn').forEach(function (b) {
-          b.classList.toggle('active', b.dataset.type === 'all');
-        });
+        renderTypeChips(dom.filters, { active: '' }); // Reset chips visually
         render();
       });
     });
@@ -971,8 +962,7 @@
     return false;
   }
   function cardHTML(r) {
-    var cfg   = ROOM_TYPES[r.roomType] || { label: r.roomType || 'Room', icon: '📺' };
-    var badge = ROOM_TYPES[r.roomType] ? 'badge-' + r.roomType : 'badge-default';
+    var dynamicBadgeHTML = badgeHTML(r.roomType); // Response A's generator
     var tags  = (r.tags || []).slice(0, 4);
     var rid   = esc(r.roomId || r._id || '');
     var owned = isOwned(r);
@@ -989,7 +979,7 @@
           : '')
       + '<div class="card-top">'
         + '<div class="card-badges">'
-          + '<span class="mode-badge ' + badge + '">' + cfg.icon + ' ' + cfg.label + '</span>'
+          + dynamicBadgeHTML
           + (owned ? '<span class="owner-badge">👑 Owner</span>' : '')
         + '</div>'
         + '<span class="member-count">'
@@ -1027,7 +1017,7 @@
   function emptyHTML() {
     var icon, msg;
     if (S.view === 'my')       { icon = '🏠'; msg = "You haven't created or joined any rooms yet."; }
-    else if (S.type !== 'all') { icon = '🔍'; msg = 'No ' + (ROOM_TYPES[S.type]||{label:S.type}).label + ' rooms found.'; }
+    else if (S.type !== 'all') { icon = '🔍'; msg = 'No ' + typeMeta(S.type).label + ' rooms found.'; }
     else if (S.query.trim())   { icon = '🔍'; msg = 'No rooms match your search.'; }
     else                       { icon = '📺'; msg = 'No rooms available right now.'; }
     return '<div class="empty-state">'

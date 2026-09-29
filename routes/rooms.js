@@ -8,6 +8,7 @@ const { authenticateToken } = require('../middleware/auth');
 const crypto = require('crypto');
 const { sanitizeRoomPatch, serializeMessage, canModerate, isBanned, ROOM_CAP } = require('../utils/roomConfigAndPermissions');
 const { serializeEvent, logRoomEvent } = require('../utils/roomEvents');
+const { DEFAULT_ROOM_TYPE, publicRoomTypes } = require("../config/roomTypes");
 
 // Get user's joined rooms
 router.get('/joined', authenticateToken, async (req, res) => {
@@ -86,7 +87,7 @@ router.post('/create', authenticateToken, async (req, res) => {
     if (!Number.isInteger(cap)) cap = ROOM_CAP;
     cap = Math.min(ROOM_CAP, Math.max(2, cap));
     // roomType is fixed here for the life of the room
-    const type = Room.ROOM_TYPES.includes(roomType) ? roomType : 'entertainment';
+    const type = Room.ROOM_TYPES.includes(roomType) ? roomType : DEFAULT_ROOM_TYPE;
     const newRoom = new Room({
       roomId: crypto.randomUUID(), roomName, description,
       roomType: type,
@@ -101,6 +102,12 @@ router.post('/create', authenticateToken, async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message || 'Failed to create room' });
   }
+});
+
+// metadata only, no room data: safe without auth
+router.get("/types", (req, res) => {
+  res.set("Cache-Control", "public, max-age=300");
+  res.json({ default: DEFAULT_ROOM_TYPE, types: publicRoomTypes() });
 });
 
 // PATCH /api/rooms/:roomId  (host or mod)
