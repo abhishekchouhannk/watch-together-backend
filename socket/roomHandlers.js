@@ -9,7 +9,7 @@ const Report = require("../models/Report");
 const {
   ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
   isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canDeleteMessage, canClearChat, canGrantSync, canSetRoles, canReportMessage, canReviewReports, 
-  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope, canControlTimer, canManageTasks, isStudyRoom, scopeText
+  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope, canControlTimer, canManageTasks, isStudyRoom, scopeText, canControlPlayback, canManageQueue
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
 const { logRoomEvent, announce, logJoin, logLeave } = require("../utils/roomEvents");
@@ -671,7 +671,7 @@ module.exports = function registerRoomHandlers(io, socket) {
       video: room ? liveVideoState(room) : null,
     });
   }
-  const maySync = () => !!(socket.data.perm && socket.data.perm.canSync);
+  const maySync = () => !!(socket.data.perm && socket.data.perm.canControlPlayback);
   const mayLoad = () => !!(socket.data.perm && socket.data.perm.canChangeVideo);
   socket.on("video-play", async ({ currentTime }) => {
     const roomId = socket.data.roomId;
@@ -763,11 +763,10 @@ module.exports = function registerRoomHandlers(io, socket) {
     room.settings.syncMode = mode;
     await room.save();
     await broadcastPermissions(io, roomId, room);
+    const t = scopeText(room, "sync");
     io.to(roomId).emit("perm-notice", {
-      text: mode === "everyone"
-        ? "Everyone can now control playback"
-        : "Playback control is now host-only",
-        byId: user.id,
+      text: mode === "everyone" ? t.everyone : t.hostOnly,
+      byId: user.id,
     });
   }));
   /* accepts { userId, scope:'sync'|'queue' } — scope defaults to 'sync' (old clients) */
@@ -775,26 +774,28 @@ module.exports = function registerRoomHandlers(io, socket) {
     if (!isScope(scope)) return;
     const S = SCOPES[scope];
     if (!S.grantedBy(room, user.id)) return;
+    const L = scopeText(room, scope).label; // labels for the permissions in different types of rooms
     const m = getMember(room, userId);
     if (!m || isAdmin(room, userId) || m.role === "mod") return;    // implicit already
     if (m[S.grant]) return;
     m[S.grant] = true; m[S.req] = "none"; m.updatedAt = new Date();
     await room.save();
     await broadcastPermissions(io, roomId, room);
-    await toUser(io, roomId, userId, "perm-toast", { message: `You can now use ${S.label} 🎉`, type: "success" });
-    io.to(roomId).emit("perm-notice", { text: `${m.username} can now use ${S.label}`, byId: user.id });
+    await toUser(io, roomId, userId, "perm-toast", { message: `You can now use ${L} 🎉`, type: "success" });
+    io.to(roomId).emit("perm-notice", { text: `${m.username} can now use ${L}`, byId: user.id });
   }));
 
   socket.on("perm-revoke", modAction(async (room, roomId, { userId, scope = "sync" } = {}) => {
     if (!isScope(scope)) return;
     const S = SCOPES[scope];
     if (!S.grantedBy(room, user.id)) return;
+    const L = scopeText(room, scope).label;
     const m = getMember(room, userId);
     if (!m || isAdmin(room, userId) || m.role === "mod") return;
     m[S.grant] = false; m[S.req] = "denied"; m.updatedAt = new Date();
     await room.save();
     await broadcastPermissions(io, roomId, room);
-    await toUser(io, roomId, userId, "perm-toast", { message: `Your ${S.label} was removed`, type: "error" });
+    await toUser(io, roomId, userId, "perm-toast", { message: `Your ${L} was removed`, type: "error" });
   }));
   /* role changes: HOST ONLY */
   socket.on("perm-set-role", adminAction(async (room, roomId, { userId, role } = {}) => {
@@ -802,15 +803,14 @@ module.exports = function registerRoomHandlers(io, socket) {
     const m = getMember(room, userId);
     if (!m || isAdmin(room, userId) || m.role === role) return;
     m.role = role;
-    if (role === "mod") { m.syncRequest = "none"; m.canSync = true; } // implicit anyway; keeps it true on demote-back
+    if (role === "mod") { m.syncRequest = "none"; m.canControlPlayback = true; } // implicit anyway; keeps it true on demote-back
     m.updatedAt = new Date();
     await room.save();
     await broadcastPermissions(io, roomId, room);                    // ← this is what flips their UI live
     await toUser(io, roomId, userId, "perm-toast", {
       message: role === "mod"
-        ? "You're now a moderator — you can edit the room and grant playback control"
+        ? `You're now a moderator — you can edit the room and grant ${scopeText(room, "sync").label}`
         : "You're no longer a moderator",
-      type: role === "mod" ? "success" : "error",
     });
     io.to(roomId).emit("perm-notice", {
       text: role === "mod" ? `${m.username} is now a moderator` : `${m.username} is no longer a moderator`,
@@ -843,8 +843,9 @@ module.exports = function registerRoomHandlers(io, socket) {
     socket.data.lastPermReq[scope] = now;
     const room = await Room.findOne({ roomId });
     if (!room) return;
+    const label = scopeText(room, scope).label;
     if (S.can(room, user.id))
-      return socket.emit("perm-toast", { message: `You already have ${S.label}`, type: "success" });
+      return socket.emit("perm-toast", { message: `You already have ${label}`, type: "success" });
     const m = ensureMember(room, user);
     if (m[S.req] === "denied")
       return socket.emit("perm-toast", {
@@ -857,6 +858,7 @@ module.exports = function registerRoomHandlers(io, socket) {
     socket.emit("perm-toast", { message: "Request sent ✌️", type: "success" });
     await broadcastPermissions(io, roomId, room);
   });
+
   socket.on("perm-respond", modAction(async (room, roomId, { userId, approve, scope = "sync" } = {}) => {
     if (!isScope(scope)) return;
     const S = SCOPES[scope];
@@ -867,20 +869,25 @@ module.exports = function registerRoomHandlers(io, socket) {
     m[S.req]   = approve ? "none" : "denied";
     m.updatedAt = new Date();
     await room.save();
+    const label = scopeText(room, scope).label;
     await broadcastPermissions(io, roomId, room);
     await toUser(io, roomId, userId, "perm-toast", {
-      message: approve ? `${user.username} gave you ${S.label} 🎉` : "Your request was declined",
+      message: approve ? `${user.username} gave you ${label} 🎉` : "Your request was declined",
       type: approve ? "success" : "error",
     });
-    if (approve) io.to(roomId).emit("perm-notice", { text: `${m.username} can now use ${S.label}`, byId: user.id });
+    if (approve) io.to(roomId).emit("perm-notice", { text: `${m.username} can now use ${label}`, byId: user.id });
   }));
+
   socket.on("perm-set-queue-mode", modAction(async (room, roomId, { mode } = {}) => {
     if (!["host", "everyone"].includes(mode) || room.settings.queueMode === mode) return;
     room.settings.queueMode = mode;
     await room.save();
     await broadcastPermissions(io, roomId, room);
-    io.to(roomId).emit("perm-notice", { text: mode === "everyone" ? "Everyone can now control playback"
-                                                                : "Playback control is now host-only", byId: user.id });
+    const t = scopeText(room, "queue");
+    io.to(roomId).emit("perm-notice", {
+      text: mode === "everyone" ? t.everyone : t.hostOnly,
+      byId: user.id,
+    });
   }));
   /* ═══════════════ MEMBER MODERATION (host only) ═══════════════ */
   /* resolve a display name even if the member record is already gone */
@@ -1003,7 +1010,7 @@ module.exports = function registerRoomHandlers(io, socket) {
   }));
 
   /* ═══════════════ QUEUE ═══════════════ */
-  const queueAction = (fn) => guarded(canQueue, "You don't have queue control in this room", fn);
+  const queueAction = (fn) => guarded(canManageQueue, "You don't have queue control in this room", fn);
   function rateLimited(key, max, windowMs) {
     const now = Date.now();
     const rl = socket.data[key] || (socket.data[key] = { n: 0, reset: now + windowMs });
@@ -1180,12 +1187,99 @@ module.exports = function registerRoomHandlers(io, socket) {
   });
   /* ═══════════════ STUDY ═══════════════ */
   /* study rooms only; gated by the existing playback-control predicate */
-  const studyAction = (fn) => guarded(
-    (room, uid) => room.roomType === "study" && canSync(room, uid),
+  const timerAction = (fn) => guarded(
+    canControlTimer,
     "Only the host or people with playback control can change the timer",
     fn,
   );
-  socket.on("pomodoro-start", studyAction(async (room, roomId) => {
+  const taskAction = (fn) => guarded(
+    canManageTasks,
+    "Only the host, mods or people with task access can manage tasks",
+    fn,
+  );
+  const studyOnly = (fn) => guarded(isStudyRoom, "Tasks are only available in study rooms", fn);
+  const taskToast = (message) => socket.emit("perm-toast", { message, type: "error" });
+  const pushTasks = (roomId, room) => io.to(roomId).emit("tasks-update", serializeTasks(room));
+  socket.on("task-add", taskAction(async (room, roomId, { text, audience, assignees } = {}) => {
+    const clean = cleanTaskText(text);
+    if (!clean) return taskToast("Write something for the task first");
+    if ((room.tasks || []).length >= MAX_TASKS) return taskToast("The task list is full");
+    let targets;
+    if (audience === "room") {
+      targets = room.participants.map((p) => ({ userId: p.userId, username: p.username }));
+    } else if (audience === "members") {
+      const ids = [...new Set((Array.isArray(assignees) ? assignees : []).map(String))]
+        .filter(validId).slice(0, ROOM_CAP);
+      targets = ids.map((id) => getMember(room, id))
+        .filter((m) => m && !isBanned(room, m.userId))
+        .map((m) => ({ userId: m.userId, username: m.username }));
+    } else return;
+    if (!targets.length) return taskToast("Pick at least one person");
+    room.tasks.push({
+      taskId: newItemId(), text: clean, audience,
+      assignees: targets.map((t) => ({ ...t, done: false })),
+      done: false, addedBy: user.id, addedByName: user.username, addedAt: new Date(),
+    });
+    await room.save();
+    pushTasks(roomId, room);
+    /* user text goes in `detail`, never in `text`, so "{actor}"-style input can't be substituted */
+    announce(io, roomId, {
+      kind: "task", action: "task.add", actor: user,
+      text: "{actor} added a task: {detail}", detail: clean,
+    });
+  }));
+  /* complete / un-complete MY OWN share — any assignee may, no grant needed */
+  socket.on("task-toggle", studyOnly(async (room, roomId, { id, done } = {}) => {
+    const task = (room.tasks || []).find((t) => t.taskId === id);
+    if (!task) return;
+    const mine = task.assignees.find((a) => sameId(a.userId, user.id));
+    if (!mine) return taskToast("That task isn't assigned to you");
+    const next = !!done;
+    if (mine.done === next) return;                          // idempotent
+    mine.done   = next;
+    mine.doneAt = next ? new Date() : null;
+    task.done   = task.assignees.every((a) => a.done);
+    task.doneAt = task.done ? new Date() : null;
+    await room.save();
+    pushTasks(roomId, room);
+    if (!next) return;                                       // un-ticking is silent
+    const group = task.assignees.length > 1;
+    socket.to(roomId).emit("task-notice", {                  // everyone except the caller
+      id, userId: user.id, username: user.username, text: task.text,
+      finished: task.done, group,
+    });
+    announce(io, roomId, {
+      kind: "task", action: task.done ? "task.finish" : "task.complete", actor: user,
+      text: task.done && group ? "{actor} finished the last part of: {detail}"
+                               : "{actor} completed: {detail}",
+      detail: task.text,
+    });
+  }));
+  socket.on("task-remove", taskAction(async (room, roomId, { id } = {}) => {
+    const i = (room.tasks || []).findIndex((t) => t.taskId === id);
+    if (i < 0) return;
+    const text = room.tasks[i].text;
+    room.tasks.splice(i, 1);
+    await room.save();
+    pushTasks(roomId, room);
+    announce(io, roomId, {
+      kind: "task", action: "task.remove", actor: user,
+      text: "{actor} removed a task: {detail}", detail: text,
+    });
+  }));
+  socket.on("task-clear-done", taskAction(async (room, roomId) => {
+    const before = room.tasks.length;
+    room.tasks = room.tasks.filter((t) => !t.done);
+    const n = before - room.tasks.length;
+    if (!n) return;
+    await room.save();
+    pushTasks(roomId, room);
+    announce(io, roomId, {
+      kind: "task", action: "task.clear", actor: user,
+      text: `{actor} cleared ${n} finished task${n === 1 ? "" : "s"}`,
+    });
+  }));
+  socket.on("pomodoro-start", timerAction(async (room, roomId) => {
     const p = room.pomodoro;
     if (p.running) return;
     const ms = p.remainingMs > 0 ? p.remainingMs : Room.POMO_MS[p.phase];
@@ -1200,7 +1294,7 @@ module.exports = function registerRoomHandlers(io, socket) {
       text: `{actor} started a ${p.phase === "focus" ? "focus session" : "break"}`,
     });
   }));
-  socket.on("pomodoro-pause", studyAction(async (room, roomId) => {
+  socket.on("pomodoro-pause", timerAction(async (room, roomId) => {
     const p = room.pomodoro;
     if (!p.running) return;
     clearPomoTimer(roomId);
@@ -1211,14 +1305,14 @@ module.exports = function registerRoomHandlers(io, socket) {
     io.to(roomId).emit("pomodoro-update", serializePomodoro(room));
     announce(io, roomId, { kind: "study", action: "pomodoro.pause", actor: user, text: "{actor} paused the timer" });
   }));
-  socket.on("pomodoro-reset", studyAction(async (room, roomId) => {
+  socket.on("pomodoro-reset", timerAction(async (room, roomId) => {
     clearPomoTimer(roomId);
     setPomoPhase(room.pomodoro, room.pomodoro.phase);
     await room.save();
     io.to(roomId).emit("pomodoro-update", serializePomodoro(room));
     announce(io, roomId, { kind: "study", action: "pomodoro.reset", actor: user, text: "{actor} reset the timer" });
   }));
-  socket.on("pomodoro-skip", studyAction(async (room, roomId) => {
+  socket.on("pomodoro-skip", timerAction(async (room, roomId) => {
     clearPomoTimer(roomId);
     setPomoPhase(room.pomodoro, nextPomoPhase(room.pomodoro));
     await room.save();

@@ -184,7 +184,7 @@ export const Q = (() => {
   /* ── wiring ─────────────────────────────────────────── */
   function wire() {
     /* tabs */
-    [dom.tabChat, dom.tabQueue, dom.tabVoice].forEach((b) =>
+    [dom.tabChat, dom.tabQueue, dom.tabTasks, dom.tabVoice].forEach((b) =>
       b && b.addEventListener("click", () => switchTab(b.dataset.tab))
     );
     /* add */
@@ -257,8 +257,8 @@ export const Q = (() => {
     render();
   }
   function switchTab(which) {
-    const tabs  = { chat: dom.tabChat,  queue: dom.tabQueue,  voice: dom.tabVoice  };
-    const panes = { chat: dom.paneChat, queue: dom.paneQueue, voice: dom.paneVoice };
+    const tabs  = { chat: dom.tabChat,  queue: dom.tabQueue,  tasks: dom.tabTasks,  voice: dom.tabVoice  };
+    const panes = { chat: dom.paneChat, queue: dom.paneQueue, tasks: dom.paneTasks, voice: dom.paneVoice };
     if (!tabs[which]) which = "chat";
     for (const [k, el] of Object.entries(tabs)) {
       if (!el) continue;

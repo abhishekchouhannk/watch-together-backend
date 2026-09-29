@@ -35,6 +35,7 @@ export const S = {
            syncMode:"host", queueMode:"host", autoplay:true,
            canSync:false, canQueue:false, canChangeVideo:false,
            canEditRoom:false, canManage:false, canGrantSync:false, canGrantQueue:false,
+           canControlTimer:false, canManageTasks:false, labels:null,
            requestState:"none", queueRequestState:"none" },
   members: [], requests: [],
   video: { currentTime: 0, isPlaying: false, at: 0 },   // authoritative mirror

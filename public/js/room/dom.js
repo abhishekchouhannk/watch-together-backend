@@ -48,4 +48,5 @@ export const dom = {
   // voice — per-user control modal (sibling of the profile panel)
   vcBackdrop: $("vcBackdrop"), vcCard: $("vcCard"), vcClose: $("vcClose"),
   vcBody: $("vcBody"), vcTitle: $("vcTitle"),
+  tabTasks: $("tabTasks"), paneTasks: $("paneTasks"),
 };

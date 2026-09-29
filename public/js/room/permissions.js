@@ -57,6 +57,8 @@ import { renderRoomDetails } from "./room-details.js";
 import { P, markLocal, revertToRoomState } from "./player.js";
 import { Q } from "./queue.js";
 import { addSystemMsg, applyChatPerms, jumpToMessage } from "./chat.js";
+import { renderTimer } from "./study.js";
+import { renderTasks } from "./tasks.js";
 /* ═══════════════════════════════════════════
    COLLAPSIBLE SECTION HELPERS
    ═══════════════════════════════════════════ */
@@ -78,6 +80,15 @@ function secOpen(id, titleHTML, defaultClosed, extraAttrs) {
       '<span class="cfg-chev">' + CHEV_SVG + "</span></h4>" +
     '<div class="cfg-sec-body"><div class="cfg-sec-inner">';
 }
+/* per-room-type wording for the two grant slots; server sends perms.labels */
+const FALLBACK_TXT = {
+  sync:  { label: "playback control", short: "Playback", ask: "control playback",
+           modeTitle: "Who can play / pause / seek", on: "Can play / pause / seek" },
+  queue: { label: "queue control", short: "Queue", ask: "manage the queue",
+           modeTitle: "Who can manage the queue", on: "Can manage the queue" },
+};
+const scopeTxt = (scope) => (S.perms && S.perms.labels && S.perms.labels[scope]) || FALLBACK_TXT[scope];
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 /* ══════════════════════════════════════
    PERMISSIONS UI + ROOM CONFIG SHEET
    ══════════════════════════════════════ */
@@ -120,6 +131,8 @@ export function applyPerms() {
   paintGearBadge();
   if (!p.canSync) P.stopLeader();
   Q.render();
+  renderTimer();
+  renderTasks();
 }
 // Check if the config sheet is open
 export const isConfigOpen = () => dom.cfgSheet.classList.contains("open");
@@ -180,11 +193,11 @@ export function renderConfig() {
     if (mod) {
       h += '<div class="cfg-banner"><span class="role-tag role-mod">🛡️ MOD</span>' +
            "<span>You're a mod here</span></div>" +
-           accessRow("Playback control", true, null, null) +
-           accessRow("Queue control",    true, null, null);
+           accessRow(cap(scopeTxt("sync").label),  true, null, null) +
+           accessRow(cap(scopeTxt("queue").label), true, null, null);
     } else {
-      h += accessRow("Playback control", p.canSync,  p.requestState,      "sync",  p.syncMode  === "everyone");
-      h += accessRow("Queue control",    p.canQueue, p.queueRequestState, "queue", p.queueMode === "everyone");
+      h += accessRow(cap(scopeTxt("sync").label),  p.canSync,  p.requestState,      "sync",  p.syncMode  === "everyone");
+      h += accessRow(cap(scopeTxt("queue").label), p.canQueue, p.queueRequestState, "queue", p.queueMode === "everyone");
     }
     h += SEC_CLOSE;
   }
@@ -198,12 +211,12 @@ export function renderConfig() {
              '" data-act="mode" data-mode="everyone">👥 Everyone</button>' +
          "</div>" + SEC_CLOSE;
     if (S.requests.length) {
-      h += secOpen("requests", 'Requests <span class="cnt">' + S.requests.length + "</span>");
+      h += secOpen("sync", esc(scopeTxt("sync").modeTitle))
       S.requests.forEach((m) => {
-        const lbl = m.scope === "queue" ? "queue" : "playback";
+        const lbl = scopeTxt(m.scope === "queue" ? "queue" : "sync").short.toLowerCase();
         h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
                '<span class="cfg-uname">' + esc(m.username) + "</span>" +
-               '<span class="scope-tag scope-' + lbl + '">' + lbl + "</span></span>" +
+               '<span class="scope-tag scope-' + (m.scope === "queue" ? "queue" : "playback") + '">' + esc(lbl) + "</span>"
              '<span class="cfg-acts">' +
                '<button class="cfg-mini ok" data-act="respond" data-approve="1" data-scope="' + m.scope + '" data-id="' + m.userId + '">Approve</button>' +
                '<button class="cfg-mini no" data-act="respond" data-approve="0" data-scope="' + m.scope + '" data-id="' + m.userId + '">Deny</button>' +
@@ -216,7 +229,7 @@ export function renderConfig() {
   if (p.canManage && (S.reports || []).length) h += reportsSectionHTML();
   /* ── queue mode (host + mods) ── */
   if (p.canGrantQueue) {
-    h += secOpen("queuemode", "Who can manage the queue");
+    h += secOpen("queuemode", esc(scopeTxt("queue").modeTitle))
     h += '<div class="seg">' +
            '<button class="seg-btn' + (p.queueMode === "host" ? " on" : "") +
              '" data-act="qmode" data-mode="host">🔒 Host &amp; mods</button>' +
@@ -593,14 +606,15 @@ function permMenuHTML(m, p) {
   const syncLocked  = isModRow || p.syncMode  === "everyone" || !p.canGrantSync;
   const queueLocked = isModRow || p.queueMode === "everyone" || !p.canGrantQueue;
   return '<div class="cfg-rowmenu cfg-permmenu">' +
-    '<span class="perm-item"><span>Playback</span>' +
-      swHTML("sync",  m.userId, m.canSync,  syncLocked,  "Can play / pause / seek") + "</span>" +
-    '<span class="perm-item"><span>Queue</span>' +
-      swHTML("queue", m.userId, m.canQueue, queueLocked, "Can manage the queue") + "</span>" +
+    '<span class="perm-item"><span>' + esc(scopeTxt("sync").short) + "</span>" +
+      swHTML("sync",  m.userId, m.canSync,  syncLocked,  scopeTxt("sync").on) + "</span>" +
+    '<span class="perm-item"><span>' + esc(scopeTxt("queue").short) + "</span>" +
+      swHTML("queue", m.userId, m.canQueue, queueLocked, scopeTxt("queue").on) + "</span>" +
   "</div>";
 }
 function swHTML(scope, id, on, locked, title) {
-  const ic = scope === "sync" ? "▶" : "☰";
+  const study = S.roomType === "study";
+  const ic = scope === "sync" ? (study ? "⏱" : "▶") : (study ? "✓" : "☰");
   return '<label class="sw sw-ic' + (locked ? " sw-lock" : "") + '" title="' + title + '">' +
     '<span class="sw-tag">' + ic + "</span>" +
     '<input type="checkbox" data-act="' + scope + '" data-id="' + id + '"' +
@@ -773,7 +787,7 @@ if (document.readyState === "loading") {
 function showRequestPrompt(userId, username, scope) {
   const key = userId + ":" + scope;
   if (dom.toasts.querySelector('[data-req="' + key + '"]')) return;
-  const label = scope === "queue" ? "manage the queue" : "control playback";
+  const label = scopeTxt(scope === "queue" ? "queue" : "sync").ask;
   const el = document.createElement("div");
   el.className = "perm-prompt";
   el.dataset.req = key;
@@ -936,20 +950,21 @@ function renderProfile() {
     else if (m) {
       if (isHostRow) {
         h += profSec("Permissions",
-          '<p class="cfg-note">The host always has playback and queue control.</p>');
+          '<p class="cfg-note">The host always has ' + scopeTxt("sync").label + ' and ' + scopeTxt("queue").label + '.</p>');
       } else if (isModRow) {
         h += profSec("Permissions",
-          '<p class="cfg-note">🛡️ Moderators always have playback and queue control — it can\'t be revoked.' +
+          '<p class="cfg-note">🛡️ Moderators always have ' + scopeTxt("sync").label + ' and ' + scopeTxt("queue").label +
+          ' — it can\'t be revoked.' +
           (me.canSetRoles ? " Change their role below to adjust this." : "") + "</p>");
       } else if (me.canGrantSync || me.canGrantQueue) {
         const syncLocked  = me.syncMode  === "everyone" || !me.canGrantSync;
         const queueLocked = me.queueMode === "everyone" || !me.canGrantQueue;
         h += profSec("Permissions",
-          '<div class="cfg-row"><span>Playback control</span><span class="cfg-acts">' +
-            swHTML("sync", m.userId, m.canSync, syncLocked, "Can play / pause / seek") +
+          '<div class="cfg-row"><span>' + esc(cap(scopeTxt("sync").label)) + '</span><span class="cfg-acts">' +
+            swHTML("sync", m.userId, m.canSync, syncLocked, scopeTxt("sync").on) +
           "</span></div>" +
-          '<div class="cfg-row"><span>Queue control</span><span class="cfg-acts">' +
-            swHTML("queue", m.userId, m.canQueue, queueLocked, "Can manage the queue") +
+          '<div class="cfg-row"><span>' + esc(cap(scopeTxt("queue").label)) + '</span><span class="cfg-acts">' +
+            swHTML("queue", m.userId, m.canQueue, queueLocked, scopeTxt("queue").on) +
           "</span></div>" +
           (syncLocked || queueLocked
             ? '<p class="cfg-note">Some controls are open to everyone right now — switch that off in ' +

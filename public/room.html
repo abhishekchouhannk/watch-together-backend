@@ -463,7 +463,7 @@
                 <button type="button" class="pomo-btn" id="pomoSkip" title="Skip to next phase">⏭</button>
               </div>
               <div class="pomo-cycle" id="pomoCycle">Session 0</div>
-              <p class="pomo-hint" id="pomoHint" hidden>Only the host or people with playback control can change the timer.</p>
+              <p class="pomo-hint" id="pomoHint" hidden>Only the host, mods or people with timer control can change the timer.</p>
             </aside>
           </div>
           <!-- ===== MUSIC LAYOUT (shown only when roomType === "music") ===== -->
@@ -547,14 +547,17 @@
         <div class="chat-section" id="chatSection">
           <div class="sp-tabs" role="tablist">
             <button class="sp-tab active" id="tabChat" data-tab="chat" role="tab" aria-selected="true">
-              💬 Chat
+              Chat
               <span class="sp-badge sp-badge-unread" id="chatUnread" hidden>0</span>
             </button>
             <button class="sp-tab" id="tabQueue" data-tab="queue" role="tab" aria-selected="false">
-              📺 Queue <span class="sp-badge" id="queueCount">0</span>
+              Queue <span class="sp-badge" id="queueCount">0</span>
+            </button>
+            <button class="sp-tab" id="tabTasks" data-tab="tasks" role="tab" aria-selected="false">
+              <span>Tasks</span><span class="sp-badge" id="taskCount" data-zero="1">0</span>
             </button>
             <button class="sp-tab" id="tabVoice" data-tab="voice" role="tab" aria-selected="false">
-              🎙️ Voice <span class="sp-badge" id="voiceCount" data-zero="1">0</span>
+              Voice <span class="sp-badge" id="voiceCount" data-zero="1">0</span>
             </button>
             <!-- <span class="sp-online" id="chatOnline"></span> -->
           </div>
@@ -671,6 +674,33 @@
                 <span>Only the host &amp; moderators can edit the queue</span>
               </div>
             </section>
+            <div class="sp-pane" id="paneTasks" role="tabpanel">
+              <div class="q-head">
+                <span class="q-head-title">Tasks</span>
+                <button class="q-clear" id="taskClearBtn" style="margin-left:auto" disabled>Clear done</button>
+              </div>
+              <ul class="q-list tk-list" id="taskList"></ul>
+              <div class="q-empty" id="taskEmpty">
+                <span class="q-empty-icon">✅</span>
+                <span class="q-empty-t">No tasks yet</span>
+                <span class="q-empty-s">Add one below and assign it to the room or to specific people</span>
+              </div>
+              <div class="tk-bar" id="taskBar" hidden>
+                <div class="tk-row">
+                  <input class="url-input" id="taskInput" type="text" maxlength="200" placeholder="Add a task…" autocomplete="off">
+                  <button class="btn-sm" id="taskAddBtn" type="button">Add</button>
+                </div>
+                <div class="tk-row">
+                  <select class="tk-aud" id="taskAudience" aria-label="Assign to">
+                    <option value="room">Everyone</option>
+                    <option value="me">Just me</option>
+                    <option value="pick">Specific people…</option>
+                  </select>
+                </div>
+                <div class="tk-picker" id="taskPicker" hidden></div>
+              </div>
+              <div class="q-lock" id="taskLock" hidden>Only the host, mods or people with task access can add tasks</div>
+            </div>
             <!-- ── VOICE ── -->
             <section class="sp-pane" id="paneVoice" role="tabpanel" aria-labelledby="tabVoice" data-state="off">
               <div class="q-head">

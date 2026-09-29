@@ -2,7 +2,7 @@
 const mongoose = require("mongoose");
 /** Audit/receipt log for room activity. Deliberately separate from Message so the
  *  chat collection only ever holds human messages. */
-const KINDS = ["presence", "chat", "queue", "playback", "perm", "room", "voice", "other"];
+const KINDS = ["presence", "chat", "queue", "playback", "perm", "room", "voice", "task", "other"];
 const RoomEventSchema = new mongoose.Schema({
   roomId:     { type: String, required: true },
   kind:       { type: String, enum: KINDS, default: "other" },      // category → colour dot
