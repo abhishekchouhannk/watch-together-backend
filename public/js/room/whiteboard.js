@@ -606,10 +606,14 @@ onConnect(() => {
     requestRender(false);
   });
   socket.on("wb-stroke-visibility", ({ id, undone } = {}) => {
-    const s = byId.get(id);
+    let s = byId.get(id);
+    // Fallback: If the server namespaced it, strip the prefix to find your local stroke
+    if (!s && id.startsWith(S.userId + ":")) {
+      s = byId.get(id.split(":")[1]);
+    }
     if (!s) return;
     s.undone = !!undone;
-    requestRender();                                   // erasing/un-erasing needs a full repaint
+    requestRender(); 
   });
   socket.on("wb-purge", ({ ids } = {}) => {
     if (!Array.isArray(ids) || !ids.length) return;
