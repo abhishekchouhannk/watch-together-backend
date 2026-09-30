@@ -456,12 +456,20 @@
                 <button type="button" class="wb-btn" data-tool="eraser" title="Eraser">🧽</button>
                 <input type="color" class="wb-color" id="wbColor" title="Pen colour (defaults to your avatar colour)">
                 <input type="range" class="wb-size" id="wbSize" min="2" max="24" value="4" title="Size">
+                <span class="wb-sep"></span>
+                <button type="button" class="wb-btn" id="wbUndo" data-act="undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>↶</button>
+                <button type="button" class="wb-btn" id="wbRedo" data-act="redo" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>↷</button>
+                <span class="wb-sep"></span>
+                <button type="button" class="wb-btn" data-act="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+                <button type="button" class="wb-btn wb-zoom" id="wbZoom" data-act="zoom-reset" title="Reset to 100%">100%</button>
+                <button type="button" class="wb-btn" data-act="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
                 <span class="wb-host" id="wbHostTools" hidden>
                   <span class="wb-sep"></span>
                   <button type="button" class="wb-btn wb-text" id="wbClear">Clear</button>
                   <button type="button" class="wb-btn wb-text" id="wbClose">Close board</button>
                 </span>
               </div>
+              <div class="wb-minimap" id="wbMiniBox"><canvas id="wbMini" aria-label="Board minimap"></canvas></div>
             </section>
             <aside class="study-pomo" id="studyPomo" data-phase="focus">
               <div class="pomo-phase" id="pomoPhase">Focus</div>
