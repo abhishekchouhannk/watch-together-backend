@@ -49,4 +49,5 @@ export const dom = {
   vcBackdrop: $("vcBackdrop"), vcCard: $("vcCard"), vcClose: $("vcClose"),
   vcBody: $("vcBody"), vcTitle: $("vcTitle"),
   tabTasks: $("tabTasks"), paneTasks: $("paneTasks"),
+  tabBoards: $("tabBoards"), paneBoards: $("paneBoards"),
 };

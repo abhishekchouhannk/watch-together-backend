@@ -6,10 +6,11 @@ const Room = require("../models/Room");
 const Message = require("../models/Message");
 const User = require("../models/User");
 const Report = require("../models/Report");
+const Whiteboard = require("../models/Whiteboard");
 const {
   ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
   isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canDeleteMessage, canClearChat, canGrantSync, canSetRoles, canReportMessage, canReviewReports, 
-  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope, canControlTimer, canManageTasks, isStudyRoom, scopeText, canControlPlayback, canManageQueue
+  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope, canControlTimer, canManageTasks, canManageBoards, isStudyRoom, scopeText, canControlPlayback, canManageQueue
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
 const { logRoomEvent, announce, logJoin, logLeave } = require("../utils/roomEvents");
@@ -24,12 +25,16 @@ const pendingSeeks = new Map();             // roomId → { seq, currentTime, wa
 const roomSeekSeqs = new Map();             // roomId → number
 const newItemId = () => crypto.randomBytes(8).toString("hex");
 
-/* ── whiteboard (study) ───────────────────────────────── */
-const WB = { LIM: 50000, MAX_STROKES: 3000, MAX_POINTS: 150000,
-             MAX_BATCH: 100, MAX_STROKE_PTS: 20000, MAX_SIZE: 40 };
-const boards = new Map();   // roomId → { enabled, strokes[], byId, redo:Map(uid→[ids]), points, touched }
+/* ── whiteboard workspace (study) ─────────────────────── */
+const WB = { LIM: 50000, MAX_BOARDS: 6, MAX_SAVED: 20, MAX_STROKES: 3000, MAX_POINTS: 100000,
+             MAX_BATCH: 100, MAX_STROKE_PTS: 20000, MAX_SIZE: 40, MAX_TEXTS: 200,
+             MAX_IDS: 500, HIST_CAP: 200, MAX_HTML: 6000, MAX_MOVE: 5000 };
+const SHAPE_KINDS = new Set(["line", "arrow", "rect", "square", "circle", "oval"]);
+const WB_TOOLS = ["pen", "eraser", "shape", "text"];
+const workspaces = new Map();      // roomId → { enabled, boards:Map, order:[], saved:[], n, touched }
 const HEX = /^#[0-9a-f]{6}$/i;
-const WB_ID = /^[\w-]{1,24}$/;
+const WB_TAIL  = /^[\w-]{1,24}$/;
+const WB_ANYID = /^[\w:-]{1,64}$/;
 /* tiny per-socket token bucket (I didn't see rateLimited()'s signature; swap it in if you prefer) */
 const bucket = (cap, perSec) => {
   let tokens = cap, last = Date.now();
@@ -42,8 +47,9 @@ const bucket = (cap, perSec) => {
     return true;
   };
 };
-/* world coords: clamp to ±LIM, 0.1-unit precision */
-const clampW = (v) => Math.max(-WB.LIM, Math.min(WB.LIM, Math.round((+v || 0) * 10) / 10));
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const r1 = (v) => Math.round(v * 10) / 10;
+const clampW = (v) => clampN(r1(+v || 0), -WB.LIM, WB.LIM);
 function cleanPts(arr) {
   if (!Array.isArray(arr)) return [];
   const n = Math.min(arr.length, WB.MAX_BATCH * 2) & ~1;
@@ -51,46 +57,118 @@ function cleanPts(arr) {
   for (let i = 0; i < n; i += 2) out.push(clampW(arr[i]), clampW(arr[i + 1]));
   return out;
 }
-async function ensureBoard(roomId) {
-  let b = boards.get(roomId);
-  if (b) return b;
-  const room = await Room.findOne({ roomId }, "roomType whiteboard").lean();
-  if (!room || room.roomType !== "study") return null;
-  b = boards.get(roomId);                        // another socket may have won the race
-  if (b) return b;
-  b = {
-    enabled: !(room.whiteboard && room.whiteboard.enabled === false),
-    strokes: [], byId: new Map(), redo: new Map(), points: 0, touched: Date.now(),
-  };
-  boards.set(roomId, b);
-  return b;
+/* rich text: tag allowlist, attributes dropped (except a validated <font color>) */
+const HTML_TAGS = new Set(["b", "strong", "i", "em", "u", "br", "div", "p", "span", "font"]);
+const COLOR_OK = /^(#[0-9a-f]{3,8}|[a-z]{3,20}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))$/i;
+function cleanHtml(html) {
+  return String(html || "").slice(0, WB.MAX_HTML).split(/(<[^>]*>)/).map((part) => {
+    if (part[0] !== "<") return part.replace(/</g, "&lt;");
+    const m = /^<(\/?)([a-z][a-z0-9]*)\b([^>]*)>$/i.exec(part);
+    if (!m || !HTML_TAGS.has(m[2].toLowerCase())) return "";
+    const tag = m[2].toLowerCase();
+    if (m[1]) return "</" + tag + ">";
+    if (tag === "font") {
+      const c = /\bcolor\s*=\s*["']?([^"'\s>]+)["']?/i.exec(m[3]);
+      return c && COLOR_OK.test(c[1]) ? '<font color="' + c[1] + '">' : "<font>";
+    }
+    return "<" + tag + ">";
+  }).join("");
 }
-function purgeStrokes(b, ids) {                  // permanent removal (redo discarded / evicted)
+const newBid = () => crypto.randomBytes(6).toString("hex");
+const cleanName = (n) => String(n || "").replace(/\s+/g, " ").trim().slice(0, 40);
+function newBoard(name, extra = {}) {
+  return { id: newBid(), name, savedId: null, strokes: [], byId: new Map(), hist: new Map(),
+           points: 0, rev: 0, savedRev: 0, dirtyMark: false, touched: Date.now(), ...extra };
+}
+const isDirty = (b) => b.rev !== b.savedRev;
+const boardMeta = (b) => ({
+  id: b.id, name: b.name, savedId: b.savedId, dirty: isDirty(b),
+  count: b.strokes.reduce((n, s) => n + (!s.undone && !s.deleted ? 1 : 0), 0),
+});
+const wsPayload = (ws) => ({
+  enabled: ws.enabled,
+  boards: ws.order.map((id) => boardMeta(ws.boards.get(id))),
+  saved: ws.saved,
+});
+function reindex(b) {
+  b.byId = new Map(b.strokes.map((s) => [s.id, s]));
+  b.points = b.strokes.reduce((n, s) => n + s.pts.length / 2, 0);
+}
+const publicStroke = ({ id, tool, kind, color, size, pts, html, undone, deleted }) =>
+  ({ id, tool, kind, color, size, pts, html, undone: !!undone, deleted: !!deleted });
+/* saved → live validation: never trust stored JSON blindly */
+function importObject(o) {
+  if (!o || typeof o.id !== "string" || !WB_ANYID.test(o.id) || !WB_TOOLS.includes(o.tool)) return null;
+  const pts = (Array.isArray(o.pts) ? o.pts : []).slice(0, WB.MAX_STROKE_PTS).map(clampW);
+  if (pts.length % 2) pts.pop();
+  if (pts.length < 2) return null;
+  const s = { id: o.id, uid: null, undone: false, deleted: false, tool: o.tool,
+              color: HEX.test(o.color) ? o.color : "#000000", pts };
+  if (o.tool === "shape") {
+    if (!SHAPE_KINDS.has(o.kind)) return null;
+    s.kind = o.kind; s.size = clampN(Math.round(+o.size) || 4, 1, WB.MAX_SIZE);
+    s.pts = pts.length >= 4 ? [pts[0], pts[1], pts[2], pts[3]] : [pts[0], pts[1], pts[0], pts[1]];
+  } else if (o.tool === "text") {
+    s.size = clampN(Math.round(+o.size) || 24, 8, 200); s.html = cleanHtml(o.html); s.pts = pts.slice(0, 2);
+  } else s.size = clampN(Math.round(+o.size) || 4, 1, WB.MAX_SIZE);
+  return s;
+}
+function purgeStrokes(b, ids) {                    // permanent removal
   if (!ids.size) return;
   b.strokes = b.strokes.filter((s) => {
     if (!ids.has(s.id)) return true;
-    b.byId.delete(s.id);
-    b.points -= s.pts.length / 2;
+    b.byId.delete(s.id); b.points -= s.pts.length / 2;
     return false;
   });
 }
-function trimBoard(b) {                          // oldest-first eviction past the caps
+function trimBoard(b) {                            // oldest-first eviction past the caps
   while (b.strokes.length > WB.MAX_STROKES || b.points > WB.MAX_POINTS) {
     const old = b.strokes.shift();
     if (!old) break;
-    b.byId.delete(old.id);
-    b.points -= old.pts.length / 2;
+    b.byId.delete(old.id); b.points -= old.pts.length / 2;
   }
 }
-function clearBoard(b) { b.strokes = []; b.byId.clear(); b.redo.clear(); b.points = 0; b.touched = Date.now(); }
-/* how many strokes this user can undo / redo right now */
-const wbHistory = (b, uid) => ({
-  undo: b.strokes.reduce((n, s) => n + (s.uid === uid && !s.undone ? 1 : 0), 0),
-  redo: (b.redo.get(uid) || []).filter((id) => { const s = b.byId.get(id); return s && s.undone; }).length,
-});
-setInterval(() => {                              // forget boards untouched for 2h
+function shiftStroke(s, dx, dy) {
+  for (let i = 0; i < s.pts.length; i += 2) { s.pts[i] = clampW(s.pts[i] + dx); s.pts[i + 1] = clampW(s.pts[i + 1] + dy); }
+}
+const histCounts = (b, uid) => { const h = b.hist.get(uid); return { undo: h ? h.undo.length : 0, redo: h ? h.redo.length : 0 }; };
+/* ids the client may act on: present, visible, not eraser marks */
+function liveIds(b, ids) {
+  if (!Array.isArray(ids)) return [];
+  return [...new Set(ids.slice(0, WB.MAX_IDS).filter((id) => typeof id === "string"))].filter((id) => {
+    const s = b.byId.get(id);
+    return s && !s.undone && !s.deleted && s.tool !== "eraser";
+  });
+}
+async function listSaved(roomId) {
+  const docs = await Whiteboard.find({ roomId })
+    .select("boardId name count updatedAt updatedByName").sort({ updatedAt: -1 }).lean();
+  return docs.map((d) => ({ id: d.boardId, name: d.name, count: d.count || 0, updatedAt: d.updatedAt, by: d.updatedByName || "" }));
+}
+async function ensureWorkspace(roomId) {
+  let ws = workspaces.get(roomId);
+  if (ws) return ws;
+  const room = await Room.findOne({ roomId }, "roomType whiteboard").lean();
+  if (!room || room.roomType !== "study") return null;
+  const saved = await listSaved(roomId);
+  ws = workspaces.get(roomId);                      // another socket may have won the race
+  if (ws) return ws;
+  ws = { enabled: !(room.whiteboard && room.whiteboard.enabled === false),
+         boards: new Map(), order: [], saved, n: 1, touched: Date.now() };
+  const first = newBoard("Board 1");
+  ws.boards.set(first.id, first); ws.order.push(first.id);
+  workspaces.set(roomId, ws);
+  return ws;
+}
+/* any content change: bump the revision, and tell everyone when dirty flips */
+function bumpBoard(io, roomId, b) {
+  b.rev++; b.touched = Date.now();
+  const d = isDirty(b);
+  if (d !== b.dirtyMark) { b.dirtyMark = d; io.to(roomId).emit("wb-dirty", { b: b.id, dirty: d }); }
+}
+setInterval(() => {                                 // forget workspaces untouched for 2h
   const cutoff = Date.now() - 2 * 3600 * 1000;
-  for (const [id, b] of boards) if (b.touched < cutoff) boards.delete(id);
+  for (const [id, ws] of workspaces) if (ws.touched < cutoff) workspaces.delete(id);
 }, 10 * 60 * 1000).unref();
 
 /* ── tasks ────────────────────────────────────────────── */
@@ -824,160 +902,345 @@ module.exports = function registerRoomHandlers(io, socket) {
     };
   }
 
-/* ═══════════════ WHITEBOARD ═══════════════ */
-  const wbSyncOk   = bucket(5, 0.5);
-  const wbStartOk  = bucket(20, 10);
-  const wbPointsOk = bucket(60, 40);
-  const wbCursorOk = bucket(40, 40);
-  const wbHistOk   = bucket(10, 5);
+  /* ═══════════════ WHITEBOARD WORKSPACE ═══════════════ */
+  const wbSyncOk = bucket(8, 1),    wbStartOk = bucket(20, 10), wbPointsOk = bucket(60, 40),
+        wbCursorOk = bucket(40, 40), wbHistOk = bucket(10, 5),  wbMoveOk = bucket(60, 40),
+        wbTextOk = bucket(20, 8),   wbSelOk = bucket(30, 15),   wbMgmtOk = bucket(10, 2);
+  const sendErr = (message) => socket.emit("perm-toast", { message, type: "error" });
   const hostBoardAction = (fn) => guarded(
-    (room, uid) => isStudyRoom(room) && isAdmin(room, uid),
-    "Only the host can do that", fn);
-  /* hot path: NO db reads. The in-memory board is the gate (exists only for study rooms). */
-  const liveBoard = () => {
+    (room, uid) => isStudyRoom(room) && isAdmin(room, uid), "Only the host can do that", fn);
+  const boardAction = (fn) => guarded(
+    canManageBoards, "Only the host, mods or people with board access can do that",
+    async (room, roomId, ...a) => {
+      if (!wbMgmtOk()) return;
+      const ws = await ensureWorkspace(roomId);
+      if (ws) await fn(room, roomId, ws, ...a);
+    });
+  /* hot path: NO db reads — the in-memory workspace is the gate */
+  const liveBoard = (bid) => {
     const roomId = socket.data.roomId;
-    const b = roomId && boards.get(roomId);
-    return b && b.enabled ? { roomId, b } : null;
+    const ws = roomId && workspaces.get(roomId);
+    if (!ws || !ws.enabled || typeof bid !== "string") return null;
+    const b = ws.boards.get(bid);
+    if (!b) return null;
+    ws.touched = Date.now();
+    return { roomId, ws, b };
   };
-  /* tell ALL of this user's sockets their undo/redo availability */
   const pushHistory = (roomId, b) =>
-    toUser(io, roomId, user.id, "wb-history", wbHistory(b, user.id)).catch(() => {});
-  /* late join / reconnect / reopen */
-  socket.on("wb-sync-request", async () => {
+    toUser(io, roomId, user.id, "wb-history", { b: b.id, ...histCounts(b, user.id) }).catch(() => {});
+  /* per-user op stack. A new op permanently discards that user's redo stack. */
+  function recordOp(roomId, b, op) {
+    let h = b.hist.get(user.id);
+    if (!h) b.hist.set(user.id, (h = { undo: [], redo: [] }));
+    const hadRedo = h.redo.length > 0;
+    const dead = new Set();
+    for (const r of h.redo) if (r.t === "draw") { const s = b.byId.get(r.id); if (s && s.undone) dead.add(r.id); }
+    h.redo = [];
+    h.undo.push(op);
+    if (h.undo.length > WB.HIST_CAP) {
+      const old = h.undo.shift();
+      if (old.t === "del") for (const id of old.ids) { const s = b.byId.get(id); if (s && s.deleted) dead.add(id); }
+    }
+    if (dead.size) { purgeStrokes(b, dead); io.to(roomId).emit("wb-purge", { b: b.id, ids: [...dead] }); }
+    if (hadRedo) pushHistory(roomId, b);
+  }
+  /* dir: -1 undo, +1 redo. Returns false if the op no longer has any effect. */
+  function applyOp(roomId, b, op, dir) {
+    if (op.t === "draw") {
+      const s = b.byId.get(op.id);
+      if (!s) return false;
+      s.undone = dir < 0;
+      io.to(roomId).emit("wb-stroke-visibility", { b: b.id, id: s.id, undone: s.undone });
+      return true;
+    }
+    const ids = op.ids.filter((id) => b.byId.has(id));
+    if (!ids.length) return false;
+    if (op.t === "del") {
+      ids.forEach((id) => { b.byId.get(id).deleted = dir > 0; });
+      io.to(roomId).emit("wb-deleted", { b: b.id, ids, deleted: dir > 0 });
+      return true;
+    }
+    if (op.t === "move") {
+      const dx = op.dx * dir, dy = op.dy * dir;
+      ids.forEach((id) => shiftStroke(b.byId.get(id), dx, dy));
+      io.to(roomId).emit("wb-move", { b: b.id, ids, dx, dy });
+      return true;
+    }
+    return false;
+  }
+  /* ── sync ── */
+  socket.on("wb-sync-request", async () => {          // workspace only (tabs + saved list); content is lazy
     if (!wbSyncOk()) return;
     const roomId = socket.data.roomId;
     if (!roomId) return;
     try {
-      const b = await ensureBoard(roomId);
-      if (!b) return;
-      socket.emit("wb-snapshot", {
-        enabled: b.enabled,
-        strokes: b.enabled
-          ? b.strokes.map(({ id, tool, color, size, pts, undone }) => ({ id, tool, color, size, pts, undone: !!undone }))
-          : [],
-        history: b.enabled ? wbHistory(b, user.id) : { undo: 0, redo: 0 },
-      });
+      const ws = await ensureWorkspace(roomId);
+      if (ws) socket.emit("wb-workspace", wsPayload(ws));
     } catch (err) { console.error("wb-sync-request:", err); }
   });
+  socket.on("wb-board-sync", (d = {}) => {
+    if (!wbSyncOk()) return;
+    const live = liveBoard(d.b);
+    if (!live) return;
+    socket.emit("wb-board-snapshot", {
+      b: live.b.id, strokes: live.b.strokes.map(publicStroke), history: histCounts(live.b, user.id),
+    });
+  });
+  /* ── drawing ── */
   socket.on("wb-stroke-start", (d = {}) => {
     if (!wbStartOk()) return;
-    const live = liveBoard();
-    if (!live || typeof d.id !== "string" || !WB_ID.test(d.id)) return;
+    const live = liveBoard(d.b);
+    if (!live) return;
+    const { roomId, b } = live;
+    if (typeof d.id !== "string" || !d.id.startsWith(user.id + ":") ||
+        !WB_TAIL.test(d.id.slice(user.id.length + 1)) || b.byId.has(d.id)) return;
+    if (!WB_TOOLS.includes(d.tool)) return;
     const pts = cleanPts(d.pts).slice(0, 2);
     if (pts.length < 2) return;
-    const { roomId, b } = live;
-    const sid = user.id + ":" + d.id;            // namespaced: nobody can append to someone else's stroke
-    if (b.byId.has(sid)) return;
-    /* drawing again throws away this user's redo stack — permanently */
-    const stack = b.redo.get(user.id);
-    if (stack && stack.length) {
-      b.redo.delete(user.id);
-      const dead = new Set(stack.filter((id) => { const s = b.byId.get(id); return s && s.undone; }));
-      if (dead.size) {
-        purgeStrokes(b, dead);
-        io.to(roomId).emit("wb-purge", { ids: [...dead] });
-      }
-      pushHistory(roomId, b);
-    }
-    const stroke = {
-      id: sid, uid: user.id, undone: false,
-      tool:  d.tool === "eraser" ? "eraser" : "pen",
-      color: HEX.test(d.color) ? d.color : "#000000",
-      size:  Math.max(1, Math.min(WB.MAX_SIZE, Math.round(+d.size) || 4)),
-      pts,
-    };
-    b.strokes.push(stroke);
-    b.byId.set(sid, stroke);
-    b.points += 1;
-    b.touched = Date.now();
+    const s = { id: d.id, uid: user.id, undone: false, deleted: false, tool: d.tool,
+                color: HEX.test(d.color) ? d.color : "#000000", pts };
+    if (d.tool === "shape") {
+      if (!SHAPE_KINDS.has(d.kind)) return;
+      s.kind = d.kind; s.pts = [pts[0], pts[1], pts[0], pts[1]];
+      s.size = clampN(Math.round(+d.size) || 4, 1, WB.MAX_SIZE);
+    } else if (d.tool === "text") {
+      if (b.strokes.reduce((n, x) => n + (x.tool === "text" && !x.deleted ? 1 : 0), 0) >= WB.MAX_TEXTS) return;
+      s.size = clampN(Math.round(+d.size) || 24, 8, 200); s.html = cleanHtml(d.html);
+    } else s.size = clampN(Math.round(+d.size) || 4, 1, WB.MAX_SIZE);
+    b.strokes.push(s); b.byId.set(s.id, s); b.points += s.pts.length / 2;
     trimBoard(b);
-    socket.to(roomId).emit("wb-stroke-start",
-      { id: sid, tool: stroke.tool, color: stroke.color, size: stroke.size, pts });
+    recordOp(roomId, b, { t: "draw", id: s.id });
+    bumpBoard(io, roomId, b);
+    socket.to(roomId).emit("wb-stroke-start", {
+      b: b.id, id: s.id, tool: s.tool, kind: s.kind, color: s.color, size: s.size, pts: s.pts, html: s.html,
+    });
   });
   socket.on("wb-stroke-points", (d = {}) => {
     if (!wbPointsOk()) return;
-    const live = liveBoard();
+    const live = liveBoard(d.b);
     if (!live || typeof d.id !== "string") return;
-    const sid = user.id + ":" + d.id;
-    const stroke = live.b.byId.get(sid);
-    if (!stroke || stroke.pts.length >= WB.MAX_STROKE_PTS) return;
+    const s = live.b.byId.get(d.id);
+    if (!s || s.uid !== user.id || s.tool === "text") return;   // only the author extends a stroke
     const pts = cleanPts(d.pts);
     if (!pts.length) return;
-    for (const v of pts) stroke.pts.push(v);
+    if (s.tool === "shape") {                                    // shapes: only the END corner moves
+      s.pts[2] = pts[pts.length - 2]; s.pts[3] = pts[pts.length - 1];
+      socket.to(live.roomId).emit("wb-stroke-points", { b: live.b.id, id: s.id, pts: pts.slice(-2) });
+      return;
+    }
+    if (s.pts.length >= WB.MAX_STROKE_PTS) return;
+    for (const v of pts) s.pts.push(v);
     live.b.points += pts.length / 2;
-    live.b.touched = Date.now();
     trimBoard(live.b);
-    socket.to(live.roomId).emit("wb-stroke-points", { id: sid, pts });
+    socket.to(live.roomId).emit("wb-stroke-points", { b: live.b.id, id: s.id, pts });
   });
-  /* undo MY newest visible stroke; everyone hides it */
-  socket.on("wb-undo", () => {
-    if (!wbHistOk()) return;
-    const live = liveBoard();
+  /* text content/size/colour (any participant may edit; last write wins) */
+  socket.on("wb-text-update", (d = {}) => {
+    if (!wbTextOk()) return;
+    const live = liveBoard(d.b);
     if (!live) return;
-    const { roomId, b } = live;
-    for (let i = b.strokes.length - 1; i >= 0; i--) {
-      const s = b.strokes[i];
-      if (s.uid === user.id && !s.undone) {
-        s.undone = true;
-        if (!b.redo.has(user.id)) b.redo.set(user.id, []);
-        b.redo.get(user.id).push(s.id);
-        b.touched = Date.now();
-        io.to(roomId).emit("wb-stroke-visibility", { id: s.id, undone: true });
-        break;
-      }
-    }
-    pushHistory(roomId, b);
+    const s = live.b.byId.get(d.id);
+    if (!s || s.tool !== "text" || s.deleted) return;
+    if (typeof d.html === "string") s.html = cleanHtml(d.html);
+    if (Number.isFinite(+d.size)) s.size = clampN(Math.round(+d.size), 8, 200);
+    if (HEX.test(d.color)) s.color = d.color;
+    bumpBoard(io, live.roomId, live.b);
+    socket.to(live.roomId).emit("wb-text-update", { b: live.b.id, id: s.id, html: s.html, size: s.size, color: s.color });
   });
-  /* redo MY most recently undone stroke, back at its original layer position */
-  socket.on("wb-redo", () => {
-    if (!wbHistOk()) return;
-    const live = liveBoard();
+  /* ── selection + group move ── */
+  socket.on("wb-select", (d = {}) => {
+    if (!wbSelOk()) return;
+    const live = liveBoard(d.b);
     if (!live) return;
-    const { roomId, b } = live;
-    const stack = b.redo.get(user.id);
-    while (stack && stack.length) {
-      const s = b.byId.get(stack.pop());
-      if (s && s.undone) {                       // skip ids that were evicted meanwhile
-        s.undone = false;
-        b.touched = Date.now();
-        io.to(roomId).emit("wb-stroke-visibility", { id: s.id, undone: false });
-        break;
-      }
-    }
-    pushHistory(roomId, b);
+    socket.to(live.roomId).emit("wb-select", {
+      b: live.b.id, uid: user.id, name: user.username,
+      ids: (Array.isArray(d.ids) ? d.ids : []).slice(0, WB.MAX_IDS).filter((x) => typeof x === "string" && x.length <= 64),
+    });
   });
-  /* ephemeral + lossy by design: volatile, never stored. x == null hides the cursor. */
+  /* live drag: incremental deltas. Applied immediately (the server is always current);
+     accumulated per socket and committed as ONE undoable op on wb-move-end. */
+  function finalizeMove() {
+    const acc = socket.data.wbMove;
+    socket.data.wbMove = null;
+    if (!acc || (!acc.dx && !acc.dy)) return;
+    const ws = workspaces.get(acc.roomId);
+    const b = ws && ws.boards.get(acc.b);
+    if (!b) return;
+    recordOp(acc.roomId, b, { t: "move", ids: acc.ids, dx: acc.dx, dy: acc.dy });
+    bumpBoard(io, acc.roomId, b);
+  }
+  socket.on("wb-move", (d = {}) => {
+    if (!wbMoveOk()) return;
+    const live = liveBoard(d.b);
+    if (!live) return;
+    const ids = liveIds(live.b, d.ids);
+    const dx = r1(clampN(+d.dx || 0, -WB.MAX_MOVE, WB.MAX_MOVE));
+    const dy = r1(clampN(+d.dy || 0, -WB.MAX_MOVE, WB.MAX_MOVE));
+    if (!ids.length || (!dx && !dy)) return;
+    ids.forEach((id) => shiftStroke(live.b.byId.get(id), dx, dy));
+    const key = ids.slice().sort().join(",");
+    let acc = socket.data.wbMove;
+    if (acc && (acc.b !== live.b.id || acc.key !== key)) { finalizeMove(); acc = null; }
+    if (!acc) acc = socket.data.wbMove = { roomId: live.roomId, b: live.b.id, key, ids, dx: 0, dy: 0 };
+    acc.dx = r1(acc.dx + dx); acc.dy = r1(acc.dy + dy);
+    socket.to(live.roomId).emit("wb-move", { b: live.b.id, ids, dx, dy });
+  });
+  socket.on("wb-move-end", () => finalizeMove());
+  socket.on("wb-delete", (d = {}) => {
+    if (!wbMoveOk()) return;
+    const live = liveBoard(d.b);
+    if (!live) return;
+    const ids = liveIds(live.b, d.ids);
+    if (!ids.length) return;
+    ids.forEach((id) => { live.b.byId.get(id).deleted = true; });
+    recordOp(live.roomId, live.b, { t: "del", ids });
+    bumpBoard(io, live.roomId, live.b);
+    io.to(live.roomId).emit("wb-deleted", { b: live.b.id, ids, deleted: true });
+  });
+  /* ── undo / redo (per user, per board) ── */
+  socket.on("wb-undo", (d = {}) => {
+    if (!wbHistOk()) return;
+    const live = liveBoard(d.b);
+    const h = live && live.b.hist.get(user.id);
+    if (!h) return;
+    while (h.undo.length) {
+      const op = h.undo.pop();
+      if (applyOp(live.roomId, live.b, op, -1)) { h.redo.push(op); bumpBoard(io, live.roomId, live.b); break; }
+    }
+    pushHistory(live.roomId, live.b);
+  });
+  socket.on("wb-redo", (d = {}) => {
+    if (!wbHistOk()) return;
+    const live = liveBoard(d.b);
+    const h = live && live.b.hist.get(user.id);
+    if (!h) return;
+    while (h.redo.length) {
+      const op = h.redo.pop();
+      if (applyOp(live.roomId, live.b, op, +1)) { h.undo.push(op); bumpBoard(io, live.roomId, live.b); break; }
+    }
+    pushHistory(live.roomId, live.b);
+  });
+  /* ephemeral + lossy by design */
   socket.on("wb-cursor", (d = {}) => {
     if (!wbCursorOk()) return;
-    const live = liveBoard();
+    const live = liveBoard(d.b);
     if (!live) return;
     const hide = d.x == null || d.y == null;
     socket.to(live.roomId).volatile.emit("wb-cursor", {
-      uid: user.id, name: user.username,         // identity comes from the socket, never the client
-      x: hide ? null : clampW(d.x),
-      y: hide ? null : clampW(d.y),
+      b: live.b.id, uid: user.id, name: user.username,
+      x: hide ? null : clampW(d.x), y: hide ? null : clampW(d.y),
     });
   });
-  socket.on("wb-clear", hostBoardAction(async (room, roomId) => {
-    const b = await ensureBoard(roomId);
-    if (b) clearBoard(b);
-    io.to(roomId).emit("wb-cleared", { by: user.username });
-    announce(io, roomId, { kind: "study", action: "wb.clear", actor: user, text: "{actor} cleared the whiteboard" });
+  /* ── host-only ── */
+  socket.on("wb-clear", hostBoardAction(async (room, roomId, { b: bid } = {}) => {
+    const ws = await ensureWorkspace(roomId);
+    const b = ws && ws.boards.get(bid);
+    if (!b) return;
+    b.strokes = []; b.byId.clear(); b.hist.clear(); b.points = 0;
+    bumpBoard(io, roomId, b);
+    io.to(roomId).emit("wb-cleared", { b: b.id, by: user.username });
+    announce(io, roomId, { kind: "study", action: "wb.clear", actor: user,
+      text: "{actor} cleared the board: {detail}", detail: b.name });
   }));
   socket.on("wb-set-enabled", hostBoardAction(async (room, roomId, { enabled } = {}) => {
     const on = !!enabled;
     if ((room.whiteboard.enabled !== false) === on) return;
     room.whiteboard.enabled = on;
     await room.save();
-    const b = await ensureBoard(roomId);
-    if (b) b.enabled = on;
+    const ws = await ensureWorkspace(roomId);
+    if (ws) ws.enabled = on;
     io.to(roomId).emit("wb-enabled", { enabled: on });
-    announce(io, roomId, {
-      kind: "study", action: on ? "wb.open" : "wb.close", actor: user,
-      text: on ? "{actor} opened the whiteboard" : "{actor} closed the whiteboard",
-    });
+    announce(io, roomId, { kind: "study", action: on ? "wb.open" : "wb.close", actor: user,
+      text: on ? "{actor} opened the whiteboard" : "{actor} closed the whiteboard" });
+  }));
+  /* ── board management (host, mods, or anyone granted board access) ── */
+  async function saveBoard(roomId, ws, b) {
+    const objects = b.strokes.filter((s) => !s.undone && !s.deleted).map((s) => ({
+      id: s.id, tool: s.tool, kind: s.kind, color: s.color, size: s.size, pts: s.pts, html: s.html,
+    }));
+    const base = { name: b.name, objects, count: objects.length, updatedByName: user.username };
+    let doc = b.savedId && await Whiteboard.findOneAndUpdate({ roomId, boardId: b.savedId }, { $set: base });
+    if (!doc) {                                      // first save (or the saved copy was deleted meanwhile)
+      b.savedId = b.savedId || newBid();
+      await Whiteboard.create({ roomId, boardId: b.savedId, createdBy: user.id, createdByName: user.username, ...base });
+    }
+    b.savedRev = b.rev; b.dirtyMark = false;
+    ws.saved = await listSaved(roomId);
+  }
+  const pushWorkspace = (roomId, ws) => io.to(roomId).emit("wb-workspace", wsPayload(ws));
+  socket.on("wb-board-new", boardAction(async (room, roomId, ws, { name } = {}) => {
+    if (ws.boards.size >= WB.MAX_BOARDS) return sendErr(`At most ${WB.MAX_BOARDS} boards can be open at once`);
+    const b = newBoard(cleanName(name) || `Board ${++ws.n}`);
+    ws.boards.set(b.id, b); ws.order.push(b.id);
+    pushWorkspace(roomId, ws);
+    socket.emit("wb-board-created", { b: b.id });
+    announce(io, roomId, { kind: "study", action: "wb.new", actor: user, text: "{actor} opened a new board: {detail}", detail: b.name });
+  }));
+  socket.on("wb-board-open", boardAction(async (room, roomId, ws, { savedId, reload } = {}) => {
+    if (typeof savedId !== "string") return;
+    const live = [...ws.boards.values()].find((x) => x.savedId === savedId);
+    if (live && !reload) return socket.emit("wb-board-created", { b: live.id });   // already open → just switch
+    const doc = await Whiteboard.findOne({ roomId, boardId: savedId }).lean();
+    if (!doc) { ws.saved = await listSaved(roomId); pushWorkspace(roomId, ws); return sendErr("That saved board no longer exists"); }
+    const strokes = (doc.objects || []).map(importObject).filter(Boolean).slice(0, WB.MAX_STROKES);
+    if (live) {                                                                      // reload in place (caller confirmed)
+      Object.assign(live, { strokes, name: doc.name, rev: 0, savedRev: 0, dirtyMark: false });
+      live.hist.clear(); reindex(live);
+      io.to(roomId).emit("wb-board-reloaded", { b: live.id });
+      pushWorkspace(roomId, ws);
+      return socket.emit("wb-board-created", { b: live.id });
+    }
+    if (ws.boards.size >= WB.MAX_BOARDS) return sendErr(`At most ${WB.MAX_BOARDS} boards can be open at once`);
+    const b = newBoard(doc.name, { savedId, strokes });
+    reindex(b);
+    ws.boards.set(b.id, b); ws.order.push(b.id);
+    pushWorkspace(roomId, ws);
+    socket.emit("wb-board-created", { b: b.id });
+    announce(io, roomId, { kind: "study", action: "wb.load", actor: user, text: "{actor} opened the saved board: {detail}", detail: b.name });
+  }));
+  socket.on("wb-board-save", boardAction(async (room, roomId, ws, { b: bid } = {}) => {
+    const b = ws.boards.get(bid);
+    if (!b) return;
+    if (!b.savedId && ws.saved.length >= WB.MAX_SAVED) return sendErr(`Up to ${WB.MAX_SAVED} boards can be saved per room`);
+    await saveBoard(roomId, ws, b);
+    pushWorkspace(roomId, ws);
+    announce(io, roomId, { kind: "study", action: "wb.save", actor: user, text: "{actor} saved the board: {detail}", detail: b.name });
+  }));
+  socket.on("wb-board-rename", boardAction(async (room, roomId, ws, { b: bid, name } = {}) => {
+    const b = ws.boards.get(bid), n = cleanName(name);
+    if (!b || !n) return;
+    b.name = n;
+    if (b.savedId) { await Whiteboard.updateOne({ roomId, boardId: b.savedId }, { $set: { name: n } }); ws.saved = await listSaved(roomId); }
+    pushWorkspace(roomId, ws);
+  }));
+  /* closing a dirty board needs an explicit decision: mode = "save" | "discard" */
+  socket.on("wb-board-close", boardAction(async (room, roomId, ws, { b: bid, mode } = {}) => {
+    const b = ws.boards.get(bid);
+    if (!b) return;
+    if (isDirty(b)) {
+      if (mode === "save") {
+        if (!b.savedId && ws.saved.length >= WB.MAX_SAVED) return sendErr(`Up to ${WB.MAX_SAVED} boards can be saved per room`);
+        await saveBoard(roomId, ws, b);
+      } else if (mode !== "discard") return sendErr(`“${b.name}” has unsaved changes — save or discard first`);
+    }
+    ws.boards.delete(bid); ws.order = ws.order.filter((x) => x !== bid);
+    io.to(roomId).emit("wb-board-closed", { b: bid });
+    pushWorkspace(roomId, ws);
+    announce(io, roomId, { kind: "study", action: "wb.closeboard", actor: user, text: "{actor} closed the board: {detail}", detail: b.name });
+  }));
+  socket.on("wb-saved-delete", boardAction(async (room, roomId, ws, { savedId } = {}) => {
+    if (typeof savedId !== "string") return;
+    await Whiteboard.deleteOne({ roomId, boardId: savedId });
+    ws.saved = await listSaved(roomId);
+    for (const b of ws.boards.values()) if (b.savedId === savedId) {      // its open copy is now unsaved
+      b.savedId = null;
+      b.savedRev = b.strokes.length ? b.rev - 1 : b.rev;
+      b.dirtyMark = isDirty(b);
+    }
+    pushWorkspace(roomId, ws);
   }));
   
+  /* ── Permissions and their socket handlers  ─────────────────────── */
   const adminAction = (fn) => guarded(isAdmin, "Only the host can do that", fn);
   const modAction   = (fn) => guarded(canModerate, "Only the host and moderators can do that", fn);
   

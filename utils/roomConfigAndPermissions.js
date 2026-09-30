@@ -139,6 +139,7 @@ const canChangeVideo = canUseMediaQueue;
 /* study rooms */
 const canControlTimer = (room, uid) => isStudyRoom(room) && hasGrant(room, uid, "sync");
 const canManageTasks  = (room, uid) => isStudyRoom(room) && hasGrant(room, uid, "queue");
+const canManageBoards = (room, uid) => isStudyRoom(room) && hasGrant(room, uid, "queue");
 const canGrantQueue = canModerate;     // host + mods, same as canGrantSync
 /* ── per-room-type wording for the two slots ── */
 const MEDIA_SCOPES = {
@@ -156,9 +157,10 @@ const FEATURE_SCOPES = {
     sync:  { label: "timer control", short: "Timer", ask: "control the timer",
              modeTitle: "Who can control the timer", on: "Can start / pause / skip the timer",
              everyone: "Everyone can now control the timer", hostOnly: "Timer control is now host-only" },
-    queue: { label: "task management", short: "Tasks", ask: "manage tasks",
-             modeTitle: "Who can manage tasks", on: "Can add, assign and remove tasks",
-             everyone: "Everyone can now manage tasks", hostOnly: "Task management is now host & mods only" },
+    queue: { label: "task & board management", short: "Tasks & boards", ask: "manage tasks and boards",
+            modeTitle: "Who can manage tasks and boards", on: "Can manage tasks and whiteboards",
+            everyone: "Everyone can now manage tasks and boards",
+            hostOnly: "Task and board management is now host & mods only" },
   },
 };
 const scopeText = (room, scope) =>
@@ -214,6 +216,7 @@ function resolvePerms(room, uid) {
     canBan:        canBan(room, uid),
     canControlTimer: canControlTimer(room, uid),
     canManageTasks:  canManageTasks(room, uid),
+    canManageBoards: canManageBoards(room, uid),
     labels:          scopeLabels(room),
     requestState:      m.syncRequest  || "none",
     queueRequestState: m.queueRequest || "none",
@@ -255,5 +258,5 @@ module.exports = {
   canEditMessage, canDeleteMessage, canClearChat, serializeMessage,
   resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue, canQueue, canGrantQueue, SCOPES, isScope,
   hasGrant, isStudyRoom, canControlPlayback, canUseMediaQueue,
-  canControlTimer, canManageTasks, scopeText, FEATURE_SCOPES,
+  canControlTimer, canManageTasks, canManageBoards, scopeText, FEATURE_SCOPES,
 };
