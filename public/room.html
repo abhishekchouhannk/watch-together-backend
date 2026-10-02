@@ -112,6 +112,11 @@
               </button>
             </div>
           </div>
+          <button class="me-btn" id="meBtn" type="button" aria-haspopup="dialog" aria-controls="meSheet"
+                  aria-expanded="false" title="Your profile" hidden>
+            <span class="me-av-slot" id="meAvSlot"></span>
+            <span class="me-name" id="meName"></span>
+          </button>
           <button class="icon-btn focus-exit-btn" id="focusExitBtn" type="button"
                 title="Back to scroll view" aria-label="Back to scroll view">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -863,6 +868,121 @@
         </header>
         <div class="cfg-body prof-body" id="vcBody"></div>
       </aside>
+      <!-- ── MY PROFILE (modal on desktop · drawer on mobile) ── -->
+      <div class="cfg-backdrop me-backdrop" id="meBackdrop"></div>
+      <section class="me-sheet" id="meSheet" role="dialog" aria-modal="true" aria-hidden="true"
+              aria-labelledby="meTitle" tabindex="-1">
+        <header class="cfg-head">
+          <h3 id="meTitle">Your profile</h3>
+          <button class="cfg-x" id="meClose" type="button" aria-label="Close">✕</button>
+        </header>
+        <div class="cfg-body me-body" id="meBody">
+          <div class="me-load" id="meLoad">
+            <div class="me-load-sk" id="meLoadSk">
+              <div class="sk" style="width:88px;height:88px;border-radius:50%;flex-shrink:0"></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:.5rem">
+                <div class="sk" style="width:60%;height:1rem"></div>
+                <div class="sk" style="width:40%;height:.8rem"></div>
+              </div>
+            </div>
+            <div class="me-load-err" id="meLoadErr" hidden>
+              <p>Couldn't load your profile.</p>
+              <button type="button" class="cfg-mini alt" id="meRetry">Try again</button>
+            </div>
+          </div>
+          <form class="me-form" id="meForm" novalidate autocomplete="off" hidden>
+            <!-- avatar -->
+            <div class="me-hero">
+              <div class="me-hero-av" id="meHeroAv" data-phase="">
+                <span class="me-hero-slot" id="meHeroSlot"></span>
+                <button type="button" class="me-av-edit" id="meAvEdit" aria-label="Change profile photo">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                  <span>Change</span>
+                </button>
+                <span class="me-av-pct" id="meAvPct" aria-hidden="true"></span>
+                <svg class="me-ring" viewBox="0 0 100 100" aria-hidden="true">
+                  <circle class="me-ring-bg" cx="50" cy="50" r="46"/>
+                  <circle class="me-ring-fg" id="meRingFg" cx="50" cy="50" r="46"/>
+                </svg>
+              </div>
+              <div class="me-hero-side">
+                <div class="me-hero-name" id="meHeroName"></div>
+                <div class="me-av-acts" id="meAvActs">
+                  <button type="button" class="cfg-mini alt" id="meAvUpload">Upload photo</button>
+                  <button type="button" class="cfg-mini no" id="meAvRemove" hidden>Remove</button>
+                  <button type="button" class="cfg-mini alt" id="meAvCancel" hidden>Cancel upload</button>
+                </div>
+                <div class="me-av-confirm" id="meAvConfirm" hidden>
+                  <span>Remove your photo?</span>
+                  <button type="button" class="cfg-mini no" id="meAvRemoveYes">Remove</button>
+                  <button type="button" class="cfg-mini alt" id="meAvRemoveNo">Keep</button>
+                </div>
+                <p class="me-av-msg" id="meAvMsg"></p>
+                <input type="file" id="meAvFile" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+              </div>
+            </div>
+            <!-- editable -->
+            <div class="cfg-sec">
+              <h4>Profile</h4>
+              <div class="cfg-field me-field" data-field="username">
+                <label class="me-lbl" for="meUsername">Username</label>
+                <div class="me-ctl">
+                  <input id="meUsername" type="text" spellcheck="false" autocapitalize="off" autocomplete="off"
+                        aria-describedby="meUsernameHint">
+                  <span class="me-stat" aria-hidden="true"></span>
+                </div>
+                <p class="me-hint" id="meUsernameHint"></p>
+              </div>
+              <div class="cfg-field me-field" data-field="bio">
+                <div class="me-lbl"><label for="meBio">Bio</label><span class="me-cnt" id="meBioCnt">0/200</span></div>
+                <div class="me-ctl me-ctl-ta">
+                  <textarea id="meBio" rows="3" placeholder="A line or two about you" aria-describedby="meBioHint"></textarea>
+                  <span class="me-stat" aria-hidden="true"></span>
+                </div>
+                <p class="me-hint" id="meBioHint"></p>
+              </div>
+              <div class="cfg-field me-field" data-field="birthday">
+                <span class="me-lbl" id="meBdayLbl">Birthday</span>
+                <div class="me-ctl">
+                  <button type="button" class="me-date" id="meBday" aria-haspopup="dialog" aria-expanded="false"
+                          aria-labelledby="meBdayLbl meBdayVal" aria-describedby="meBdayHint">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    <span class="me-date-v" id="meBdayVal"></span>
+                  </button>
+                  <button type="button" class="me-date-x" id="meBdayClear" aria-label="Clear birthday" hidden>✕</button>
+                  <span class="me-stat" aria-hidden="true"></span>
+                </div>
+                <div id="meBdayPick"></div>
+                <p class="me-hint" id="meBdayHint"></p>
+              </div>
+            </div>
+            <!-- read-only -->
+            <div class="cfg-sec">
+              <h4>Account</h4>
+              <div class="me-ro"><span class="me-ro-k">Email</span>
+                <span class="me-ro-v"><span class="me-ro-txt" id="meEmail"></span><span id="meVerified"></span></span></div>
+              <div class="me-ro"><span class="me-ro-k">Joined</span><span class="me-ro-v" id="meJoined"></span></div>
+              <p class="cfg-note">Email changes aren't available yet.</p>
+            </div>
+            <p class="me-sr" id="meLive" aria-live="polite"></p>
+          </form>
+        </div>
+        <footer class="me-foot" id="meFoot" hidden>
+          <p class="cfg-dirty is-hidden" id="meDirty"></p>
+          <div class="cfg-actions">
+            <button class="cfg-btn" id="meReset" type="button" disabled>Reset</button>
+            <button class="cfg-btn primary" id="meSave" type="submit" form="meForm" disabled>Save changes</button>
+          </div>
+        </footer>
+      </section>
       <div class="pull-hint" id="pullHint" aria-hidden="true">
         <div class="pull-bubble">
           <svg class="pull-ring" viewBox="0 0 52 52" aria-hidden="true">

@@ -51,6 +51,7 @@ import { wireLyrics } from "./room/lyrics.js";
 import { wireStudy } from "./room/study.js";
 import { wireTasks } from "./room/tasks.js";
 import { wireWhiteboard } from "./room/whiteboard.js";
+import "./room/profile_modules/profile-settings.js";
 
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {

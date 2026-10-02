@@ -50,7 +50,7 @@ import { ROOM_TYPES, ROOM_CAP, ROLE_LABEL, FIELD_LABEL, MOD_EVT } from "./config
 import { CHEV_SVG, STEP_UP, STEP_DN, SEC_CLOSE } from "./svg.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
-import { esc, fmtMsgTs, fmtMsgStamp, avColor, toast, safeHttpUrl, fmtJoined, isMe } from "./utils.js";
+import { esc, fmtMsgStamp, toast, fmtJoined, isMe } from "./utils.js";
 import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onParticipantsUpdate } from "./socket-core.js";
 import { renderRoomDetails } from "./room-details.js";
@@ -60,6 +60,9 @@ import { addSystemMsg, applyChatPerms, jumpToMessage } from "./chat.js";
 import { renderTimer } from "./study.js";
 import { renderTasks } from "./tasks.js";
 import { renderWhiteboardUI } from "./whiteboard.js";
+import { avatarHTML as userAvHTML, nameOf, getIdentity, mergeIdentity, ensureIdentities, onIdentity } from "./profile_modules/identity.js";
+import { openProfileSettings } from "./profile_modules/profile-settings.js";
+
 /* ═══════════════════════════════════════════
    COLLAPSIBLE SECTION HELPERS
    ═══════════════════════════════════════════ */
@@ -136,6 +139,8 @@ export function applyPerms() {
   renderTasks();
   renderWhiteboardUI();
 }
+/* a rename / new photo / bio while the card is open → re-render it */
+onIdentity((uid) => { if (S.profile && S.profile.userId === uid) renderProfile(); });
 // Check if the config sheet is open
 export const isConfigOpen = () => dom.cfgSheet.classList.contains("open");
 /* opts.focus = "reports" → open that section and scroll to opts.reportId */
@@ -216,9 +221,10 @@ export function renderConfig() {
       h += secOpen("requests", 'Requests <span class="cnt">' + S.requests.length + "</span>");   // ← own id + count badge
       S.requests.forEach((m) => {
         const lbl = scopeTxt(m.scope === "queue" ? "queue" : "sync").short.toLowerCase();
-        h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
-               '<span class="cfg-uname">' + esc(m.username) + "</span>" +
-               '<span class="scope-tag scope-' + (m.scope === "queue" ? "queue" : "playback") + '">' + esc(lbl) + "</span></span>" +   // ← `</span></span>` and the trailing `+` were missing
+        const nm  = nameOf(m.userId, m.username);
+        h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(nm, m.userId) +
+               '<span class="cfg-uname" data-name-uid="' + esc(m.userId) + '">' + esc(nm) + "</span>" +
+               '<span class="scope-tag scope-' + (m.scope === "queue" ? "queue" : "playback") + '">' + esc(lbl) + "</span></span>" +
              '<span class="cfg-acts">' +
                '<button class="cfg-mini ok" data-act="respond" data-approve="1" data-scope="' + m.scope + '" data-id="' + m.userId + '">Approve</button>' +
                '<button class="cfg-mini no" data-act="respond" data-approve="0" data-scope="' + m.scope + '" data-id="' + m.userId + '">Deny</button>' +
@@ -246,10 +252,12 @@ export function renderConfig() {
       const isHostRow = m.role === "admin";
       const menuOpen  = !!(S.cfgRowMenu && S.cfgRowMenu.id === m.userId);
       const canPerm   = (p.canGrantSync || p.canGrantQueue) && !isHostRow;
+      const nm = nameOf(m.userId, m.username);
       h += '<div class="cfg-row"><span class="cfg-user">' +
               memberAvBtnHTML(m) +
               '<button class="cfg-uname cfg-uname-btn" data-act="profile" data-uid="' + m.userId +
-                '" data-uname="' + esc(m.username) + '" title="View profile">' + esc(m.username) +
+                '" data-uname="' + esc(nm) + '" title="View profile">' +
+                '<span class="cfg-uname-t" data-name-uid="' + esc(m.userId) + '">' + esc(nm) + "</span>" +
                 (online.has(m.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
               "</button>" +
             "</span>" +
@@ -269,8 +277,8 @@ export function renderConfig() {
   if (p.canBan && S.banned.length) {
     h += secOpen("banned", 'Banned <span class="cnt">' + S.banned.length + "</span>", true);
     S.banned.forEach((b) => {
-      h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(b.username) +
-             '<span class="cfg-uname">' + esc(b.username) + "</span></span>" +
+      h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(b.username, b.userId) +
+             '<span class="cfg-uname" data-name-uid="' + esc(b.userId) + '">' + esc(nameOf(b.userId, b.username)) + "</span></span>" +
            '<span class="cfg-acts">' +
              '<button class="cfg-mini ok" data-act="unban" data-id="' + b.userId + '">Unban</button>' +
            "</span></div>" +
@@ -325,7 +333,9 @@ export function renderConfig() {
          '<p class="cfg-dirty is-hidden" id="cfgDirtyNote"></p>';
     h += SEC_CLOSE;
   }
+  // ── end of renderConfig ──
   dom.cfgBody.innerHTML = h;
+  ensureIdentities([...(S.members || []), ...(S.requests || []), ...(S.banned || [])].map((x) => x.userId));
   syncDirtyUI();
 }
 /* ── incoming room-details change ── */
@@ -583,14 +593,18 @@ const refreshProfile = () => { if (isProfileOpen()) renderProfile(); };
 /* anything that used to call refreshConfig() on a server broadcast
    (room-permissions, member list changes, participants changes) should call this */
 const refreshPanels  = () => { refreshConfig(); refreshProfile(); };
-function avatarHTML(name) {
-  return '<span class="cfg-av" style="background:' + avColor(name) + '">' + (name || "?")[0].toUpperCase() + "</span>";
+/* small non-clickable avatar — now photo-aware and live-updating when uid is passed */
+function avatarHTML(name, uid) {
+  return userAvHTML({ uid, name, cls: "cfg-av" });
 }
 /* avatar as a button — same look, opens the existing profile panel */
 function memberAvBtnHTML(m) {
-  return '<button class="cfg-av cfg-av-btn" data-act="profile" data-uid="' + m.userId +
-    '" data-uname="' + esc(m.username) + '" style="background:' + avColor(m.username) +
-    '" title="View profile">' + (m.username || "?")[0].toUpperCase() + "</button>";
+  const n = nameOf(m.userId, m.username);
+  return userAvHTML({
+    uid: m.userId, name: n, tag: "button", cls: "cfg-av cfg-av-btn",
+    attrs: 'type="button" data-act="profile" data-uid="' + esc(m.userId) + '" data-uname="' + esc(n) +
+           '" title="View profile" aria-label="View profile of ' + esc(n) + '"',
+  });
 }
 /* role tag — static for host row / non-role-setters, toggleable otherwise */
 function roleTagHTML(m, canSetRoles) {
@@ -891,22 +905,17 @@ async function fetchProfile(userId) {
     const d = await r.json();
     profCache.set(userId, d);
     if (S.profile && S.profile.userId === userId) {
-      S.profile.data = d; S.profile.loading = false; renderProfile();
+      S.profile.data = d; S.profile.loading = false;
     }
+    mergeIdentity(userId, d);              // ← NEW: chat/people/navbar get it too (triggers renderProfile via onIdentity)
+    if (S.profile && S.profile.userId === userId) renderProfile();
   } catch (_) {
     if (S.profile && S.profile.userId === userId) {
       S.profile.loading = false; S.profile.error = true; renderProfile();
     }
   }
 }
-/* generated avatar underneath, optional <img> on top; the img removes itself on error */
-function profAvatarHTML(name, url) {
-  const u = safeHttpUrl(url);
-  return '<span class="prof-av" style="background:' + avColor(name) + '">' +
-    (name || "?")[0].toUpperCase() +
-    (u ? '<img src="' + esc(u) + '" alt="">' : "") +
-    "</span>";
-}
+
 const profSec = (title, inner) => '<div class="cfg-sec"><h4>' + title + "</h4>" + inner + "</div>";
 function renderProfile() {
   const p = S.profile;
@@ -915,20 +924,21 @@ function renderProfile() {
   const online = new Set(((S.room && S.room.participants) || []).map((x) => (x.userId || "").toString()));
   const m      = (S.members || []).find((x) => x.userId === p.userId) || null;
   const d      = p.data || {};
-  /* S.banned is only ever populated for the host (canBan) — mods/members see nothing */
+  const live   = getIdentity(p.userId) || {};                        // ← freshest known identity (rev-guarded)
   const ban = me.canBan ? ((S.banned || []).find((b) => b.userId === p.userId) || null) : null;
-  /* reconcile the optimistic flag against the authoritative list */
   if (p.pending === "ban"   &&  ban) clearPending(p);
   if (p.pending === "unban" && !ban) clearPending(p);
-  const isBanned = !!ban || p.pending === "ban";
-  const name      = d.username || (m && m.username) || (ban && ban.username) || p.username || "Unknown";
+  const isBanned  = !!ban || p.pending === "ban";
+  const name      = live.username || d.username || (m && m.username) || (ban && ban.username) || p.username || "Unknown";
+  const bio       = (live.bio !== undefined ? live.bio : d.bio) || "";
   const role      = m ? m.role : null;
   const isSelf    = !!S.userId && p.userId === S.userId;
   const isHostRow = role === "admin";
   const isModRow  = role === "mod";
+
   /* ── 1. identity — EVERYONE sees exactly this much ── */
   let h = '<div class="prof-id">' +
-      profAvatarHTML(name, d.avatar) +
+      userAvHTML({ uid: p.userId, name, cls: "prof-av", animate: true }) +
       '<div class="prof-name">' + esc(name) +
         (online.has(p.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
         (isBanned ? '<span class="role-tag role-banned">Banned</span>'
@@ -941,7 +951,14 @@ function renderProfile() {
           : d.createdAt ? "Joined " + esc(fmtJoined(d.createdAt))
           : "Join date unknown") +
       "</div>" +
+      (bio ? '<p class="prof-bio">' + esc(bio) + "</p>"
+           : isSelf && !p.loading ? '<button type="button" class="prof-bio-add" data-act="edit-me">＋ Add a bio</button>' : "") +
     "</div>";
+  if (isSelf) {
+    h += '<div class="cfg-sec prof-self-acts">' +
+           '<button type="button" class="cfg-btn" data-act="edit-me">Edit profile</button></div>';
+  }
+  
   /* ── 2. host/mod only, never targets yourself ── */
   if (me.canManage && !isSelf) {
     /* a) banned → the only thing left to do is lift it (host only, since S.banned is host-only) */
@@ -1004,6 +1021,7 @@ function onProfClick(e) {
   const el = e.target.closest("[data-act]");
   if (!el || !S.profile || el.tagName === "SELECT" || el.tagName === "INPUT") return;
   const a = el.dataset.act;
+  if (a === "edit-me") { closeProfile(); openProfileSettings(); return; }
   if (a === "ask-ban")    { S.profile.confirm = "ban";    renderProfile(); return; }
   if (a === "ask-remove") { S.profile.confirm = "remove"; renderProfile(); return; }
   if (a === "menu-close") { S.profile.confirm = null;     renderProfile(); return; }

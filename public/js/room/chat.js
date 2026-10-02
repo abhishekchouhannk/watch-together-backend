@@ -48,7 +48,7 @@
 import { roomId, GROUP_WINDOW, GIF_INSTANT_SEND } from "./config.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
-import { esc, fmtMsgStamp, fmtMsgFull, avColor, fmtBadge, isMe, delay } from "./utils.js";
+import { esc, fmtMsgStamp, fmtMsgFull, fmtBadge, isMe, delay } from "./utils.js";
 import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onUserJoined, onUserLeft } from "./socket-core.js";
 import { normalizeImageUrl } from "./chat_modules/media-embed.js";
@@ -56,6 +56,8 @@ import { wireGifPicker, closeGifPicker } from "./chat_modules/gif-picker.js";
 import { wireAttachments, takeOutgoing, resetAttachments, stageGif, suspendAttachments } from "./chat_modules/chat-attach.js";
 import { wireLightbox } from "./chat_modules/lightbox.js";
 import { wireSysLog, isSysView, setSysView, setToolsMode, closeChatTools, onSysPaneShown } from "./chat_modules/sys-log.js";
+import { avatarHTML, nameOf, ensureIdentities } from "./profile_modules/identity.js";
+
 /* ── history pagination bookkeeping ── */
 let startMarkerShown = false;
 let oldestMsgId = null, hasMoreMsgs = false, loadingOlder = false;
@@ -434,8 +436,8 @@ function readMsg(el) {
 }
 export function buildMsgEl(msg) {
   const self = msg.senderId && S.userId && msg.senderId.toString() === S.userId;
-  const c = avColor(msg.username), ini = (msg.username || "?")[0].toUpperCase();
-  const uid = msg.senderId ? msg.senderId.toString() : "";
+  const uid  = msg.senderId ? msg.senderId.toString() : "";
+  const name = uid ? nameOf(uid, msg.username) : (msg.username || "");   // current name, not the one stored on the message
   /* re-validate even server data: only https image links ever reach an <img> */
   const media  = !msg.deleted ? normalizeImageUrl(msg.mediaUrl) : null;
   const noText = !msg.deleted && !(msg.text && String(msg.text).trim());
@@ -452,24 +454,27 @@ export function buildMsgEl(msg) {
   if (msg.deletedByRole) div.dataset.delRole = msg.deletedByRole;
   if (msg.deletedByName) div.dataset.delName = msg.deletedByName;
   const av = uid
-    ? '<button type="button" class="msg-av" style="background:' + c + '" ' +
-        'data-uid="' + esc(uid) + '" data-uname="' + esc(msg.username || "") + '" ' +
-        'title="View profile" aria-label="View profile of ' + esc(msg.username || "user") + '">' +
-        ini + "</button>"
-    : '<div class="msg-av" style="background:' + c + '">' + ini + "</div>";
+    ? avatarHTML({
+        uid, name, tag: "button", cls: "msg-av",
+        attrs: 'type="button" data-uid="' + esc(uid) + '" data-uname="' + esc(name) + '" ' +
+               'title="View profile" aria-label="View profile of ' + esc(name || "user") + '"',
+      })
+    : avatarHTML({ name, tag: "div", cls: "msg-av" });
   div.innerHTML =
     av +
     '<div class="msg-body">' +
       '<div class="msg-head">' +
-        '<span class="msg-name' + (self ? " self" : "") + '">' + esc(msg.username) + "</span>" +
+        '<span class="msg-name' + (self ? " self" : "") + '"' +
+          (uid ? ' data-name-uid="' + esc(uid) + '"' : "") + ">" + esc(name) + "</span>" +
         '<time class="msg-ts" datetime="' + new Date(msg.timestamp || Date.now()).toISOString() +
           '" title="' + esc(fmtMsgFull(msg.timestamp)) + '">' + esc(fmtMsgStamp(msg.timestamp)) + "</time>" +
       "</div>" +
       '<div class="msg-line">' + msgBubbleHTML(msg) + "</div>" +
       mediaHTML(media) +
-    "</div>";                                              // ← the "+" that was missing
+    "</div>";
   if (media) mountMedia(div);
   wireRowInteraction(div);
+  if (uid) ensureIdentities([uid]);          // batched: 20 history messages → 1 request
   return div;
 }
 /* ── right-click (desktop) + long-press (touch) open the same menu ──

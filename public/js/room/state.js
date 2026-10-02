@@ -54,3 +54,4 @@ S.needsSync         = false;                                // room-state arrive
 S.initialVideoState = { currentTime: 0, isPlaying: false }; // DB snapshot used if no peer answers
 S.syncFallbackTimer = null;                                 // timer id for the 2 s peer-sync fallback
 S.currentItemId     = null;   
+S.me                = null;          // my own profile (set by profile-settings.js from GET /api/users/me)
