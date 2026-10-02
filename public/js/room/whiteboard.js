@@ -391,6 +391,7 @@ function renderTexts() {
       el.addEventListener("input", onTextInput);
       el.addEventListener("blur", onTextBlur);
       el.addEventListener("keydown", onTextKey);
+      el.addEventListener("keyup", syncFormatButtons);
       el.addEventListener("paste", onTextPaste);
       textLayer.appendChild(el); textEls.set(s.id, el);
     }
@@ -729,6 +730,7 @@ function endEdit() {
 }
 function onTextInput() {
   if (!editing) return;
+  syncFormatButtons();
   const { s, el } = editing;
   s.html = cleanHtml(el.innerHTML); el._html = s.html;
   measure(s, el);
