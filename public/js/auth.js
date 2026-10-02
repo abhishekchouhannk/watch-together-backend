@@ -185,12 +185,12 @@
             console.log(response);
             const data = await response.json();
             if (!response.ok) {
-                throw new Error(data.message || "Request failed");
+                const errMsg = data.message || (data.errors && data.errors[0] && data.errors[0].message) || "Request failed";
+                throw new Error(errMsg);
             }
             showMessage(data.message || "Request successful!", "success");
-            // Only login/register continue to the dashboard.
-            // (forgotPassword just shows the "email sent" message.)
-            if (mode !== "forgotPassword") {
+            // Only login continues to the dashboard immediately (register requires email verification first)
+            if (mode === "login") {
                 setTimeout(() => { window.location.href = "/dashboard"; }, 1000);
             }
         } catch (error) {
