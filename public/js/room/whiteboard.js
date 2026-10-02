@@ -324,6 +324,18 @@ function paintShape(s) {
   }
   ctx.stroke();
 }
+/* B / I / U reflect the formatting at the caret or under the selection */
+function syncFormatButtons() {
+  if (!host) return;
+  host.querySelectorAll("[data-fmt]").forEach((b) => {
+    b.disabled = !editing;
+    let on = false;
+    if (editing) {
+      try { on = document.queryCommandState(b.dataset.fmt); } catch (_) { on = false; }
+    }
+    b.classList.toggle("is-on", on);
+  });
+}
 function setWorldTransform() {
   const k = view.dpr * cam.z;
   ctx.setTransform(k, 0, 0, k, -cam.x * k, -cam.y * k);
@@ -742,6 +754,7 @@ function saveRange() {
   if (!editing) return;
   const sel = window.getSelection();
   if (sel.rangeCount && editing.el.contains(sel.anchorNode)) editing.range = sel.getRangeAt(0).cloneRange();
+  syncFormatButtons();
 }
 function restoreRange() {
   if (!editing || !editing.range) return;
@@ -754,6 +767,7 @@ function formatText(cmd) {
   document.execCommand("styleWithCSS", false, false);          // → <b>/<i>/<u>/<font>, which the sanitiser keeps
   document.execCommand(cmd);
   onTextInput();
+  syncFormatButtons();
 }
 function applyColor(color) {
   tool.color = color;
@@ -1129,7 +1143,7 @@ function renderToolState() {
   $("wbRedo").disabled = !live || B.hist.redo <= 0;
   host.querySelectorAll("[data-tool]").forEach((b) => b.classList.toggle("is-on",
     b.dataset.tool === tool.kind && (b.dataset.tool !== "shape" || b.dataset.shape === tool.shape)));
-  host.querySelectorAll("[data-fmt]").forEach((b) => { b.disabled = !editing; });
+  syncFormatButtons();
   canvas.dataset.tool = tool.kind;
 }
 /* exported: also called from applyPerms() when permissions change */

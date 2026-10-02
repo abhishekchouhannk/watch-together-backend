@@ -205,7 +205,7 @@ export function renderConfig() {
   }
   /* ── sync mode (host + mods) ── */
   if (p.canGrantSync) {
-    h += secOpen("sync", "Who can play / pause / seek");
+    h += secOpen("sync", esc(scopeTxt("sync").modeTitle));          // ← was the hardcoded "Who can play / pause / seek"
     h += '<div class="seg">' +
            '<button class="seg-btn' + (p.syncMode === "host" ? " on" : "") +
              '" data-act="mode" data-mode="host">🔒 Host only</button>' +
@@ -213,12 +213,12 @@ export function renderConfig() {
              '" data-act="mode" data-mode="everyone">👥 Everyone</button>' +
          "</div>" + SEC_CLOSE;
     if (S.requests.length) {
-      h += secOpen("sync", esc(scopeTxt("sync").modeTitle))
+      h += secOpen("requests", 'Requests <span class="cnt">' + S.requests.length + "</span>");   // ← own id + count badge
       S.requests.forEach((m) => {
         const lbl = scopeTxt(m.scope === "queue" ? "queue" : "sync").short.toLowerCase();
         h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(m.username) +
                '<span class="cfg-uname">' + esc(m.username) + "</span>" +
-               '<span class="scope-tag scope-' + (m.scope === "queue" ? "queue" : "playback") + '">' + esc(lbl) + "</span>"
+               '<span class="scope-tag scope-' + (m.scope === "queue" ? "queue" : "playback") + '">' + esc(lbl) + "</span></span>" +   // ← `</span></span>` and the trailing `+` were missing
              '<span class="cfg-acts">' +
                '<button class="cfg-mini ok" data-act="respond" data-approve="1" data-scope="' + m.scope + '" data-id="' + m.userId + '">Approve</button>' +
                '<button class="cfg-mini no" data-act="respond" data-approve="0" data-scope="' + m.scope + '" data-id="' + m.userId + '">Deny</button>' +

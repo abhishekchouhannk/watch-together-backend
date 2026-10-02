@@ -2898,7 +2898,7 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .wb-toolbar{
   position:absolute;top:.6rem;left:.6rem;z-index:3;
   display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;
-  max-width:calc(100% - 1.2rem);padding:.3rem .4rem;border-radius:12px;
+  max-width:calc(100% - 6.5rem);padding:.3rem .4rem;border-radius:12px;
   background:var(--menu-bg);border:1px solid var(--card-bdr);box-shadow:var(--card-sh);
 }
 .wb-host{ display:flex;align-items:center;gap:.35rem; }
@@ -2910,8 +2910,8 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 }
 .wb-btn:hover{ background:var(--surf); }
 .wb-btn.is-on{ background:var(--acc);color:var(--acc-t); }
-.wb-btn.wb-text{ font-size:.75rem;font-weight:700;background:var(--surf);color:var(--surf-t); }
-.wb-btn.wb-text:hover{ background:var(--surf-h); }
+.wb-btn.wb-lbl{ font-size:.75rem;font-weight:700;background:var(--surf);color:var(--surf-t); }
+.wb-btn.wb-lbl:hover{ background:var(--surf-h); }
 .wb-color{ width:32px;height:32px;padding:0;border:none;border-radius:8px;background:none;cursor:pointer; }
 .wb-color:disabled{ opacity:.3;cursor:default; }
 .wb-size{ width:80px;accent-color:var(--acc);cursor:pointer; }
@@ -3179,7 +3179,7 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .wb-dock .wb-host{ display:contents; }
 .wb-dock .wb-host[hidden]{ display:none !important; }
 .wb-dsep{ grid-column:1 / -1;height:1px;background:var(--card-bdr);margin:.1rem 0; }
-.wb-dock .wb-btn.wb-text{ grid-column:1 / -1;width:100%; }
+.wb-dock .wb-btn.wb-lbl{ grid-column:1 / -1;width:100%; }
 .wb-btn[disabled]{ opacity:.3;pointer-events:none; }
 /* popover + modal: live on the board root so they also work in fullscreen */
 .wb-popover{
