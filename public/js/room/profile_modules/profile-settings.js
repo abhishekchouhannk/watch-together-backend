@@ -70,7 +70,7 @@ const anyDirty = () => FIELDS.some(isDirty);
 function hintFor(f) {
   if (f === "username") return L().usernameHint;
   if (f === "bio") return "Shown on your profile card to people in your rooms.";
-  return "Private — only you can see this. You must be " + L().minAge + " or older.";
+  return "You must be " + L().minAge + " or older.";      // privacy note now lives in the label
 }
 function announce(msg) {
   D.live.textContent = "";
@@ -194,7 +194,6 @@ function paintNav() {
 function paintShell() {
   const ready = !!M.user;
   D.form.hidden = !ready;
-  D.foot.hidden = !ready;
   D.load.hidden = ready;
   D.loadErr.hidden = !M.loadErr;
   D.loadSk.hidden = M.loadErr;
@@ -205,21 +204,20 @@ function paintHero() {
   const name = norm("username", M.draft.username) || u.username;
   D.heroName.textContent = name;
   // rebuild only when the visual actually changes (no <img> flicker per keystroke)
-  const k = (u.avatar || "") + "|" + (u.avatarStill || "") + "|" + (u.avatar ? "" : name);
+  const k = [u.avatar, u.avatarStill, u.avatarFull, u.avatar ? "" : name].join("|");
   if (k === heroKey) return;
   heroKey = k;
   D.heroSlot.innerHTML = avatarHTML({
     name, cls: "me-hero-img", animate: true,
-    src: { avatar: u.avatar, avatarStill: u.avatarStill },     // detached preview: follows the DRAFT name
+    zoom: "View your photo",                               // photo → click opens the viewer
+    label: u.avatar ? "" : "Upload a photo",               // no photo → click opens the picker (see wire())
+    src: { avatar: u.avatar, avatarStill: u.avatarStill, avatarFull: u.avatarFull },
   });
 }
 function paintAccount() {
   const u = M.user;
   if (!u) return;
   D.email.textContent = u.email || "—";
-  D.verified.innerHTML = u.isVerified
-    ? '<span class="pill pill-ok">Verified</span>'
-    : '<span class="pill pill-no">Not verified</span>';
   const t = u.createdAt ? new Date(u.createdAt) : null;
   D.joined.textContent = t && !Number.isNaN(t.getTime()) ? JOIN_FMT.format(t) : "—";
 }
@@ -345,6 +343,17 @@ async function checkFile(file) {
   } catch (_) { return "Couldn't read that file"; }
   return null;
 }
+/* helper hints show for the focused field only (errors always show — CSS).
+   Hiding is deferred while a pointer is down: collapsing a hint on focus-out
+   would shift the Birthday button / Save under the cursor mid-click. */
+function syncHintFocus(allowHide) {
+  if (!D) return;
+  const a = document.activeElement;
+  for (const f of FIELDS) {
+    if (M.open && D.field[f].contains(a)) D.field[f].classList.add("is-focus");
+    else if (allowHide) D.field[f].classList.remove("is-focus");
+  }
+}
 async function startAvatarFlow(file) {
   if (M.av.busy) return;
   setAv({ err: "", ok: "", confirm: false });
@@ -415,6 +424,7 @@ function requestClose() {
   if (M.user && anyDirty() && !M.closeArmed) {
     M.closeArmed = true;
     paintFooter();
+    D.dirty.scrollIntoView({ block: "nearest", behavior: "smooth" });   // the note is in the body now
     nudge(D.dirty);
     return;
   }
@@ -433,7 +443,9 @@ function close() {
   D.meBtn.setAttribute("aria-expanded", "false");
   document.documentElement.classList.remove("me-lock");
   discardDraft();
+  syncHintFocus(true);
 }
+
 function trapTab(e, root) {
   const els = [...root.querySelectorAll('button, input, textarea, select, [tabindex]:not([tabindex="-1"])')]
     .filter((el) => !el.disabled && !el.closest("[hidden]") && el.getClientRects().length);
@@ -458,14 +470,14 @@ function cacheDom() {
     meBtn: "meBtn", avSlot: "meAvSlot", name: "meName",
     sheet: "meSheet", back: "meBackdrop", close: "meClose",
     load: "meLoad", loadSk: "meLoadSk", loadErr: "meLoadErr", retry: "meRetry",
-    form: "meForm", foot: "meFoot",
+    form: "meForm",
     heroAv: "meHeroAv", heroSlot: "meHeroSlot", heroName: "meHeroName",
     avEdit: "meAvEdit", avPct: "meAvPct", ringFg: "meRingFg",
     avActs: "meAvActs", avUpload: "meAvUpload", avRemove: "meAvRemove", avCancel: "meAvCancel",
     avConfirm: "meAvConfirm", avYes: "meAvRemoveYes", avNo: "meAvRemoveNo", avMsg: "meAvMsg", avFile: "meAvFile",
     username: "meUsername", bio: "meBio", bioCnt: "meBioCnt",
     bday: "meBday", bdayVal: "meBdayVal", bdayClear: "meBdayClear", bdayPick: "meBdayPick",
-    email: "meEmail", verified: "meVerified", joined: "meJoined",
+    email: "meEmail", joined: "meJoined",
     live: "meLive", dirty: "meDirty", reset: "meReset", save: "meSave",
   };
   const d = {};
@@ -480,7 +492,6 @@ function cacheDom() {
   }
   return d;
 }
-const hasFiles = (e) => !!e.dataTransfer && [...e.dataTransfer.types].includes("Files");
 function wire() {
   D.meBtn.addEventListener("click", () => (M.open ? requestClose() : openProfileSettings()));
   D.close.addEventListener("click", requestClose);
@@ -494,11 +505,28 @@ function wire() {
   D.bday.addEventListener("click", toggleBday);
   D.bdayClear.addEventListener("click", () => { picker.close(); edit("birthday", ""); D.bday.focus(); });
   D.reset.addEventListener("click", () => { discardDraft(); announce("Changes reset"); D.username.focus(); });
+  /* focus-only helper hints */
+  let pointerHeld = false;
+  const release = () => {
+    if (!pointerHeld) return;
+    pointerHeld = false;
+    setTimeout(() => syncHintFocus(true), 0);          // after the click has landed
+  };
+  document.addEventListener("pointerdown", () => { if (M.open) pointerHeld = true; }, true);
+  document.addEventListener("pointerup", release, true);
+  document.addEventListener("pointercancel", release, true);
+  D.sheet.addEventListener("focusin", () => syncHintFocus(!pointerHeld));
+  D.sheet.addEventListener("focusout", () => { if (!pointerHeld) setTimeout(() => syncHintFocus(true), 0); });
+  /* avatar */
   D.avUpload.addEventListener("click", () => D.avFile.click());
   D.avEdit.addEventListener("click", () => D.avFile.click());
+  D.heroSlot.addEventListener("click", (e) => {
+    if (M.av.busy || e.target.closest(".is-zoomable")) return;   // photo → identity.js opens the viewer
+    D.avFile.click();                                             // no photo yet → tapping the initial uploads one
+  });
   D.avFile.addEventListener("change", () => {
     const f = D.avFile.files && D.avFile.files[0];
-    D.avFile.value = "";                          // lets the same file be picked again later
+    D.avFile.value = "";                               // lets the same file be picked again later
     if (f) startAvatarFlow(f);
   });
   D.avRemove.addEventListener("click", () => { setAv({ confirm: true, err: "", ok: "" }); D.avNo.focus(); });
@@ -506,6 +534,7 @@ function wire() {
   D.avYes.addEventListener("click", removeAvatar);
   D.avCancel.addEventListener("click", () => { if (M.av.xhr) M.av.xhr.abort(); });
   /* drop an image straight onto the avatar */
+  const hasFiles = (e) => !!e.dataTransfer && [...e.dataTransfer.types].includes("Files");
   ["dragenter", "dragover"].forEach((t) => D.heroAv.addEventListener(t, (e) => {
     if (!hasFiles(e) || M.av.busy) return;
     e.preventDefault();

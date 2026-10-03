@@ -14,7 +14,7 @@
  */
 import {
   roomId, VOICE_TOKEN_ENDPOINT, VOICE_SDK_URL,
-  VOICE_MAX_SLOTS, VOICE_AUTOCONNECT, VOICE_RAIL_AUTO_CLOSE, AV_COLORS,
+  VOICE_MAX_SLOTS, VOICE_AUTOCONNECT, VOICE_RAIL_AUTO_CLOSE,
 } from "./config.js";
 import { dom } from "./dom.js";
 import { playerHooks } from "./player.js";
@@ -24,6 +24,7 @@ import { getSocket, emit } from "./socket-ref.js";
 import { onRoomState } from "./socket-core.js";  
 import { openProfile } from "./permissions.js";
 import { esc } from "./utils.js";
+import { avatarEl, nameOf, getIdentity, ensureIdentities, onIdentity } from "./profile_modules/identity.js";
 /* ── module state ───────────────────────────────────────── */
 let LK = null;                 // lazily-imported livekit-client module
 let room = null;
@@ -457,54 +458,27 @@ function sortedRemotes() {
         (a, b) => (a.joinedAt?.getTime?.() || 0) - (b.joinedAt?.getTime?.() || 0))
     : [];
 }
+/* LiveKit identity === our userId → names & photos come from the identity store,
+   token metadata is only a fallback (it's frozen at connect time) */
 function peerMeta(p) {
-  let username = p?.name || p?.identity || "Guest", avatar = null;
+  const id = p && p.identity != null ? String(p.identity) : "";
+  let fallback = p?.name || id || "Guest";
   try {
-    if (p?.metadata) {
-      const m = JSON.parse(p.metadata);
-      if (m.username) username = m.username;
-      if (m.avatar) avatar = m.avatar;
-    }
+    if (p?.metadata) { const m = JSON.parse(p.metadata); if (m.username) fallback = m.username; }
   } catch {}
-  return { username, avatar };
-}
-function avColorFor(name) {
-  const pal = (Array.isArray(AV_COLORS) && AV_COLORS.length)
-    ? AV_COLORS : ["#e11d48", "#9333ea", "#2563eb", "#0891b2", "#059669", "#d97706"];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
-  return pal[Math.abs(h) % pal.length];
+  const rec = id ? getIdentity(id) : null;
+  return { id, username: id ? nameOf(id, fallback) : fallback, avatar: rec ? rec.avatar : null };
 }
 function avatarNode(meta, cls) {
-  const el = document.createElement("span");
-  el.className = cls;
-  if (meta.avatar) {
-    const img = document.createElement("img");
-    img.src = meta.avatar; img.alt = ""; img.loading = "lazy";
-    el.appendChild(img);
-  } else {
-    el.style.background = avColorFor(meta.username);
-    el.textContent = (meta.username[0] || "?").toUpperCase();
-  }
-  return el;
+  return avatarEl({ uid: meta.id, name: meta.username, cls });
 }
-function avatarButton(meta, cls, title) {
-  const btn = document.createElement("button");
-  btn.type = "button"; btn.className = cls;
-  btn.title = title; btn.setAttribute("aria-label", title);
-  if (meta.avatar) {
-    const img = document.createElement("img");
-    img.src = meta.avatar; img.alt = ""; img.loading = "lazy";
-    img.addEventListener("error", () => img.remove(), { once: true });
-    btn.appendChild(img);
-  } else {
-    btn.style.background = avColorFor(meta.username);
-    btn.textContent = (meta.username[0] || "?").toUpperCase();
-  }
-  return btn;
+/* `label` may contain {name} → kept correct across renames */
+function avatarButton(meta, cls, label) {
+  return avatarEl({ uid: meta.id, name: meta.username, tag: "button", cls, attrs: 'type="button"', label });
 }
 function refreshPeers() {
   const remotes = sortedRemotes();
+  ensureIdentities(remotes.map((p) => p.identity));
   orderIds.length = 0;
   const present = new Set(remotes.map((p) => p.identity));
   let changed = false;
@@ -600,7 +574,7 @@ function renderPanePeers() {
     const li = document.createElement("li");
     li.className = "vpane-peer";
     li.dataset.id = id;
-    const av = avatarButton(meta, "vpane-av", `View ${meta.username}'s profile`);
+    const av = avatarButton(meta, "vpane-av", "View {name}'s profile");   // was a baked-in string
     av.addEventListener("click", (e) => { e.stopPropagation(); openProfile(id, meta.username); });
     li.appendChild(av);
     const open = document.createElement("button");
@@ -609,7 +583,7 @@ function renderPanePeers() {
     const box = document.createElement("span");
     box.className = "vpane-peer-meta";
     const nm = document.createElement("span");
-    nm.className = "vpane-name"; nm.textContent = meta.username;
+    nm.className = "vpane-name"; nm.textContent = meta.username; nm.dataset.nameUid = id;
     const sub = document.createElement("span");
     sub.className = "vpane-sub";
     sub.dataset.slot = fine && slot <= VOICE_MAX_SLOTS ? String(slot) : "";
@@ -731,6 +705,12 @@ function renderVoicePane(st) {
   const speaking = new Set((room?.activeSpeakers || []).map((p) => p.identity));
   dom.voicePaneList.querySelectorAll(".vpane-peer").forEach((li) => paintPaneRow(li.dataset.id, li));
 }
+
+onIdentity((uid, _rec, changed) => {
+  if (!changed || !connected || !orderIds.includes(uid)) return;
+  refreshPeers();
+  if (vcIsOpen() && vcOpenFor.id === uid) paintVoiceControl(uid);
+});
 
 /* ════════════════════════════════════════════════════════════
    PER-USER VOICE CONTROL MODAL

@@ -9,21 +9,21 @@
  *   renderDetails()       full card (name, badge, count, desc, meta, tags,
  *                         avatars) + chatOnline "N in room"
  *   renderRoomDetails()   renderHeader() + renderDetails() — the public one
- *   renderAvatars(list)   avatar strip HTML (max 10, "+N" overflow)
+ *   renderAvatars(list)   avatar strip HTML (max 10, "+N" overflow) — photo-
+ *                         aware and live via identity.js
  *   toggleDetails()       expand/collapse the card (no-op until S.room set)
- *   wireRoomDetails()     click / keyboard / a11y wiring formerly inline in
- *                         wireEvents(); call at the same position
+ *   wireRoomDetails()     click / keyboard / a11y wiring
  *
  * State touched:  S.detailsOpen (null → bool on first render) — in place.
  * State read:     S.room
- * DOM touched:    dom.hdrName, dom.hdrBadge, dom.hdrDot, dom.details,
- *                 dom.chatOnline (commented out for now)
+ * DOM touched:    dom.hdrName, dom.hdrBadge, dom.hdrDot, dom.details
  * ───────────────────────────────────────────────────────────── */
 "use strict";
 import { ROOM_TYPES } from "./config.js";
 import { S } from "./state.js";
 import { dom } from "./dom.js";
-import { esc, avColor } from "./utils.js";
+import { esc } from "./utils.js";
+import { avatarHTML, nameOf, ensureIdentities } from "./profile_modules/identity.js";
 /* ═══════ RENDER ═══════ */
 export function renderHeader() {
   const r = S.room; if (!r) return;
@@ -49,6 +49,9 @@ export function renderDetails() {
   const cfg   = ROOM_TYPES[type];
   const bc    = "badge-" + type;
   const parts = r.participants || [];
+  const host  = r.admin || null;
+  const hostId = host && host.userId ? String(host.userId) : "";
+  const hostName = host ? nameOf(hostId, host.username) : "—";
   dom.details.innerHTML =
     '<div class="rd-head">' +
       '<h2 class="rd-name">' + esc(r.roomName) + "</h2>" +
@@ -63,7 +66,8 @@ export function renderDetails() {
           '<span class="status-dot status-' + (r.status || "active") + '"></span>' +
           esc(r.status || "active") + "</span>" +
         '<span class="rd-meta-sep">·</span>' +
-        "<span>Hosted by <strong>" + esc(r.admin ? r.admin.username : "—") + "</strong></span>" +
+        "<span>Hosted by <strong" + (hostId ? ' data-name-uid="' + esc(hostId) + '"' : "") + ">" +
+          esc(hostName) + "</strong></span>" +
       "</div>" +
       (r.tags && r.tags.length
         ? '<div class="rd-tags">' + r.tags.map((t) => '<span class="tag">#' + esc(t) + "</span>").join("") + "</div>"
@@ -73,6 +77,7 @@ export function renderDetails() {
   dom.details.classList.add("rd-loaded");
   dom.details.classList.toggle("expanded", S.detailsOpen);
   dom.details.setAttribute("aria-expanded", String(S.detailsOpen));
+  ensureIdentities([hostId, ...parts.map((p) => p.userId)]);
 }
 // update everything together
 export function renderRoomDetails() {
@@ -84,15 +89,13 @@ export function renderAvatars(list) {
   const MAX = 10, show = list.slice(0, MAX), extra = list.length - MAX;
   let h = '<div class="rd-avatars">';
   show.forEach((p) => {
-    const c = avColor(p.username), ini = (p.username || "?")[0].toUpperCase();
-    h += '<div class="avatar-sm" style="background:' + c + '" title="' + esc(p.username) + '">' + ini + "</div>";
+    h += avatarHTML({ uid: p.userId, name: p.username, cls: "avatar-sm", tag: "div", label: "{name}" });
   });
   if (extra > 0) h += '<div class="avatar-sm avatar-more">+' + extra + "</div>";
   return h + "</div>";
 }
-/* moved verbatim from wireEvents() — collapsible room details */
+/* collapsible room details — click anywhere on the card toggles */
 export function wireRoomDetails() {
-  /* collapsible room details — click anywhere on the card toggles */
   dom.details.addEventListener("click", toggleDetails);
   dom.details.setAttribute("role", "button");
   dom.details.tabIndex = 0;

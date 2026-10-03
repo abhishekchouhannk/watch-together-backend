@@ -2,45 +2,46 @@
  * ─────────────────────────────────────────────────────────────
  * IDENTITY STORE — the one place that knows what a user looks like NOW.
  *
- *  store     userId → { username, avatar, avatarStill, bio?, rev }
+ *  store     userId → { username, avatar, avatarStill, avatarFull, bio?, rev }
  *            Fed by /api/users/me, /api/users/:id, the batched
- *            /api/users/lookup and the 'user-profile-updated' socket
- *            event. `rev` (server updatedAt) makes every write order-
- *            independent: an older response never overwrites newer data.
+ *            /api/users/lookup and 'user-profile-updated'. `rev` (server
+ *            updatedAt) makes writes order-independent.
  *
- *  avatarHTML({ uid, name, cls, tag, attrs, animate, src })
- *            The ONLY avatar renderer. Generated initial underneath,
- *            optional <img> on top. Elements carry data-av-uid, so later
- *            changes repaint them IN PLACE (listeners, classes and data-*
- *            on the host element survive). animate:false (default) uses
- *            the still frame of animated avatars — chat, people lists;
- *            animate:true → profile card, header chip.
- *            `src:{avatar,avatarStill}` renders a detached preview (no uid
- *            binding) — used by the settings hero.
+ *  avatarHTML(opts) / avatarEl(opts)   THE avatar renderer (string / node)
+ *     uid      bind to a user → repainted in place on every change
+ *     name     fallback name (payload copy) until the store knows better
+ *     cls/tag/attrs   host element classes / tag / extra raw attributes
+ *     animate  true → animated original (profile card, header);
+ *              false → still frame for animated avatars (lists, chat)
+ *     label    "View {name}'s profile" → title (+aria-label on <button>),
+ *              re-filled on rename
+ *     zoom     true | "template" → when a photo exists the avatar becomes a
+ *              role=button that opens the lightbox at 512px
+ *     src      {avatar, avatarStill, avatarFull} → detached preview, no uid
  *
- *  [data-name-uid]   any element whose textContent is a username; renames
- *            are patched in place everywhere.
- *
- *  ensureIdentities(ids)  queue unknown ids; one batched request per tick
+ *  [data-name-uid]        textContent patched on rename, everywhere
+ *  ensureIdentities(ids)  batched lookup, one request per tick
  *  onIdentity(fn)         fn(uid, record, changed) after every accepted merge
- *  nameOf(uid, fallback)  live username, or the fallback from the payload
  * ───────────────────────────────────────────────────────────── */
 "use strict";
 import { esc, avColor, safeHttpUrl } from "../utils.js";
 import { getSocket } from "../socket-ref.js";
 import { onConnect } from "../socket-core.js";
+import { openLightbox } from "../chat_modules/lightbox.js";
 const OID = /^[0-9a-f]{24}$/i;
 const LOOKUP_MAX = 100;
-const FIELDS = ["username", "avatar", "avatarStill", "bio"];
+const FIELDS = ["username", "avatar", "avatarStill", "avatarFull", "bio"];
+const ZOOM_LABEL = "View {name}'s photo";
 const store  = new Map();   // uid → record
 const subs   = new Set();
 const broken = new Set();   // avatar URLs that failed to load this session
 const queued = new Set();   // waiting for the next lookup batch
-const asked  = new Set();   // already fetched / in flight / known
+const asked  = new Set();   // fetched / in flight / known
 let flushT = 0;
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const key = (uid) => (uid == null ? "" : String(uid));
 const initial = (name) => (Array.from(String(name || "").trim())[0] || "?").toUpperCase();
+const fill = (tpl, name) => String(tpl || "").split("{name}").join(name || "user");
 export const getIdentity = (uid) => store.get(key(uid)) || null;
 export function nameOf(uid, fallback) {
   const r = store.get(key(uid));
@@ -88,11 +89,11 @@ async function flush() {
     const { users = [] } = await r.json();
     users.forEach((u) => mergeIdentity(u.id, u));
   } catch (_) {
-    batch.forEach((id) => asked.delete(id));                         // retry next time someone renders them
+    batch.forEach((id) => asked.delete(id));                         // retry on the next render
   }
   if (queued.size && !flushT) flushT = setTimeout(flush, 40);
 }
-/* ── rendering ── */
+/* ── url picking ── */
 function pickSrc(rec, animate) {
   if (!rec) return null;
   const url = animate && !reduceMotion.matches
@@ -101,25 +102,66 @@ function pickSrc(rec, animate) {
   const safe = url ? safeHttpUrl(url) : null;
   return safe && !broken.has(safe) ? safe : null;
 }
+function fullSrc(rec) {
+  const u = rec && (rec.avatarFull || rec.avatar);
+  return (u && safeHttpUrl(u)) || null;
+}
 const imgHTML = (url) =>
   '<img class="u-av-img" src="' + esc(url) + '" alt="" loading="lazy" decoding="async" ' +
   'draggable="false" referrerpolicy="no-referrer">';
+/* ── rendering ── */
 export function avatarHTML(o = {}) {
   const uid = key(o.uid);
-  const bound = uid && o.src === undefined;
+  const bound = !!uid && o.src === undefined;
   const rec = o.src !== undefined ? o.src : (uid ? store.get(uid) : null);
   const name = (bound && rec && rec.username) || o.name || "";
   const tag = o.tag || "span";
   const url = pickSrc(rec, !!o.animate);
-  return "<" + tag + ' class="u-av' + (o.cls ? " " + o.cls : "") + '"' +
-    (bound ? ' data-av-uid="' + esc(uid) + '"' : "") +
-    (o.animate ? ' data-av-anim="1"' : "") +
-    ' data-av-name="' + esc(name) + '"' +
-    ' style="background:' + avColor(name) + '"' +
-    (o.attrs ? " " + o.attrs : "") + ">" +
+  const zoomTpl = o.zoom ? (typeof o.zoom === "string" ? o.zoom : ZOOM_LABEL) : "";
+  const full = o.zoom && url ? fullSrc(rec) : null;
+  const text = full ? fill(zoomTpl, name) : o.label ? fill(o.label, name) : "";
+  let a = ' class="u-av' + (o.cls ? " " + o.cls : "") + (full ? " is-zoomable" : "") + '"';
+  if (bound) a += ' data-av-uid="' + esc(uid) + '"';
+  if (o.animate) a += ' data-av-anim="1"';
+  a += ' data-av-name="' + esc(name) + '" style="background:' + avColor(name) + '"';
+  if (o.label) a += ' data-av-label="' + esc(o.label) + '"';
+  if (o.zoom) a += ' data-av-zoom="' + esc(zoomTpl) + '"';
+  if (full) a += ' data-av-full="' + esc(full) + '" role="button" tabindex="0" aria-label="' + esc(text) + '"';
+  else if (o.label && tag === "button") a += ' aria-label="' + esc(text) + '"';
+  if (text) a += ' title="' + esc(text) + '"';
+  if (o.attrs) a += " " + o.attrs;
+  return "<" + tag + a + ">" +
     '<span class="u-av-ini" aria-hidden="true">' + esc(initial(name)) + "</span>" +
     (url ? imgHTML(url) : "") +
     "</" + tag + ">";
+}
+/** Same thing as a DOM node — for modules that build with createElement. */
+export function avatarEl(o) {
+  const t = document.createElement("template");
+  t.innerHTML = avatarHTML(o);
+  return t.content.firstElementChild;
+}
+function applyLabel(el, name) {
+  if (el.dataset.avLabel === undefined || el.classList.contains("is-zoomable")) return;
+  const t = fill(el.dataset.avLabel, name);
+  el.title = t;
+  if (el.tagName === "BUTTON") el.setAttribute("aria-label", t);
+}
+function setZoom(el, full, name) {
+  if (el.dataset.avZoom === undefined) return;
+  if (full) {
+    const t = fill(el.dataset.avZoom, name);
+    el.classList.add("is-zoomable");
+    el.dataset.avFull = full;
+    el.setAttribute("role", "button");
+    el.tabIndex = 0;
+    el.title = t;
+    el.setAttribute("aria-label", t);
+  } else if (el.classList.contains("is-zoomable")) {
+    el.classList.remove("is-zoomable");
+    delete el.dataset.avFull;
+    ["role", "tabindex", "aria-label", "title"].forEach((x) => el.removeAttribute(x));
+  }
 }
 function paint(el, rec) {
   const name = (rec && rec.username) || el.dataset.avName || "";
@@ -127,15 +169,19 @@ function paint(el, rec) {
   el.style.background = avColor(name);
   const ini = el.querySelector(".u-av-ini");
   if (ini) ini.textContent = initial(name);
-  if (el.hasAttribute("data-uname")) {
+  if (el.hasAttribute("data-uname")) {                              // chat / people buttons
     el.dataset.uname = name;
-    if (el.hasAttribute("aria-label")) el.setAttribute("aria-label", "View profile of " + name);
+    if (el.hasAttribute("aria-label") && el.dataset.avLabel === undefined) {
+      el.setAttribute("aria-label", "View profile of " + name);
+    }
   }
   const url = pickSrc(rec, el.dataset.avAnim === "1");
   const img = el.querySelector("img.u-av-img");
-  if (!url) { if (img) img.remove(); return; }
-  if (!img) el.insertAdjacentHTML("beforeend", imgHTML(url));
+  if (!url) { if (img) img.remove(); }
+  else if (!img) el.insertAdjacentHTML("beforeend", imgHTML(url));
   else if (img.getAttribute("src") !== url) img.setAttribute("src", url);
+  setZoom(el, url ? fullSrc(rec) : null, name);
+  applyLabel(el, name);
 }
 function repaint(uid, rec) {
   const q = CSS.escape(uid);
@@ -146,16 +192,34 @@ function repaint(uid, rec) {
     });
   }
 }
-/* one capture-phase listener for every avatar <img> on the page:
-   a dead URL falls back to the generated initial and is never retried */
+/* broken photo → initial shows through, never retried, and it stops being zoomable */
 document.addEventListener("error", (e) => {
   const t = e.target;
   if (!(t instanceof HTMLImageElement) || !t.classList.contains("u-av-img")) return;
   const src = t.getAttribute("src");
   if (src) broken.add(src);
+  const host = t.closest(".u-av");
   t.remove();
+  if (host) { setZoom(host, null); applyLabel(host, host.dataset.avName); }
 }, true);
-/* user flips "reduce motion" → animated avatars switch to stills live */
+/* click / Enter / Space on a zoomable avatar → lightbox.
+   Capture phase: modals that stop keydown propagation can't swallow it. */
+function openZoom(el) { if (el.dataset.avFull) openLightbox(el.dataset.avFull); }
+document.addEventListener("click", (e) => {
+  const el = e.target.closest && e.target.closest(".u-av.is-zoomable");
+  if (!el || e.button !== 0) return;
+  e.preventDefault();
+  openZoom(el);
+}, true);
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const el = e.target;
+  if (!(el instanceof Element) || !el.matches(".u-av.is-zoomable")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openZoom(el);
+}, true);
+/* "reduce motion" flipped → animated avatars switch to stills live */
 reduceMotion.addEventListener("change", () => {
   document.querySelectorAll("[data-av-uid][data-av-anim]").forEach((el) => paint(el, store.get(el.dataset.avUid)));
 });
@@ -166,8 +230,7 @@ onConnect(() => {
     getSocket().on("user-profile-updated", (p) => { if (p && p.userId) mergeIdentity(p.userId, p); });
     return;
   }
-  // reconnect: we may have missed updates while offline → refetch everyone we show
-  const ids = [...store.keys()];
+  const ids = [...store.keys()];                                     // reconnect → refetch everyone we show
   ids.forEach((id) => asked.delete(id));
   ensureIdentities(ids);
 });

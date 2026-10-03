@@ -6,6 +6,7 @@ const FOLDER = process.env.CLOUDINARY_AVATAR_FOLDER || "watch-together/avatars";
 const STORE_PX = 512;   // what we keep (after the user's crop)
 const SHOW_PX  = 256;   // what we deliver for normal avatars (retina-safe up to 128 css px)
 const STILL_PX = 96;    // first-frame still for animated av's in dense lists
+const FULL_PX = 512;   // lightbox — the size we store, never upscaled
 let configured = false;
 /** Lazy so it works no matter when dotenv runs. */
 function isConfigured() {
@@ -47,16 +48,16 @@ async function destroyAvatar(publicId) {
     console.warn("[avatar] destroy failed:", publicId, err && err.message);
   }
 }
-function displayUrl(publicId, animated) {
+function displayUrl(publicId, animated, size = SHOW_PX, crop = "fill") {
   return cloudinary.url(publicId, {
     secure: true,
     transformation: [
-      { width: SHOW_PX, height: SHOW_PX, crop: "fill", gravity: "center" },
-      // f_auto → animated WebP/AVIF for GIFs on modern browsers (much smaller)
+      { width: size, height: size, crop, gravity: "center" },
       animated ? { fetch_format: "auto", quality: "auto", flags: "animated" } : { fetch_format: "auto", quality: "auto" },
     ],
   });
 }
+
 function stillUrl(publicId) {
   return cloudinary.url(publicId, {
     secure: true,
@@ -67,8 +68,13 @@ function stillUrl(publicId) {
 /** What any client may see about someone's avatar. */
 function publicAvatar(u) {
   const avatar = (u && u.avatar) || null;
-  const avatarStill = avatar && u.avatarAnimated && u.avatarPublicId && isConfigured()
-    ? stillUrl(u.avatarPublicId) : null;
-  return { avatar, avatarStill };
+  if (!avatar) return { avatar: null, avatarStill: null, avatarFull: null };
+  const ours = !!(u.avatarPublicId && isConfigured());
+  return {
+    avatar,
+    avatarStill: ours && u.avatarAnimated ? stillUrl(u.avatarPublicId) : null,
+    // "limit" = never upscale a small source; OAuth pictures just reuse their URL
+    avatarFull:  ours ? displayUrl(u.avatarPublicId, !!u.avatarAnimated, FULL_PX, "limit") : avatar,
+  };
 }
 module.exports = { isConfigured, uploadAvatarBuffer, destroyAvatar, displayUrl, publicAvatar };

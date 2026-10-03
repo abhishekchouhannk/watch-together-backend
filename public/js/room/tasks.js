@@ -15,7 +15,8 @@
 "use strict";
 import { S } from "./state.js";
 import { $ } from "./dom.js";
-import { toast, esc, avColor, fmtBadge } from "./utils.js";
+import { toast, esc, fmtBadge } from "./utils.js";
+import { avatarHTML, nameOf, ensureIdentities } from "./profile_modules/identity.js";
 import { emit, getSocket } from "./socket-ref.js";
 import { onConnect, onRoomState } from "./socket-core.js";
 const TICK = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" ' +
@@ -26,18 +27,18 @@ const st = (S.tasks = { items: [] });
 let audience = "room";                 // "room" | "me" | "pick"
 const picked = new Set();              // userIds chosen in the picker
 const canManage = () => !!(S.perms && S.perms.canManageTasks);
-const initial = (n) => esc(((n || "?")[0] || "?").toUpperCase());
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 function avatarsHTML(t) {
   if (t.done) {                                     // everyone finished → one tick, same size as an avatar
-    const names = t.assignees.map((a) => a.username).join(", ");
+    const names = t.assignees.map((a) => nameOf(a.userId, a.username)).join(", ");
     return '<span class="tk-av tk-av-all" title="' + esc("Completed by " + names) +
       '" aria-label="Completed">' + TICK + "</span>";
   }
-  return t.assignees.map((a) =>
-    '<span class="tk-av' + (a.done ? " is-done" : "") + '" style="background:' + avColor(a.username) +
-    '" title="' + esc(a.username + (a.done ? " — done" : " — pending")) + '">' + initial(a.username) + "</span>"
-  ).join("");
+  return t.assignees.map((a) => avatarHTML({
+    uid: a.userId, name: a.username,
+    cls: "tk-av" + (a.done ? " is-done" : ""),
+    label: "{name} — " + (a.done ? "done" : "pending"),          // re-filled live on rename
+  })).join("");
 }
 function itemHTML(t, manage) {
   const mine = t.assignees.find((a) => a.userId === S.userId);
@@ -66,13 +67,16 @@ function renderPicker() {
   box.hidden = audience !== "pick";
   if (audience !== "pick") return;
   const online = new Set(((S.room && S.room.participants) || []).map((p) => String(p.userId)));
+  const nm = (p) => nameOf(p.userId, p.username || "?");
   const people = [...(S.members || [])].sort((a, b) =>
-    (Number(online.has(b.userId)) - Number(online.has(a.userId))) ||
-    (a.username || "").localeCompare(b.username || ""));
+    (Number(online.has(b.userId)) - Number(online.has(a.userId))) || nm(a).localeCompare(nm(b)));
   for (const id of [...picked]) if (!people.some((p) => p.userId === id)) picked.delete(id);
   box.innerHTML = people.map((p) =>
     '<button type="button" class="tk-pick' + (picked.has(p.userId) ? " on" : "") + '" data-uid="' + esc(p.userId) + '">' +
-    esc(p.username || "?") + (p.userId === S.userId ? " (you)" : "") + "</button>").join("");
+      '<span data-name-uid="' + esc(p.userId) + '">' + esc(nm(p)) + "</span>" +
+      (p.userId === S.userId ? " (you)" : "") +
+    "</button>").join("");
+  ensureIdentities(people.map((p) => p.userId));
 }
 export function renderTasks() {
   const list = $("taskList");
@@ -90,6 +94,7 @@ export function renderTasks() {
     badge.title = pending === 1 ? "1 task waiting for you" : pending + " tasks waiting for you";
   }
   list.innerHTML = st.items.map((t) => itemHTML(t, manage)).join("");
+  ensureIdentities(st.items.flatMap((t) => t.assignees.map((a) => a.userId)));
   renderPicker();
 }
 function applyRemote(p) {

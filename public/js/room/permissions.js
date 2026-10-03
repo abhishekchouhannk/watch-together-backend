@@ -335,7 +335,12 @@ export function renderConfig() {
   }
   // ── end of renderConfig ──
   dom.cfgBody.innerHTML = h;
-  ensureIdentities([...(S.members || []), ...(S.requests || []), ...(S.banned || [])].map((x) => x.userId));
+  ensureIdentities([
+    ...(S.members || []).map((x) => x.userId),
+    ...(S.requests || []).map((x) => x.userId),
+    ...(S.banned || []).map((x) => x.userId),
+    ...(S.reports || []).flatMap((r) => [r.senderId, ...(r.reporters || []).map((x) => x.userId)]),
+  ]);
   syncDirtyUI();
 }
 /* ── incoming room-details change ── */
@@ -407,9 +412,11 @@ function rowMenuHTML(m, isOnline, state) {
   "</div>";
 }
 /* small inline profile link (name only) */
-function profLinkHTML(uid, name, cls) {
-  return '<button class="' + (cls || "rep-link") + '" data-act="profile" data-uid="' + esc(uid) +
-    '" data-uname="' + esc(name) + '" title="View profile">' + esc(name) + "</button>";
+function profLinkHTML(uid, name, cls = "rep-link") {
+  const nm = nameOf(uid, name);
+  return '<button type="button" class="' + cls + '" data-act="profile" data-uid="' + esc(uid) +
+    '" data-uname="' + esc(nm) + '" title="View profile">' +
+    '<span data-name-uid="' + esc(uid) + '">' + esc(nm) + "</span></button>";
 }
 function reportCardHTML(r) {
   const reps  = r.reporters || [];
@@ -425,7 +432,7 @@ function reportCardHTML(r) {
         '<span class="rep-meta">Reported by ' +
           (first.userId ? profLinkHTML(first.userId, first.username) : esc(first.username)) +
           (more > 0
-            ? ' <span class="rep-more" title="' + esc(reps.slice(1).map((x) => x.username).join(", ")) +
+            ? ' <span class="rep-more" title="' + esc(reps.slice(1).map((x) => nameOf(x.userId, x.username)).join(", ")) +
                 '">+' + more + " more</span>"
             : "") +
           (r.at ? " · " + esc(fmtMsgStamp(r.at)) : "") +
@@ -938,7 +945,7 @@ function renderProfile() {
 
   /* ── 1. identity — EVERYONE sees exactly this much ── */
   let h = '<div class="prof-id">' +
-      userAvHTML({ uid: p.userId, name, cls: "prof-av", animate: true }) +
+      userAvHTML({ uid: p.userId, name, cls: "prof-av", animate: true, zoom: true }) +
       '<div class="prof-name">' + esc(name) +
         (online.has(p.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
         (isBanned ? '<span class="role-tag role-banned">Banned</span>'
