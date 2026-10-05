@@ -2051,6 +2051,7 @@ button.msg-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
   opacity:0;visibility:hidden;pointer-events:none;
   transform:translate(-50%,-50%) scale(.97);
   transition:opacity .18s, transform .18s, visibility 0s linear .18s;
+  width:min(360px, calc(100vw - 2rem));
 }
 .prof-card.open{
   opacity:1;visibility:visible;pointer-events:auto;
@@ -2060,14 +2061,14 @@ button.msg-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .prof-body{ padding:0 1rem 1rem; }
 /* identity block */
 .prof-id{
-  display:flex;flex-direction:column;align-items:center;gap:.4rem;
-  padding:1rem 0 .85rem;text-align:center;border-bottom:1px solid var(--card-bdr);
+  display:flex;flex-direction:column;align-items:center;gap:.5rem;
+  padding:1.2rem 0 .95rem;text-align:center;border-bottom:1px solid var(--card-bdr);
 }
 .prof-av{
-  position:relative;width:66px;height:66px;border-radius:50%;overflow:hidden;
+  position:relative;width:104px;height:104px;border-radius:50%;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
-  color:#fff;font-size:1.6rem;font-weight:800;flex-shrink:0;
-  box-shadow:0 4px 14px rgba(0,0,0,.18);
+  color:#fff;font-size:2.5rem;font-weight:800;flex-shrink:0;
+  box-shadow:0 0 0 3px var(--menu-bg),0 0 0 4px var(--card-bdr),0 8px 22px rgba(0,0,0,.2);
 }
 .prof-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .prof-name{
@@ -2095,6 +2096,7 @@ button.msg-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
     transform:translateY(100%);
   }
   .prof-card.open{transform:none}
+  .prof-av{width:96px;height:96px;font-size:2.3rem}
 }
 @media (prefers-reduced-motion:reduce){
   button.msg-av:hover{transform:none}
@@ -3277,9 +3279,6 @@ html.me-lock,html.me-lock body,html.avc-lock,html.avc-lock body{overflow:hidden}
 }
 .me-sheet:focus{outline:none}
 .me-body{flex:1;min-height:0;padding-top:0}
-.me-foot{flex-shrink:0;padding:.7rem 1rem .9rem;border-top:1px solid var(--card-bdr)}
-.me-foot .cfg-actions{margin-top:0}
-.me-foot .cfg-dirty{margin:0 0 .5rem}
 .cfg-btn.is-busy::before{
   content:"";display:inline-block;width:.8em;height:.8em;margin-right:.45em;vertical-align:-.1em;
   border-radius:50%;border:2px solid currentColor;border-right-color:transparent;
@@ -3291,29 +3290,34 @@ html.me-lock,html.me-lock body,html.avc-lock,html.avc-lock body{overflow:hidden}
 .me-load-sk{display:flex;align-items:center;gap:1rem}
 .me-load-err{display:flex;flex-direction:column;align-items:center;gap:.6rem;padding:1rem 0;font-size:.8rem;color:var(--t2)}
 /* hero */
-.me-hero{display:flex;align-items:center;gap:1rem;padding:.9rem 0 1rem;border-bottom:1px solid var(--card-bdr)}
-.me-hero-av{position:relative;width:88px;height:88px;flex-shrink:0;border-radius:50%;transition:box-shadow .15s}
+.me-hero{display:flex;align-items:center;gap:1.1rem;padding:1.1rem 0 1.15rem;border-bottom:1px solid var(--card-bdr)}
+.me-hero-av{position:relative;width:112px;height:112px;flex-shrink:0;border-radius:50%;transition:box-shadow .15s}
 .me-hero-av.drag{box-shadow:0 0 0 3px var(--acc),0 0 18px var(--acc-glow)}
 .me-hero-slot{display:block;width:100%;height:100%}
 .me-hero-img{
   width:100%;height:100%;border-radius:50%;
   display:flex;align-items:center;justify-content:center;
-  color:#fff;font-size:2rem;font-weight:800;
-  box-shadow:0 0 0 3px var(--menu-bg),0 0 0 4px var(--card-bdr);
+  color:#fff;font-size:2.6rem;font-weight:800;
+  box-shadow:0 0 0 3px var(--menu-bg),0 0 0 4px var(--card-bdr),0 8px 22px rgba(0,0,0,.18);
 }
+.me-hero-slot .u-av:not(.is-zoomable){cursor:pointer}          /* no photo → tap to upload */
+/* camera badge (replaces the full-cover "Change" overlay so the photo itself can zoom) */
 .me-av-edit{
-  position:absolute;inset:0;border-radius:50%;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.15rem;
-  background:rgba(0,0,0,.45);color:#fff;font-size:.62rem;font-weight:700;letter-spacing:.02em;
-  opacity:0;transition:opacity .15s;
+  position:absolute;right:2px;bottom:2px;z-index:3;
+  width:32px;height:32px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--acc);color:var(--acc-t);
+  box-shadow:0 0 0 3px var(--menu-bg),0 4px 10px rgba(0,0,0,.25);
+  transition:transform .15s,background .15s,opacity .15s;
 }
-.me-hero-av:hover .me-av-edit,.me-av-edit:focus-visible,.me-hero-av.drag .me-av-edit{opacity:1}
+.me-av-edit:hover{background:var(--acc-h);transform:scale(1.08)}
 .me-av-edit:focus-visible{border-radius:50%;outline-offset:3px}
+.me-av-edit svg{width:15px;height:15px}
 .me-hero-av.busy .me-av-edit{opacity:0;pointer-events:none}
 .me-av-pct{
-  position:absolute;inset:0;border-radius:50%;
+  position:absolute;inset:0;z-index:2;border-radius:50%;
   display:flex;align-items:center;justify-content:center;
-  background:rgba(0,0,0,.45);color:#fff;font-size:.8rem;font-weight:800;font-variant-numeric:tabular-nums;
+  background:rgba(0,0,0,.45);color:#fff;font-size:.85rem;font-weight:800;font-variant-numeric:tabular-nums;
   opacity:0;pointer-events:none;transition:opacity .2s;
 }
 .me-hero-av.busy .me-av-pct{opacity:1}
@@ -3327,16 +3331,17 @@ html.me-lock,html.me-lock body,html.avc-lock,html.avc-lock body{overflow:hidden}
 .me-ring-fg{stroke:var(--acc);stroke-linecap:round;stroke-dasharray:289.03;stroke-dashoffset:289.03;transition:stroke-dashoffset .15s linear}
 .me-hero-av[data-phase="proc"] .me-ring,.me-hero-av[data-phase="rm"] .me-ring{animation:meSpin 1s linear infinite}
 @keyframes meSpin{from{transform:rotate(-90deg)}to{transform:rotate(270deg)}}
-.me-hero-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:.4rem}
-.me-hero-name{font-size:1.05rem;font-weight:800;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me-hero-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:.45rem}
+.me-hero-name{font-size:1.1rem;font-weight:800;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .me-av-acts,.me-av-confirm{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
 .me-av-confirm span{font-size:.74rem;color:var(--t2);margin-right:.15rem}
 .me-av-msg{font-size:.68rem;line-height:1.4;color:var(--t3);min-height:1.4em}
 .me-av-msg.ok{color:var(--toast-ok)}
 .me-av-msg.err{color:var(--toast-err)}
 /* fields */
-.me-field{margin-bottom:.85rem}
-.me-lbl{display:flex;align-items:center;justify-content:space-between;gap:.5rem;font-weight:600}
+.me-field{margin-bottom:.75rem}
+.me-lbl{display:flex;align-items:baseline;gap:.4rem;font-weight:600}
+.me-lbl-note{font-size:.68rem;font-weight:500;color:var(--t3)}
 .me-ctl{position:relative;display:flex;align-items:center}
 .me-ctl>input,.me-ctl>textarea{flex:1;min-width:0;width:100%;padding-right:2rem}
 .me-ctl>textarea{line-height:1.45}
@@ -3357,9 +3362,15 @@ html.me-lock,html.me-lock body,html.avc-lock,html.avc-lock body{overflow:hidden}
 .me-field[data-state="err"] :is(input,textarea,.me-date){
   border-color:var(--toast-err);box-shadow:0 0 0 2px color-mix(in srgb,var(--toast-err) 16%,transparent);
 }
-.me-hint{font-size:.68rem;line-height:1.4;color:var(--t3)}
-.me-field[data-state="invalid"] .me-hint,.me-field[data-state="err"] .me-hint{color:var(--toast-err)}
-.me-cnt{font-weight:700;font-variant-numeric:tabular-nums;color:var(--t3)}
+/* hints: helper text only while focused (.is-focus set by JS), errors always */
+.me-hint{display:none;font-size:.68rem;line-height:1.4;color:var(--t3)}
+.me-field.is-focus .me-hint,
+.me-field[data-state="invalid"] .me-hint,
+.me-field[data-state="err"] .me-hint{display:block;animation:meHintIn .16s ease-out}
+.me-field[data-state="invalid"] .me-hint,
+.me-field[data-state="err"] .me-hint{color:var(--toast-err)}
+@keyframes meHintIn{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
+.me-cnt{font-weight:600;font-variant-numeric:tabular-nums;color:var(--t3)}
 .me-cnt.warn{color:#eab308}
 .me-cnt.full{color:var(--toast-err)}
 /* birthday trigger — looks like the other inputs, opens the themed picker */
@@ -3380,11 +3391,16 @@ html.me-lock,html.me-lock body,html.avc-lock,html.avc-lock body{overflow:hidden}
   background:transparent;color:var(--t3);font-size:.62rem;
 }
 .me-date-x:hover{background:var(--surf-h);color:var(--t1)}
+/* Save / Reset — inside Profile, same shape as Room settings */
+.me-actions{margin-top:.15rem}
+.me-form .cfg-dirty{margin-top:.45rem}
 /* read-only account rows */
 .me-ro{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.35rem 0}
 .me-ro-k{font-size:.74rem;font-weight:600;color:var(--t3);flex-shrink:0}
-.me-ro-v{display:flex;align-items:center;gap:.4rem;min-width:0;font-size:.8rem;font-weight:600;color:var(--t1)}
-.me-ro-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.me-ro-v{
+  min-width:0;font-size:.8rem;font-weight:600;color:var(--t1);text-align:right;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 @media(max-width:768px){
   .me-sheet{
     left:0;right:0;top:auto;bottom:0;width:auto;
@@ -3392,9 +3408,9 @@ html.me-lock,html.me-lock body,html.avc-lock,html.avc-lock body{overflow:hidden}
     transform:translateY(100%);
   }
   .me-sheet.open{transform:none}
-  .me-foot{padding-bottom:calc(.9rem + env(safe-area-inset-bottom))}
-  .me-hero-av{width:76px;height:76px}
-  .me-hero-img{font-size:1.7rem}
+  .me-body{padding-bottom:calc(1rem + env(safe-area-inset-bottom))}   /* the sticky footer used to pad this */
+  .me-hero-av{width:96px;height:96px}
+  .me-hero-img{font-size:2.2rem}
 }
 /* ======== 22. Themed date picker ======== */
 .dp-host{margin-top:.4rem}
@@ -3518,3 +3534,11 @@ html.me-lock,html.me-lock body,html.avc-lock,html.avc-lock body{overflow:hidden}
 }
 .prof-bio-add:hover{color:var(--t1)}
 .prof-self-acts .cfg-btn{margin-top:0}
+/* zoomable avatars (profile card, your profile) → lightbox */
+.u-av.is-zoomable{cursor:zoom-in}
+.u-av.is-zoomable::after{
+  content:"";position:absolute;inset:0;z-index:2;border-radius:inherit;pointer-events:none;
+  background:rgba(0,0,0,0);transition:background .15s;
+}
+.u-av.is-zoomable:hover::after{background:rgba(0,0,0,.14)}
+.u-av.is-zoomable:focus-visible{outline:2px solid var(--acc);outline-offset:3px}

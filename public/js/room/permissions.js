@@ -266,7 +266,7 @@ export function renderConfig() {
               (canPerm
                 ? '<button class="cfg-more' + (menuOpen ? " on" : "") + '" data-act="row-menu" ' +
                     'data-id="' + m.userId + '" aria-expanded="' + menuOpen + '" ' +
-                    'title="Permissions" aria-label="Permissions for ' + esc(m.username) + '">⋯</button>'
+                    'title="Permissions" aria-label="Permissions for ' + esc(nm) + '">⋯</button>'
                 : "") +
             "</span></div>";
       if (canPerm && menuOpen) h += permMenuHTML(m, p);
@@ -389,12 +389,13 @@ function applyIncomingRoom(room, by, changed) {
 }
 function rowMenuHTML(m, isOnline, state) {
   const c = (state || S.cfgRowMenu || {}).confirm;
+  const nm = nameOf(m.userId, m.username);
   if (c === "ban" || c === "remove") {
     const ban = c === "ban";
     return '<div class="cfg-rowmenu confirm">' +
       '<div class="pp-txt">' + (ban
-        ? "<strong>Ban " + esc(m.username) + "?</strong> They'll be kicked out now and can't rejoin until you unban them."
-        : "<strong>Remove " + esc(m.username) + "?</strong> They lose their role and permissions here, but can join again.") +
+        ? "<strong>Ban " + esc(nm) + "?</strong> They'll be kicked out now and can't rejoin until you unban them."
+        : "<strong>Remove " + esc(nm) + "?</strong> They lose their role and permissions here, but can join again.") +
       "</div><div class=\"pp-acts\">" +
         '<button class="cfg-mini no" data-act="do-' + c + '" data-id="' + m.userId + '">' +
           (ban ? "🚫 Ban" : "✕ Remove") + "</button>" +
