@@ -51,7 +51,9 @@ import { wireLyrics } from "./room/lyrics.js";
 import { wireStudy } from "./room/study.js";
 import { wireTasks } from "./room/tasks.js";
 import { wireWhiteboard } from "./room/whiteboard.js";
-import "./room/profile_modules/profile-settings.js";
+import { initProfileUI } from "./shared/profile-settings.js";
+import "./room/identity-socket.js";
+import "./room/room-lifecycle.js";
 
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {
@@ -59,6 +61,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   wireEvents();
   await fetchMe();
   connectSocket();
+});
+initProfileUI({
+  chipHost: document.getElementById("meChipHost"),
+  root: document.getElementById("roomPage"),      // carries the room theme variables
 });
 /* ═══════ EVENT WIRING ═══════ */
 function wireEvents() {

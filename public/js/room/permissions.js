@@ -61,7 +61,7 @@ import { renderTimer } from "./study.js";
 import { renderTasks } from "./tasks.js";
 import { renderWhiteboardUI } from "./whiteboard.js";
 import { avatarHTML as userAvHTML, nameOf, getIdentity, mergeIdentity, ensureIdentities, onIdentity } from "./profile_modules/identity.js";
-import { openProfileSettings } from "./profile_modules/profile-settings.js";
+import { openProfileSettings } from "../shared/profile-settings.js";
 
 /* ═══════════════════════════════════════════
    COLLAPSIBLE SECTION HELPERS

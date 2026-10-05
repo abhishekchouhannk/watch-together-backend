@@ -54,7 +54,7 @@ import { onConnect, onRoomState, onUserJoined, onUserLeft } from "./socket-core.
 import { normalizeImageUrl } from "./chat_modules/media-embed.js";
 import { wireGifPicker, closeGifPicker } from "./chat_modules/gif-picker.js";
 import { wireAttachments, takeOutgoing, resetAttachments, stageGif, suspendAttachments } from "./chat_modules/chat-attach.js";
-import { wireLightbox } from "./chat_modules/lightbox.js";
+import { wireLightbox } from "../shared/lightbox.js";
 import { wireSysLog, isSysView, setSysView, setToolsMode, closeChatTools, onSysPaneShown } from "./chat_modules/sys-log.js";
 import { avatarHTML, nameOf, ensureIdentities } from "./profile_modules/identity.js";
 

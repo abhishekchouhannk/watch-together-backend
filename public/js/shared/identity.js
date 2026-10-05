@@ -1,33 +1,24 @@
-/* public/js/room/identity.js
+/* public/js/shared/identity.js
  * ─────────────────────────────────────────────────────────────
  * IDENTITY STORE — the one place that knows what a user looks like NOW.
+ * Page-agnostic (room + dashboard). No sockets in here.
  *
- *  store     userId → { username, avatar, avatarStill, avatarFull, bio?, rev }
- *            Fed by /api/users/me, /api/users/:id, the batched
- *            /api/users/lookup and 'user-profile-updated'. `rev` (server
- *            updatedAt) makes writes order-independent.
+ *  Fed by   /api/users/me · /api/users/:id · batched /api/users/lookup ·
+ *           other tabs (BroadcastChannel "wt:identity") · and, in rooms
+ *           only, room/identity-socket.js ('user-profile-updated').
+ *           `rev` (server updatedAt) makes every write order-independent.
  *
- *  avatarHTML(opts) / avatarEl(opts)   THE avatar renderer (string / node)
- *     uid      bind to a user → repainted in place on every change
- *     name     fallback name (payload copy) until the store knows better
- *     cls/tag/attrs   host element classes / tag / extra raw attributes
- *     animate  true → animated original (profile card, header);
- *              false → still frame for animated avatars (lists, chat)
- *     label    "View {name}'s profile" → title (+aria-label on <button>),
- *              re-filled on rename
- *     zoom     true | "template" → when a photo exists the avatar becomes a
- *              role=button that opens the lightbox at 512px
- *     src      {avatar, avatarStill, avatarFull} → detached preview, no uid
- *
- *  [data-name-uid]        textContent patched on rename, everywhere
- *  ensureIdentities(ids)  batched lookup, one request per tick
- *  onIdentity(fn)         fn(uid, record, changed) after every accepted merge
+ *  avatarHTML(opts) / avatarEl(opts)   THE avatar renderer
+ *     uid · name · cls · tag · attrs · animate · label · zoom · src
+ *  [data-name-uid]          textContent patched on rename, everywhere
+ *  ensureIdentities(ids)    batched lookup, one request per tick
+ *  resyncIdentities()       refetch everyone shown (reconnect / tab focus)
+ *  publishIdentity(uid, u)  push a fresh server copy to the other tabs
+ *  onIdentity(fn)           fn(uid, record, changed)
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { esc, avColor, safeHttpUrl } from "../utils.js";
-import { getSocket } from "../socket-ref.js";
-import { onConnect } from "../socket-core.js";
-import { openLightbox } from "../chat_modules/lightbox.js";
+import { esc, avColor, safeHttpUrl } from "./util.js";
+import { openLightbox } from "./lightbox.js";
 const OID = /^[0-9a-f]{24}$/i;
 const LOOKUP_MAX = 100;
 const FIELDS = ["username", "avatar", "avatarStill", "avatarFull", "bio"];
@@ -71,6 +62,20 @@ export function mergeIdentity(uid, data) {
   }
   return changed;
 }
+/* ── cross-tab (room tab ⇄ dashboard tab), instant, no server round-trip ── */
+const bc = typeof BroadcastChannel === "function" ? new BroadcastChannel("wt:identity") : null;
+if (bc) {
+  bc.onmessage = (e) => {
+    const m = e.data;
+    if (m && m.uid && m.data) mergeIdentity(m.uid, m.data);          // rev-guarded → no echo loops
+  };
+}
+export function publishIdentity(uid, data) {
+  if (!bc || !uid || !data) return;
+  const out = { rev: data.rev };
+  for (const f of FIELDS) if (data[f] !== undefined) out[f] = data[f];   // public fields only
+  try { bc.postMessage({ uid: String(uid), data: out }); } catch (_) {}
+}
 /* ── batched lookup ── */
 export function ensureIdentities(uids) {
   for (const u of uids || []) {
@@ -78,6 +83,11 @@ export function ensureIdentities(uids) {
     if (OID.test(id) && !asked.has(id)) queued.add(id);
   }
   if (queued.size && !flushT) flushT = setTimeout(flush, 40);
+}
+export function resyncIdentities() {
+  const ids = [...store.keys()];
+  ids.forEach((id) => asked.delete(id));
+  ensureIdentities(ids);
 }
 async function flush() {
   flushT = 0;
@@ -192,7 +202,7 @@ function repaint(uid, rec) {
     });
   }
 }
-/* broken photo → initial shows through, never retried, and it stops being zoomable */
+/* broken photo → initial shows through, never retried, stops being zoomable */
 document.addEventListener("error", (e) => {
   const t = e.target;
   if (!(t instanceof HTMLImageElement) || !t.classList.contains("u-av-img")) return;
@@ -202,8 +212,7 @@ document.addEventListener("error", (e) => {
   t.remove();
   if (host) { setZoom(host, null); applyLabel(host, host.dataset.avName); }
 }, true);
-/* click / Enter / Space on a zoomable avatar → lightbox.
-   Capture phase: modals that stop keydown propagation can't swallow it. */
+/* click / Enter / Space on a zoomable avatar → lightbox (capture: modals can't swallow it) */
 function openZoom(el) { if (el.dataset.avFull) openLightbox(el.dataset.avFull); }
 document.addEventListener("click", (e) => {
   const el = e.target.closest && e.target.closest(".u-av.is-zoomable");
@@ -222,15 +231,4 @@ document.addEventListener("keydown", (e) => {
 /* "reduce motion" flipped → animated avatars switch to stills live */
 reduceMotion.addEventListener("change", () => {
   document.querySelectorAll("[data-av-uid][data-av-anim]").forEach((el) => paint(el, store.get(el.dataset.avUid)));
-});
-/* ── network ── */
-let connects = 0;
-onConnect(() => {
-  if (connects++ === 0) {
-    getSocket().on("user-profile-updated", (p) => { if (p && p.userId) mergeIdentity(p.userId, p); });
-    return;
-  }
-  const ids = [...store.keys()];                                     // reconnect → refetch everyone we show
-  ids.forEach((id) => asked.delete(id));
-  ensureIdentities(ids);
 });

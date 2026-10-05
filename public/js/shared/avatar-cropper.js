@@ -14,12 +14,12 @@
  * Mounted inside #roomPage so it inherits the theme variables.
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { esc } from "../utils.js";
+import { esc } from "./util.js";
 const ZMAX = 4;
 let R = null;   // DOM refs (built on first use)
 let C = null;   // current session
 const fmtSize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
-function build() {
+function build(mountIn) {
   const root = document.createElement("div");
   root.className = "avc";
   root.hidden = true;
@@ -57,7 +57,7 @@ function build() {
       "</footer>" +
       '<input type="file" class="avc-file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>' +
     "</div>";
-  (document.getElementById("roomPage") || document.body).appendChild(root);
+  (mountIn || document.getElementById("roomPage") || document.body).appendChild(root);
   const q = (s) => root.querySelector(s);
   R = {
     root, stage: q(".avc-stage"), img: q(".avc-img"), range: q(".avc-range"),
@@ -99,7 +99,7 @@ function wire() {
   window.addEventListener("resize", () => { if (C && C.ready) refit(); });
 }
 export function openCropper(file, opts = {}) {
-  if (!R) build();
+  if (!R) build(opts.root);
   if (C) finish(null);
   return new Promise((resolve) => {
     C = {

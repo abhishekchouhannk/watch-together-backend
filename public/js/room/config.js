@@ -37,10 +37,7 @@ export const THEMES = {
   night:     { icon: "🌙", label: "Night"     },
 };
 export const THEME_STORAGE_KEY = "wt-theme-pref";
-export const AV_COLORS = [
-  "#e11d48","#eab308","#22c55e","#3b82f6","#8b5cf6",
-  "#ec4899","#f97316","#06b6d4","#6366f1","#14b8a6",
-];
+export { AV_COLORS } from "../shared/util.js";
 /* ═══════ REACTIONS ═══════ */
 export const REACTIONS       = ["❤️","😂","😮","😢","🔥","👏","💀"];  // must match server whitelist
 export const REACT_COOLDOWN  = 280;   // ms — min gap between MY reactions

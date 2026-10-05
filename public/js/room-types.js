@@ -5,10 +5,16 @@
  *   fillTypeSelect(sel, v)   fill a <select> with all types
  *   renderTypeChips(el, …)   filter chips ("All" + one per type)
  *   typeMeta(id)             { id, label, icon } for any id, known or not
- *   badgeHTML(id)           the colour-coded badge for a room card
+ *   badgeHTML(id)            the colour-coded badge for a room card
  *
  * Never throws. Any failure leaves the hardcoded fallback in place, so the
  * create form always has a valid option (entertainment).
+ *
+ * renderTypeChips contract (the merge regression lived here):
+ *   { active, onPick }   onPick(id) fires on click; "" = All.
+ *   `onChange` is accepted as an alias — the pre-refactor name — so an old
+ *   call can never again produce chips that silently do nothing.
+ *   Active chip gets `.is-active` + aria-pressed="true".
  */
 "use strict";
 const ENDPOINT   = "/api/rooms/types";
@@ -93,10 +99,12 @@ export function fillTypeSelect(select, value) {
     '<option value="' + esc(t.id) + '">' + esc(t.icon) + " " + esc(t.label) + "</option>").join("");
   select.value = want;
 }
-/* filter chips: "All" (value "") + one per type. `onPick(id)` fires on click. */
-export function renderTypeChips(container, { active = "", onPick } = {}) {
+/* filter chips: "All" (value "") + one per type. onPick(id) fires on click. */
+export function renderTypeChips(container, opts = {}) {
   if (!container) return;
-  if (onPick) container._onPick = onPick;
+  const pick = opts.onPick || opts.onChange;                  // onChange = legacy alias
+  if (typeof pick === "function") container._onPick = pick;
+  const active = opts.active != null ? String(opts.active) : (container.dataset.active || "");
   container.dataset.active = active;
   const chip = (id, label, icon) =>
     '<button type="button" class="filter-btn' + (active === id ? " is-active" : "") +
@@ -104,13 +112,14 @@ export function renderTypeChips(container, { active = "", onPick } = {}) {
     (icon ? esc(icon) + " " : "") + esc(label) + "</button>";
   container.innerHTML = chip("", "All", "") +
     catalog.types.map((t) => chip(t.id, t.label, t.icon)).join("");
-  if (!container.dataset.bound) {                       // one delegated listener per container
+  if (!container.dataset.bound) {                             // one delegated listener per container
     container.dataset.bound = "1";
     container.addEventListener("click", (e) => {
       const b = e.target.closest("[data-type]");
-      if (!b || !container._onPick) return;
-      renderTypeChips(container, { active: b.dataset.type, onPick: container._onPick });
-      container._onPick(b.dataset.type);
+      if (!b || !container.contains(b)) return;
+      const id = b.dataset.type;
+      renderTypeChips(container, { active: id });             // visuals update even with no callback
+      if (container._onPick) container._onPick(id);
     });
   }
 }

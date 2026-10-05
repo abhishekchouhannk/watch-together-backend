@@ -1,25 +1,31 @@
-/* public/js/room/profile-settings.js
+/* public/js/shared/profile-settings.js
  * ─────────────────────────────────────────────────────────────
  * MY PROFILE — header chip + settings modal (desktop) / drawer (mobile).
+ * Page-agnostic: room.html AND dashboard.html. No sockets, no room state.
+ * The page calls initProfileUI() ONCE; it injects the chip + modal itself.
+ *
+ *   initProfileUI({ chipHost, root, onUnauthenticated }) → Promise<user|null>
+ *     chipHost            element the header chip is appended to
+ *     root                element the modal mounts in (must see the theme vars)
+ *     onUnauthenticated   called on 401 (dashboard → redirect to login)
+ *   openProfileSettings()  e.g. "Edit profile" on your own profile card
+ *   getMe() / onMe(fn)     current user + change subscription
+ *   refreshProfile()       silent re-fetch (dashboard: on tab focus)
  *
  *  Data    GET/PATCH /api/users/me · POST/DELETE /api/users/me/avatar
- *          M.user      last server copy (mirrored to S.me)
- *          M.draft     what's in the inputs; a field is dirty when its
- *                      normalised draft differs from the server copy
- *          M.result[f] { ok, msg } → the ✓ / ✕ after a save attempt
- *          M.clientErr live format errors (red hint, Save disabled, no ✕)
- *  Saves   only dirty + valid fields are sent; the server may accept some
- *          and reject others → each field gets its own ✓ / ✕.
- *  Avatar  separate, immediate flow: file → checks (type, size, magic
- *          bytes) → cropper lightbox → XHR upload with progress →
- *          identity store → every avatar on the page repaints.
- *  Sync    another tab/device saving → 'user-profile-updated' → identity
- *          → rev is newer → refetch /me (clean fields follow, dirty kept).
- *  Keys    keydown/keyup never leave the sheet → room shortcuts stay quiet.
+ *          M.user      last server copy
+ *          M.draft     what's in the inputs (dirty = normalised ≠ server)
+ *          M.result[f] { ok, msg } → ✓ / ✕ after a save
+ *          M.clientErr live format errors (red hint, Save disabled)
+ *  Live    every server copy → identity.js (all avatars/names on the page
+ *          repaint) + publishIdentity (other tabs, instant). Another tab
+ *          saving bumps `rev` → we refetch; clean fields follow, dirty kept.
+ *  Hints   helper text only for the focused field, errors always; hiding is
+ *          deferred while a pointer is down so nothing shifts under a click.
+ *  Keys    keydown/keyup never leave the sheet → page shortcuts stay quiet.
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { S } from "../state.js";
-import { avatarHTML, mergeIdentity, onIdentity } from "./identity.js";
+import { avatarHTML, mergeIdentity, onIdentity, publishIdentity } from "./identity.js";
 import { createDatePicker, formatISO } from "./datepicker.js";
 import { openCropper } from "./avatar-cropper.js";
 const FIELDS = ["username", "bio", "birthday"];
@@ -34,6 +40,8 @@ const DEFAULT_LIMITS = {
 };
 const ICON_OK  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12.5 10 17.5 19 7"/></svg>';
 const ICON_ERR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><line x1="7" y1="7" x2="17" y2="17"/><line x1="17" y1="7" x2="7" y2="17"/></svg>';
+const ICON_CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+const ICON_CAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
 const RING_C = 2 * Math.PI * 46;
 const JOIN_FMT = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", year: "numeric" });
 const coarse = window.matchMedia("(pointer: coarse)");
@@ -44,14 +52,147 @@ const MAGIC = [
   (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
          b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50,                       // webp
 ];
+/* ── markup (one source of truth for every page) ── */
+const CHIP_HTML =
+  '<button class="me-btn" id="meBtn" type="button" aria-haspopup="dialog" aria-controls="meSheet" ' +
+  'aria-expanded="false" title="Your profile" hidden>' +
+  '<span class="me-av-slot" id="meAvSlot"></span><span class="me-name" id="meName"></span></button>';
+const hintHTML = (id) => '<p class="me-hint" id="' + id + '"><span class="me-hint-t"></span></p>';
+const SHEET_HTML = `
+<div class="me-backdrop" id="meBackdrop"></div>
+<section class="me-sheet" id="meSheet" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="meTitle" tabindex="-1">
+  <header class="cfg-head">
+    <h3 id="meTitle">Your profile</h3>
+    <button class="cfg-x" id="meClose" type="button" aria-label="Close">✕</button>
+  </header>
+  <div class="cfg-body me-body" id="meBody">
+    <div class="me-load" id="meLoad">
+      <div class="me-load-sk" id="meLoadSk">
+        <div class="me-sk me-sk-av"></div>
+        <div class="me-sk-col"><div class="me-sk" style="width:60%;height:1rem"></div><div class="me-sk" style="width:40%;height:.8rem"></div></div>
+      </div>
+      <div class="me-load-err" id="meLoadErr" hidden>
+        <p>Couldn't load your profile.</p>
+        <button type="button" class="cfg-mini alt" id="meRetry">Try again</button>
+      </div>
+    </div>
+    <form class="me-form" id="meForm" novalidate autocomplete="off" hidden>
+      <div class="me-hero">
+        <div class="me-hero-av" id="meHeroAv" data-phase="">
+          <span class="me-hero-slot" id="meHeroSlot"></span>
+          <span class="me-av-pct" id="meAvPct" aria-hidden="true"></span>
+          <svg class="me-ring" viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="me-ring-bg" cx="50" cy="50" r="46"/>
+            <circle class="me-ring-fg" id="meRingFg" cx="50" cy="50" r="46"/>
+          </svg>
+          <button type="button" class="me-av-edit" id="meAvEdit" title="Change photo" aria-label="Change profile photo">${ICON_CAMERA}</button>
+        </div>
+        <div class="me-hero-side">
+          <div class="me-hero-name" id="meHeroName"></div>
+          <div class="me-av-acts" id="meAvActs">
+            <button type="button" class="cfg-mini alt" id="meAvUpload">Upload photo</button>
+            <button type="button" class="cfg-mini no" id="meAvRemove" hidden>Remove</button>
+            <button type="button" class="cfg-mini alt" id="meAvCancel" hidden>Cancel upload</button>
+          </div>
+          <div class="me-av-confirm" id="meAvConfirm" hidden>
+            <span>Remove your photo?</span>
+            <button type="button" class="cfg-mini no" id="meAvRemoveYes">Remove</button>
+            <button type="button" class="cfg-mini alt" id="meAvRemoveNo">Keep</button>
+          </div>
+          <p class="me-av-msg" id="meAvMsg"></p>
+          <input type="file" id="meAvFile" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+        </div>
+      </div>
+      <div class="cfg-sec">
+        <h4>Profile</h4>
+        <div class="cfg-field me-field" data-field="username">
+          <label class="me-lbl" for="meUsername">Username</label>
+          <div class="me-ctl">
+            <input id="meUsername" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="meUsernameHint">
+            <span class="me-stat" aria-hidden="true"></span>
+          </div>
+          ${hintHTML("meUsernameHint")}
+        </div>
+        <div class="cfg-field me-field" data-field="bio">
+          <div class="me-lbl"><label for="meBio">Bio</label><span class="me-cnt" id="meBioCnt">0/200</span></div>
+          <div class="me-ctl me-ctl-ta">
+            <textarea id="meBio" rows="3" placeholder="A line or two about you" aria-describedby="meBioHint"></textarea>
+            <span class="me-stat" aria-hidden="true"></span>
+          </div>
+          ${hintHTML("meBioHint")}
+        </div>
+        <div class="cfg-field me-field" data-field="birthday">
+          <div class="me-lbl"><span id="meBdayLbl">Birthday</span><span class="me-lbl-note">(only you can see this)</span></div>
+          <div class="me-ctl">
+            <button type="button" class="me-date" id="meBday" aria-haspopup="dialog" aria-expanded="false"
+                    aria-labelledby="meBdayLbl meBdayVal" aria-describedby="meBdayHint">
+              ${ICON_CAL}<span class="me-date-v" id="meBdayVal"></span>
+            </button>
+            <button type="button" class="me-date-x" id="meBdayClear" aria-label="Clear birthday" hidden>✕</button>
+            <span class="me-stat" aria-hidden="true"></span>
+          </div>
+          <div id="meBdayPick"></div>
+          ${hintHTML("meBdayHint")}
+        </div>
+        <div class="cfg-actions me-actions">
+          <button class="cfg-btn primary" id="meSave" type="submit" disabled>Save changes</button>
+          <button class="cfg-btn" id="meReset" type="button" disabled>Reset</button>
+        </div>
+        <p class="cfg-dirty is-hidden" id="meDirty"></p>
+      </div>
+      <div class="cfg-sec">
+        <h4>Account</h4>
+        <div class="me-ro"><span class="me-ro-k">Email</span><span class="me-ro-v" id="meEmail"></span></div>
+        <div class="me-ro"><span class="me-ro-k">Joined</span><span class="me-ro-v" id="meJoined"></span></div>
+      </div>
+      <p class="me-sr" id="meLive" aria-live="polite"></p>
+    </form>
+  </div>
+</section>`;
+/* ── state ── */
 const M = {
   user: null, limits: null, loadErr: false, refreshing: false,
   draft: { username: "", bio: "", birthday: "" },
   result: {}, clientErr: {},
   saving: false, open: false, closeArmed: false,
   av: { busy: false, phase: "", pct: 0, err: "", ok: "", confirm: false, xhr: null },
+  root: null, onUnauth: null,
 };
-let D = null, picker = null, unameRe = null, lastFocus = null, okTimer = 0, heroKey = "";
+const meSubs = new Set();
+let D = null, picker = null, unameRe = null, lastFocus = null, okTimer = 0, heroKey = "", initP = null;
+/* ── public API ── */
+export const getMe = () => M.user;
+export function onMe(fn) {
+  meSubs.add(fn);
+  if (M.user) { try { fn(M.user); } catch (e) { console.error("[profile]", e); } }
+  return () => meSubs.delete(fn);
+}
+export const refreshProfile = () => refreshMe();
+export function initProfileUI({ chipHost = null, root = null, onUnauthenticated = null } = {}) {
+  if (initP) return initP;
+  M.root = root || document.body;
+  M.onUnauth = onUnauthenticated;
+  if (!document.getElementById("meBtn") && chipHost) chipHost.insertAdjacentHTML("beforeend", CHIP_HTML);
+  if (!document.getElementById("meSheet")) M.root.insertAdjacentHTML("beforeend", SHEET_HTML);
+  D = cacheDom();
+  if (!D) return (initP = Promise.resolve(null));
+  picker = createDatePicker({
+    host: D.bdayPick,
+    label: "Choose your birthday",
+    onPick: (iso) => { edit("birthday", iso); D.bday.focus({ preventScroll: true }); },
+    onClose: () => {
+      D.bday.setAttribute("aria-expanded", "false");
+      if (M.open && (!D.sheet.contains(document.activeElement) || document.activeElement === document.body)) {
+        D.bday.focus({ preventScroll: true });
+      }
+    },
+  });
+  D.sheet.inert = true;
+  applyLimits(null);
+  wire();
+  initP = loadMe().then(() => M.user);
+  return initP;
+}
 /* ── helpers ── */
 const L = () => M.limits || DEFAULT_LIMITS;
 const mb = (n) => (n / 1048576).toFixed(1).replace(/\.0$/, "") + " MB";
@@ -70,7 +211,7 @@ const anyDirty = () => FIELDS.some(isDirty);
 function hintFor(f) {
   if (f === "username") return L().usernameHint;
   if (f === "bio") return "Shown on your profile card to people in your rooms.";
-  return "You must be " + L().minAge + " or older.";      // privacy note now lives in the label
+  return "You must be " + L().minAge + " or older.";
 }
 function announce(msg) {
   D.live.textContent = "";
@@ -90,11 +231,12 @@ function applyServerUser(u, reset = false) {
   // fields the user hasn't touched follow the server; in-progress edits are kept
   const follow = FIELDS.filter((f) => reset || !prev || norm(f, M.draft[f]) === serverVal(f, prev));
   M.user = u;
-  S.me = u;
   follow.forEach((f) => { M.draft[f] = serverVal(f); delete M.clientErr[f]; });
-  mergeIdentity(u.id, u);                       // → navbar, chat, people, profile card repaint
+  mergeIdentity(u.id, u);                       // → every avatar / name on this page
+  publishIdentity(u.id, u);                     // → every other open tab
   writeInputs(follow);
   paintAll();
+  meSubs.forEach((fn) => { try { fn(u); } catch (e) { console.error("[profile]", e); } });
 }
 async function fetchMe() {
   const r = await fetch("/api/users/me", { credentials: "include", cache: "no-store" });
@@ -102,7 +244,7 @@ async function fetchMe() {
   if (!r.ok) throw new Error(String(r.status));
   return r.json();
 }
-export async function loadMe() {
+async function loadMe() {
   M.loadErr = false;
   paintShell();
   try {
@@ -110,13 +252,17 @@ export async function loadMe() {
     applyLimits(limits);
     applyServerUser(user, true);
   } catch (e) {
-    M.loadErr = !e.unauth;
-    if (e.unauth) D.meBtn.hidden = true;
+    if (e.unauth) {
+      if (D.meBtn) D.meBtn.hidden = true;
+      if (M.onUnauth) M.onUnauth();
+    } else {
+      M.loadErr = true;
+    }
   }
   paintAll();
 }
 async function refreshMe() {
-  if (M.refreshing) return;
+  if (M.refreshing || !D) return;
   M.refreshing = true;
   try {
     const { user, limits } = await fetchMe();
@@ -132,9 +278,11 @@ function validateField(f) {
     if (f === "username") {
       if (!v) err = "Username can't be empty";
       else if (unameRe && !unameRe.test(v)) err = L().usernameHint;
-    } else if (f === "bio") {
+    }
+    else if (f === "bio") {
       if (v.length > L().bioMax) err = "Bio can be at most " + L().bioMax + " characters";
-    } else if (f === "birthday" && v) {
+    }
+    else if (f === "birthday" && v) {
       const { birthdayMin: lo, birthdayMax: hi } = L();
       if (hi && v > hi) err = "You must be at least " + L().minAge + " years old";
       else if (lo && v < lo) err = "Please enter your real birthday";
@@ -174,7 +322,7 @@ async function save() {
   for (const f of send) {
     const msg = errs[f] || whole;
     if (msg) { M.result[f] = { ok: false, msg }; bad.push(LABEL[f]); }
-    else { M.result[f] = { ok: true }; M.draft[f] = serverVal(f); good.push(LABEL[f]); }   // adopt server-normalised value
+    else { M.result[f] = { ok: true }; M.draft[f] = serverVal(f); good.push(LABEL[f]); }
   }
   writeInputs(send.filter((f) => M.result[f].ok));
   paintForm();
@@ -184,12 +332,11 @@ async function save() {
 function paintAll() { paintNav(); paintShell(); paintHero(); paintAccount(); paintForm(); paintAv(); }
 function paintNav() {
   const u = M.user;
-  if (!u) return;
+  if (!u || !D.meBtn) return;
   D.meBtn.hidden = false;
   D.meBtn.setAttribute("aria-label", "Your profile (" + u.username + ")");
-  D.avSlot.innerHTML = avatarHTML({ uid: u.id, name: u.username, cls: "me-av", animate: true });
-  D.name.textContent = u.username;
-  D.name.dataset.nameUid = u.id;
+  if (D.avSlot) D.avSlot.innerHTML = avatarHTML({ uid: u.id, name: u.username, cls: "me-av", animate: true });
+  if (D.name) { D.name.textContent = u.username; D.name.dataset.nameUid = u.id; }
 }
 function paintShell() {
   const ready = !!M.user;
@@ -203,14 +350,13 @@ function paintHero() {
   if (!u) return;
   const name = norm("username", M.draft.username) || u.username;
   D.heroName.textContent = name;
-  // rebuild only when the visual actually changes (no <img> flicker per keystroke)
   const k = [u.avatar, u.avatarStill, u.avatarFull, u.avatar ? "" : name].join("|");
-  if (k === heroKey) return;
+  if (k === heroKey) return;                     // no <img> flicker per keystroke
   heroKey = k;
   D.heroSlot.innerHTML = avatarHTML({
     name, cls: "me-hero-img", animate: true,
-    zoom: "View your photo",                               // photo → click opens the viewer
-    label: u.avatar ? "" : "Upload a photo",               // no photo → click opens the picker (see wire())
+    zoom: "View your photo",
+    label: u.avatar ? "" : "Upload a photo",
     src: { avatar: u.avatar, avatarStill: u.avatarStill, avatarFull: u.avatarFull },
   });
 }
@@ -268,12 +414,19 @@ function paintForm() {
 function writeInputs(fields = FIELDS) {
   if (fields.includes("username") && D.username.value !== M.draft.username) D.username.value = M.draft.username;
   if (fields.includes("bio") && D.bio.value !== M.draft.bio) D.bio.value = M.draft.bio;
-  // birthday is display-only → paintBday()
+}
+function syncHintFocus(allowHide) {
+  if (!D) return;
+  const a = document.activeElement;
+  for (const f of FIELDS) {
+    if (M.open && D.field[f].contains(a)) D.field[f].classList.add("is-focus");
+    else if (allowHide) D.field[f].classList.remove("is-focus");
+  }
 }
 /* ── editing ── */
 function edit(f, v) {
   M.draft[f] = v;
-  delete M.result[f];                       // ✓/✕ describe the LAST save; editing clears them
+  delete M.result[f];
   M.closeArmed = false;
   validateField(f);
   paintField(f);
@@ -343,29 +496,17 @@ async function checkFile(file) {
   } catch (_) { return "Couldn't read that file"; }
   return null;
 }
-/* helper hints show for the focused field only (errors always show — CSS).
-   Hiding is deferred while a pointer is down: collapsing a hint on focus-out
-   would shift the Birthday button / Save under the cursor mid-click. */
-function syncHintFocus(allowHide) {
-  if (!D) return;
-  const a = document.activeElement;
-  for (const f of FIELDS) {
-    if (M.open && D.field[f].contains(a)) D.field[f].classList.add("is-focus");
-    else if (allowHide) D.field[f].classList.remove("is-focus");
-  }
-}
 async function startAvatarFlow(file) {
   if (M.av.busy) return;
   setAv({ err: "", ok: "", confirm: false });
   const err = await checkFile(file);
   if (err) { avFail(err); return; }
-  const res = await openCropper(file, { validate: checkFile, minPx: L().avatarMinPx });
+  const res = await openCropper(file, { validate: checkFile, minPx: L().avatarMinPx, root: M.root });
   if (res) uploadAvatar(res.file, res.crop);
 }
 function uploadAvatar(file, crop) {
   const fd = new FormData();
-  // text fields BEFORE the file — multer streams in order
-  fd.append("cropX", String(crop.cropX));
+  fd.append("cropX", String(crop.cropX));          // text fields BEFORE the file — multer streams in order
   fd.append("cropY", String(crop.cropY));
   fd.append("cropSize", String(crop.cropSize));
   fd.append("avatar", file, file.name || "avatar");
@@ -405,18 +546,18 @@ export function openProfileSettings() {
   if (!D || M.open) return;
   M.open = true;
   lastFocus = document.activeElement;
-  discardDraft();                                  // every open starts from the server copy
-  setAv({ err: "", ok: "", confirm: false });      // a running upload keeps its busy state
+  discardDraft();
+  setAv({ err: "", ok: "", confirm: false });
   D.sheet.inert = false;
   D.sheet.setAttribute("aria-hidden", "false");
   D.sheet.classList.add("open");
   D.back.classList.add("open");
-  D.meBtn.setAttribute("aria-expanded", "true");
+  if (D.meBtn) D.meBtn.setAttribute("aria-expanded", "true");
   document.documentElement.classList.add("me-lock");
   paintAll();
   if (M.user) refreshMe(); else loadMe();
   requestAnimationFrame(() => {
-    const t = M.user && !coarse.matches ? D.username : D.sheet;   // no surprise keyboard on phones
+    const t = M.user && !coarse.matches ? D.username : D.sheet;    // no surprise keyboard on phones
     t.focus({ preventScroll: true });
   });
 }
@@ -424,7 +565,7 @@ function requestClose() {
   if (M.user && anyDirty() && !M.closeArmed) {
     M.closeArmed = true;
     paintFooter();
-    D.dirty.scrollIntoView({ block: "nearest", behavior: "smooth" });   // the note is in the body now
+    D.dirty.scrollIntoView({ block: "nearest", behavior: "smooth" });
     nudge(D.dirty);
     return;
   }
@@ -435,17 +576,16 @@ function close() {
   M.open = false;
   picker.close();
   const back = lastFocus && document.contains(lastFocus) && lastFocus !== document.body ? lastFocus : D.meBtn;
-  back.focus({ preventScroll: true });
+  if (back) back.focus({ preventScroll: true });
   D.sheet.classList.remove("open");
   D.back.classList.remove("open");
   D.sheet.setAttribute("aria-hidden", "true");
   D.sheet.inert = true;
-  D.meBtn.setAttribute("aria-expanded", "false");
+  if (D.meBtn) D.meBtn.setAttribute("aria-expanded", "false");
   document.documentElement.classList.remove("me-lock");
   discardDraft();
   syncHintFocus(true);
 }
-
 function trapTab(e, root) {
   const els = [...root.querySelectorAll('button, input, textarea, select, [tabindex]:not([tabindex="-1"])')]
     .filter((el) => !el.disabled && !el.closest("[hidden]") && el.getClientRects().length);
@@ -455,7 +595,7 @@ function trapTab(e, root) {
   else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
 }
 function onSheetKey(e) {
-  e.stopPropagation();                             // room shortcuts must not fire while typing here
+  e.stopPropagation();                             // page shortcuts must not fire while typing here
   if (e.key === "Escape") {
     e.preventDefault();
     if (picker.isOpen()) { picker.close(); D.bday.focus(); } else requestClose();
@@ -466,8 +606,7 @@ function onSheetKey(e) {
 }
 /* ── wiring ── */
 function cacheDom() {
-  const ids = {
-    meBtn: "meBtn", avSlot: "meAvSlot", name: "meName",
+  const required = {
     sheet: "meSheet", back: "meBackdrop", close: "meClose",
     load: "meLoad", loadSk: "meLoadSk", loadErr: "meLoadErr", retry: "meRetry",
     form: "meForm",
@@ -481,19 +620,25 @@ function cacheDom() {
     live: "meLive", dirty: "meDirty", reset: "meReset", save: "meSave",
   };
   const d = {};
-  for (const [k, id] of Object.entries(ids)) {
+  for (const [k, id] of Object.entries(required)) {
     d[k] = document.getElementById(id);
     if (!d[k]) { console.warn("[profile] missing #" + id + " — profile settings disabled"); return null; }
   }
+  d.meBtn  = document.getElementById("meBtn");      // optional: a page may not show the chip
+  d.avSlot = document.getElementById("meAvSlot");
+  d.name   = document.getElementById("meName");
   d.field = {}; d.hint = {};
   for (const f of FIELDS) {
     d.field[f] = d.form.querySelector('.me-field[data-field="' + f + '"]');
-    d.hint[f] = d.field[f].querySelector(".me-hint");
+    const p = d.field[f].querySelector(".me-hint");
+    let t = p.querySelector(".me-hint-t");
+    if (!t) { t = document.createElement("span"); t.className = "me-hint-t"; p.replaceChildren(t); }
+    d.hint[f] = t;
   }
   return d;
 }
 function wire() {
-  D.meBtn.addEventListener("click", () => (M.open ? requestClose() : openProfileSettings()));
+  if (D.meBtn) D.meBtn.addEventListener("click", () => (M.open ? requestClose() : openProfileSettings()));
   D.close.addEventListener("click", requestClose);
   D.back.addEventListener("click", requestClose);
   D.retry.addEventListener("click", () => loadMe());
@@ -505,12 +650,12 @@ function wire() {
   D.bday.addEventListener("click", toggleBday);
   D.bdayClear.addEventListener("click", () => { picker.close(); edit("birthday", ""); D.bday.focus(); });
   D.reset.addEventListener("click", () => { discardDraft(); announce("Changes reset"); D.username.focus(); });
-  /* focus-only helper hints */
+  /* focus-only helper hints (collapse deferred while a pointer is down) */
   let pointerHeld = false;
   const release = () => {
     if (!pointerHeld) return;
     pointerHeld = false;
-    setTimeout(() => syncHintFocus(true), 0);          // after the click has landed
+    setTimeout(() => syncHintFocus(true), 0);      // after the click has landed
   };
   document.addEventListener("pointerdown", () => { if (M.open) pointerHeld = true; }, true);
   document.addEventListener("pointerup", release, true);
@@ -521,12 +666,12 @@ function wire() {
   D.avUpload.addEventListener("click", () => D.avFile.click());
   D.avEdit.addEventListener("click", () => D.avFile.click());
   D.heroSlot.addEventListener("click", (e) => {
-    if (M.av.busy || e.target.closest(".is-zoomable")) return;   // photo → identity.js opens the viewer
-    D.avFile.click();                                             // no photo yet → tapping the initial uploads one
+    if (M.av.busy || e.target.closest(".is-zoomable")) return;    // photo → identity.js opens the viewer
+    D.avFile.click();                                              // no photo yet → tap the initial to upload
   });
   D.avFile.addEventListener("change", () => {
     const f = D.avFile.files && D.avFile.files[0];
-    D.avFile.value = "";                               // lets the same file be picked again later
+    D.avFile.value = "";
     if (f) startAvatarFlow(f);
   });
   D.avRemove.addEventListener("click", () => { setAv({ confirm: true, err: "", ok: "" }); D.avNo.focus(); });
@@ -556,23 +701,3 @@ onIdentity((uid, rec) => {
   if (!M.user || uid !== M.user.id) return;
   if ((rec.rev || 0) > (M.user.rev || 0)) refreshMe();
 });
-function init() {
-  D = cacheDom();
-  if (!D) return;
-  picker = createDatePicker({
-    host: D.bdayPick,
-    label: "Choose your birthday",
-    onPick: (iso) => { edit("birthday", iso); D.bday.focus({ preventScroll: true }); },
-    onClose: () => {
-      D.bday.setAttribute("aria-expanded", "false");
-      if (M.open && (!D.sheet.contains(document.activeElement) || document.activeElement === document.body)) {
-        D.bday.focus({ preventScroll: true });
-      }
-    },
-  });
-  D.sheet.inert = true;
-  applyLimits(null);
-  wire();
-  loadMe();
-}
-init();

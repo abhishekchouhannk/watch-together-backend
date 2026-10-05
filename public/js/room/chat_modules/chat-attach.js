@@ -21,7 +21,7 @@
 "use strict";
 import { MAX_ATTACHMENTS } from "../config.js";
 import { normalizeImageUrl, findImageUrls, cutImageUrl, restoreChunk } from "./media-embed.js";
-import { openLightbox } from "./lightbox.js";
+import { openLightbox } from "../../shared/lightbox.js";
 const IDLE_MS = 900;
 const INSTANT = /^(?:insertFromPaste|insertFromDrop|insertReplacementText|insertFromYank)$/;
 /* document order. link: anchor = offset in the textarea; gif: anchor = null */
