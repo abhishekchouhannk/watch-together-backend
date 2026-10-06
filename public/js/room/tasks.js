@@ -16,7 +16,7 @@
 import { S } from "./state.js";
 import { $ } from "./dom.js";
 import { toast, esc, fmtBadge } from "./utils.js";
-import { avatarHTML, nameOf, ensureIdentities } from "./profile_modules/identity.js";
+import { avatarHTML, nameOf, ensureIdentities } from "../shared/identity.js";
 import { emit, getSocket } from "./socket-ref.js";
 import { onConnect, onRoomState } from "./socket-core.js";
 const TICK = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" ' +
