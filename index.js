@@ -31,7 +31,8 @@ app.set("trust proxy", true);
 
 // Routes
 app.use("/api/auth", require("./routes/auth"));
-app.use("/api/rooms", require("./routes/rooms"));
+app.use("/api/rooms", require("./routes/roomAdmin"));   // must come BEFORE the existing rooms router
+app.use("/api/rooms", require("./routes/rooms"));     
 app.use("/api/users", require("./routes/users"));
 app.use('/api/voice-token', require('./routes/voice'));
 
