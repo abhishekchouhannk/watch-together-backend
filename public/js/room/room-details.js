@@ -23,7 +23,7 @@ import { ROOM_TYPES } from "./config.js";
 import { S } from "./state.js";
 import { dom } from "./dom.js";
 import { esc } from "./utils.js";
-import { avatarHTML, nameOf, ensureIdentities } from "./profile_modules/identity.js";
+import { avatarHTML, nameOf, ensureIdentities } from "../shared/identity.js";
 /* ═══════ RENDER ═══════ */
 export function renderHeader() {
   const r = S.room; if (!r) return;

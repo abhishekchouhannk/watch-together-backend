@@ -24,7 +24,7 @@ import { getSocket, emit } from "./socket-ref.js";
 import { onRoomState } from "./socket-core.js";  
 import { openProfile } from "./permissions.js";
 import { esc } from "./utils.js";
-import { avatarEl, nameOf, getIdentity, ensureIdentities, onIdentity } from "./profile_modules/identity.js";
+import { avatarEl, nameOf, getIdentity, ensureIdentities, onIdentity } from "../shared/identity.js";
 /* ── module state ───────────────────────────────────────── */
 let LK = null;                 // lazily-imported livekit-client module
 let room = null;

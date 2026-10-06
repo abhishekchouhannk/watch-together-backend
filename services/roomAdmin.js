@@ -166,14 +166,16 @@ async function updateRoomDetails({ roomId, userId, body }) {
 function notifyRoomUpdated(io, room, saved, actor) {
   if (!saved || !saved.length) return;
   if (io) {
-    /* ⚠ ADAPT: mirror the payload your in-room 'room-update' socket handler
-       broadcasts, so permissions.js → applyIncomingRoom() treats a dashboard
-       save exactly like an in-room one (draft kept, conflict banner shown). */
-    io.to(String(room.roomId)).emit("room-updated", {
+    const channel = String(room.roomId);
+    io.to(channel).emit("room-updated", {
       room: { roomId: room.roomId, ...editableOf(room) },
       changed: saved,
-      by: { userId: actor.userId, username: actor.username },
+      by: actor.username,
       source: "dashboard",
+    });
+    io.to(channel).emit("perm-notice", {
+      text: `${actor.username} updated the room details`,
+      byId: actor.userId,
     });
   }
   RoomEvent.create({

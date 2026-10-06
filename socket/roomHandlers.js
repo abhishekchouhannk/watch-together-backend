@@ -14,6 +14,7 @@ const {
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
 const { logRoomEvent, announce, logJoin, logLeave } = require("../utils/roomEvents");
+const { onRoomDeleted } = require("../services/roomRuntime");
 
 const recentKicks = new Map();                       // "roomId:userId" → expiry ms
 const KICK_COOLDOWN = 10000;
@@ -373,6 +374,18 @@ function serializeRoom(room) {
     participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
   };
 }
+// handle room cleanup when a room is deleted (from dashboard or otherwise)
+onRoomDeleted((roomId) => {
+  workspaces.delete(roomId);
+  clearPomoTimer(roomId);
+  clearSeekBarrier(roomId);
+  roomSeekSeqs.delete(roomId);
+  advanceLock.delete(roomId);
+  const prefix = roomId + ":";
+  for (const k of recentKicks.keys()) {
+    if (k.startsWith(prefix)) recentKicks.delete(k);
+  }
+});
 /* ── pomodoro ─────────────────────────────────────────── */
 const pomoTimers = new Map();                          // roomId → timeout id
 function serializePomodoro(room) {
