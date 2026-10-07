@@ -10,7 +10,7 @@ const Whiteboard = require("../models/Whiteboard");
 const {
   ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
   isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canDeleteMessage, canClearChat, canGrantSync, canSetRoles, canReportMessage, canReviewReports, 
-  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope, canControlTimer, canManageTasks, canManageBoards, isStudyRoom, scopeText, canControlPlayback, canManageQueue
+  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope, canControlTimer, canManageTasks, canManageBoards, isStudyRoom, scopeText, canControlPlayback, canUseMediaQueue
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
 const { logRoomEvent, announce, logJoin, logLeave } = require("../utils/roomEvents");
@@ -1510,7 +1510,7 @@ module.exports = function registerRoomHandlers(io, socket) {
   }));
 
   /* ═══════════════ QUEUE ═══════════════ */
-  const queueAction = (fn) => guarded(canManageQueue, "You don't have queue control in this room", fn);
+  const queueAction = (fn) => guarded(canUseMediaQueue, "You don't have queue control in this room", fn);
   function rateLimited(key, max, windowMs) {
     const now = Date.now();
     const rl = socket.data[key] || (socket.data[key] = { n: 0, reset: now + windowMs });

@@ -207,6 +207,8 @@ function resolvePerms(room, uid) {
     autoplay:  st.autoplay !== false,
     canSync:        canSync(room, uid),
     canQueue:       canQueue(room, uid),
+    canControlPlayback: canControlPlayback(room, uid),
+    canUseMediaQueue:   canUseMediaQueue(room, uid),
     canChangeVideo: canQueue(room, uid),      // kept for backwards compat on the client
     canEditRoom:   canEditRoom(room, uid),
     canManage:     canModerate(room, uid),
