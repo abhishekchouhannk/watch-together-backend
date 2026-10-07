@@ -214,6 +214,8 @@ function resolvePerms(room, uid) {
     canGrantQueue: canGrantQueue(room, uid),
     canSetRoles:   canSetRoles(room, uid),
     canBan:        canBan(room, uid),
+    canControlPlayback: canControlPlayback(room, uid),
+    canUseMediaQueue:   canUseMediaQueue(room, uid),
     canControlTimer: canControlTimer(room, uid),
     canManageTasks:  canManageTasks(room, uid),
     canManageBoards: canManageBoards(room, uid),
