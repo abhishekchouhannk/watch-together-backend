@@ -10,7 +10,7 @@ const Whiteboard = require("../models/Whiteboard");
 const {
   ROOM_CAP, MODE_VALUES, validId, sameId, isAdmin, isMod, getMember, ensureMember,
   isBanned, isVoiceMuted, serializeVoiceMutes, canSync, canChangeVideo, canModerate, canEditRoom, canDeleteMessage, canClearChat, canGrantSync, canSetRoles, canReportMessage, canReviewReports, 
-  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, isScope, canControlTimer, canManageTasks, canManageBoards, isStudyRoom, scopeText, canControlPlayback, canUseMediaQueue
+  canBan, serializeMembers, serializeReport, sanitizeRoomPatch, sameValue, resolvePerms, canQueue, canGrantQueue, SCOPES, isScope, canControlTimer, canManageTasks, canManageBoards, isStudyRoom, scopeText, canControlPlayback, canUseMediaQueue
 } = require("../utils/roomConfigAndPermissions");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
 const { logRoomEvent, announce, logJoin, logLeave } = require("../utils/roomEvents");

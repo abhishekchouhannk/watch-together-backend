@@ -54,6 +54,23 @@ import { wireWhiteboard } from "./room/whiteboard.js";
 import { initProfileUI } from "./shared/profile-settings.js";
 import "./room/identity-socket.js";
 import "./room/room-lifecycle.js";
+import { startIconEngine } from "./shared/icon-engine.js";
+
+/* Icons first. Excluded = live reactions + user-authored / external text. */
+startIconEngine({
+  exclude: [
+    "#reactRail", "#fxLayer",                              // reactions stay real emoji
+    ".msg-text", ".msg-edit",                              // chat messages
+    "#hdrName", ".rd-name", ".rd-desc", ".rd-tags",        // room name / description / tags
+    "#queueList", "#viTitle", "#viAuthor",                 // video & track titles (external)
+    "#unTitle", "#unSub", "#musicTitle", "#musicArtist",
+    "#lyricsView", "#lyricsResults",
+    ".tk-text",                                            // task text
+    "#wbTextLayer", "#wbTabList", "#bpList",               // whiteboard text + board names
+    ".prof-bio", ".sl-detail", ".rep-text",                // bios, sys-log details, reported text
+    ".toast",
+  ],
+});
 
 /* ═══════ INIT ═══════ */
 document.addEventListener("DOMContentLoaded", async () => {
