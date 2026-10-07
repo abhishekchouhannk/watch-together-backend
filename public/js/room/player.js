@@ -537,12 +537,24 @@ function updateMusicMeta(meta) {
     srcs.push("https://i.ytimg.com/vi/" + meta.videoId + "/hqdefault.jpg");
   }
   if (meta.thumb) srcs.push(meta.thumb);
+  
   let i = 0;
-  img.onload  = () => { img.hidden = false; fb.hidden = true; };
-  img.onerror = () => {
+  
+  // FIXED ONLOAD: Check for the 120x90 YouTube grey placeholder!
+  img.onload = function() { 
+    if (this.naturalWidth <= 120 && i < srcs.length) {
+      this.src = srcs[i++];
+      return;
+    }
+    img.hidden = false; 
+    fb.hidden = true; 
+  };
+  
+  img.onerror = function() {
     if (i < srcs.length) { img.src = srcs[i++]; return; }
     img.hidden = true; fb.hidden = false;
   };
+  
   if (srcs.length) img.src = srcs[i++];
   else { img.hidden = true; fb.hidden = false; }
 }
