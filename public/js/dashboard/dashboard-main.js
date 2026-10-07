@@ -17,6 +17,7 @@ import { avatarHTML, nameOf, ensureIdentities, resyncIdentities } from "../share
 import { $, esc, toast, timeAgo, api } from "./ui.js";
 import { createRoomForm, ROOM_CAP } from "./room-form.js";
 import { wireRoomActions } from "./room-actions.js";
+import { startIconEngine } from "../shared/icon-engine.js";
 
 const RESYNC_MS = 20000;
 const MORE_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
@@ -31,6 +32,17 @@ const dom = {
   count: $("roomCount"), welcome: $("welcomeTitle"), filters: $("filters"),
 };
 let form = null, actions = null, navigating = false, lastSync = Date.now(), fetchSeq = 0;
+
+/* icons first, so everything rendered below is converted before it paints.
+   Excluded = user-authored text (stays real emoji). */
+startIconEngine({
+  exclude: [
+    ".card-title", ".card-desc", ".card-tags",   // room name / description / tags
+    ".rc-menu-head", "#delName",                 // room name echoed in the menu + delete dialog
+    ".chip",                                     // tag chips in the create/edit modal
+    ".toast",                                    // toasts quote room names
+  ],
+});
 
 boot();
 

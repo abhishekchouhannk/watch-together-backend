@@ -402,3 +402,35 @@ html.lb-lock,html.lb-lock body{overflow:hidden}
 @media (prefers-reduced-motion:reduce){
   .me-sheet,.me-backdrop,.me-hint,.dp,.avc,.avc-card,.lb,.lb-img,.me-sk,.me-stat{animation:none!important;transition:none!important}
 }
+/* ======== H. Icons (icon-engine.js) ======== */
+/* Emoji never depended on `color`; icons do. Give both page roots a themed
+   default and let bare <button>s inherit it (the UA default is black).
+   :where() = zero specificity → every existing colour rule still wins. */
+:where(#roomPage,#dashboard){color:var(--t1)}
+:where(#roomPage,#dashboard) :where(button){color:inherit}
+.wt-ic{
+  display:inline-block;flex:none;
+  width:1.15em;height:1.15em;              /* ≈ a colour emoji's advance width → no layout shift */
+  vertical-align:-.2em;                    /* optically centred on the text's cap height */
+  fill:none;stroke:currentColor;           /* theme colour comes from the surrounding text */
+  stroke-width:var(--wt-ic-stroke,2);
+  stroke-linecap:round;stroke-linejoin:round;
+  pointer-events:none;                     /* clicks always land on the button/label, never the <svg> */
+  -webkit-user-select:none;user-select:none;
+}
+/* small badges: a touch more weight so a ~12px glyph stays crisp */
+:is(.mode-badge,.owner-badge,.role-tag,.tag) .wt-ic{--wt-ic-stroke:2.25}
+/* large "illustration" spots (empty states, placeholders): thinner stroke */
+:is(.empty-icon,.q-empty-icon,.vp-icon,.ml-art-fallback,.sm-icons) .wt-ic{
+  --wt-ic-stroke:1.5;width:1em;height:1em;vertical-align:middle;
+}
+/* opt-in modifiers for getIcon(key, emoji, "wt-ic--…") */
+.wt-ic--thin{--wt-ic-stroke:1.5}
+.wt-ic--bold{--wt-ic-stroke:2.5}
+.wt-ic--accent{color:var(--acc)}
+.wt-ic--block{display:block}
+/* getIcon() fallback when there is no SVG for an emoji */
+.wt-emoji{
+  display:inline-block;line-height:1;font-style:normal;vertical-align:-.1em;
+  font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;
+}
