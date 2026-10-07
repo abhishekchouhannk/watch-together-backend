@@ -1,12 +1,4 @@
 Ongoing Development:
-1. Add a new roomType - 'Study'
-    - Include features like
-        A Pomodoro Timer
-        A shared whiteboard for everyone to utilize and brainstorm
-        Task lists and management etc. within the room
-        The current QUEUE instead becomes a task management list
-        Attendance for people to be present in the room
-        Occasional checks, manually by the host/mods or automatic checks to check users who are laacking or drifting into their own different world LOL.
         
 
 Need to work on:
@@ -59,10 +51,18 @@ Completed:
     - 'RoomType' is immutable and cannot be changed. Only selected at room creation. 
     - Right now, Entertainment (watch videos together) and music rooms exist. 
     - Planning on adding a study room now, with features for studying such as a Pomodoro timer synced for everyone, a whiteboard, attendance, etc. 
+19. (DONE) Add a new roomType - 'Study'
+    - Include features like
+        A Pomodoro Timer
+        A shared whiteboard for everyone to utilize and brainstorm
+        Task lists and management etc. within the room
+        The current QUEUE instead becomes a task management list
 
 Other important but later -
 1. Fix register page functionality - specifically an email such as dev.abhishekchouhan@gmail.com
 Gets registered as devabhishekchouhan@gmail.com, it takes out the dot (.) In the emails.
+2. Attendance for people to be present in the room (POINT 19 in done)
+        Occasional checks, manually by the host/mods or automatic checks to check users who are laacking or drifting into their own different world LOL.
 
 Optional -
 1. Add spotify music listening capability and other features that could be incorporated in this app to listen to music together?
