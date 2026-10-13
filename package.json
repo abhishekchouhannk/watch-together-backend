@@ -27,6 +27,7 @@
     "multer": "^2.4.0",
     "nodemailer": "^7.0.9",
     "nodemon": "^3.1.14",
+    "resend": "^6.32.1",
     "socket.io": "^4.8.3",
     "useragent": "^2.3.0",
     "uuid": "^13.0.0"
