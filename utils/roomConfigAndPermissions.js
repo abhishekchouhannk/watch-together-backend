@@ -1,20 +1,155 @@
-// utils/roomPermissions.js
+// utils/roomConfigAndPermissions.js
+// ─────────────────────────────────────────────────────────────
+// Room rules in one place: who is who, who may do what, and the
+// serialisers that expose it. Pure functions over a Room document
+// (hydrated or lean) — no sockets, no DB calls.
+//
+//  1. Core hierarchy    isAdmin ▸ isMod ▸ canModerate   (+ roleOf, getMember)
+//                       Everything "host only" is isAdmin; everything
+//                       "host + mods" is canModerate. No aliases.
+//
+//  2. Grant slots       Two per-member grants are persisted (GRANT_SLOTS).
+//                       hasGrant() is the ONLY implementation of
+//                       "does this user hold slot X".
+//
+//  3. Feature guards    What a slot MEANS depends on the room family:
+//
+//        slot (wire/storage id)    media rooms         study rooms
+//        SLOT.CONTROL ("sync")     canControlMedia     canControlTimer
+//        SLOT.CONTENT ("queue")    canManageQueue      canManageStudy
+//                                                      (tasks + whiteboards)
+//
+//                       Feature code calls the named guard, never a slot id.
+//
+//  4. Wording           FEATURE_SCOPES — per-room-type labels for each slot.
+//  5. resolvePerms()    the exact permission payload the client consumes.
+// ─────────────────────────────────────────────────────────────
+"use strict";
 const { Types } = require("mongoose");
-
-const ROOM_CAP = 10;
-const MODE_VALUES = ["study", "gaming", "entertainment", "casual"];
-const sameId = (a, b) => !!a && !!b && a.toString() === b.toString();
-const isAdmin   = (room, uid) => !!(room.admin && sameId(room.admin.userId, uid));
-const canSetRoles = isAdmin;   // promote/demote mods
-const canBan      = isAdmin;   // kick / remove / ban / unban
+const ROOM_CAP = 10;                       // hard ceiling on participants (mirrors models/Room.js)
+/* ── ids / values ─────────────────────────────────────────── */
+const sameId    = (a, b) => !!a && !!b && a.toString() === b.toString();
+const validId   = (v) => !!v && Types.ObjectId.isValid(String(v));
+const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/* ═══════════════════════════════════════════════════════════
+   1. CORE HIERARCHY
+   ═══════════════════════════════════════════════════════════ */
 const getMember = (room, uid) => (room.members || []).find((m) => sameId(m.userId, uid));
+const isAdmin   = (room, uid) => !!(room.admin && sameId(room.admin.userId, uid));
 function roleOf(room, uid) {
   if (isAdmin(room, uid)) return "admin";
   const m = getMember(room, uid);
   return m && m.role === "mod" ? "mod" : "member";
 }
-const validId = (v) => !!v && Types.ObjectId.isValid(String(v));
-
+const isMod       = (room, uid) => roleOf(room, uid) === "mod";
+const canModerate = (room, uid) => isAdmin(room, uid) || isMod(room, uid);   // host + mods
+/* room families */
+const isStudyRoom = (room) => !!room && room.roomType === "study";
+const isMediaRoom = (room) => !!room && room.roomType !== "study";           // entertainment, music
+/* ═══════════════════════════════════════════════════════════
+   2. GRANT SLOTS
+   Two room-agnostic, per-member grants are persisted. Storage keeps the
+   original field names (no migration) and the slot ids double as the
+   `scope` strings on the wire ("sync" / "queue").
+   ═══════════════════════════════════════════════════════════ */
+const GRANT_SLOTS = {
+  sync:  { flag: "canSync",  req: "syncRequest",  mode: "syncMode"  },
+  queue: { flag: "canQueue", req: "queueRequest", mode: "queueMode" },
+};
+/* neutral names for the two slots, so feature guards never say "queue" in a study room */
+const SLOT = Object.freeze({
+  CONTROL: "sync",     // live control of the room's shared activity (playback / timer)
+  CONTENT: "queue",    // managing the room's shared content (queue / tasks + boards)
+});
+/** slot descriptor for a wire `scope`, or null if it isn't one */
+const getGrantSlot = (scope) =>
+  (typeof scope === "string" && Object.prototype.hasOwnProperty.call(GRANT_SLOTS, scope)
+    ? GRANT_SLOTS[scope] : null);
+/** THE grant check: host/mod → implicit · slot mode "everyone" → open · else the member's flag */
+function hasGrant(room, uid, scope) {
+  const slot = getGrantSlot(scope);
+  if (!slot) return false;
+  if (canModerate(room, uid)) return true;                            // implicit, never revocable
+  if (((room.settings && room.settings[slot.mode]) || "host") === "everyone") return true;
+  const m = getMember(room, uid);
+  return !!(m && m[slot.flag]);
+}
+/* ═══════════════════════════════════════════════════════════
+   3. FEATURE GUARDS  (room family × slot)
+   ═══════════════════════════════════════════════════════════ */
+const featureGuard = (inRoomFamily, slot) => (room, uid) => inRoomFamily(room) && hasGrant(room, uid, slot);
+const canControlMedia = featureGuard(isMediaRoom, SLOT.CONTROL);   // play / pause / seek
+const canManageQueue  = featureGuard(isMediaRoom, SLOT.CONTENT);   // add / remove / reorder / play item
+const canControlTimer = featureGuard(isStudyRoom, SLOT.CONTROL);   // pomodoro start / pause / reset / skip
+const canManageStudy  = featureGuard(isStudyRoom, SLOT.CONTENT);   // tasks + whiteboards
+/* ═══════════════════════════════════════════════════════════
+   4. WORDING — what each slot is called per room type
+   ═══════════════════════════════════════════════════════════ */
+const MEDIA_SCOPES = {
+  sync:  { label: "playback control", short: "Playback", ask: "control playback",
+           modeTitle: "Who can play / pause / seek", on: "Can play / pause / seek",
+           everyone: "Everyone can now control playback", hostOnly: "Playback control is now host-only" },
+  queue: { label: "queue control", short: "Queue", ask: "manage the queue",
+           modeTitle: "Who can manage the queue", on: "Can manage the queue",
+           everyone: "Everyone can now manage the queue", hostOnly: "Queue management is now host & mods only" },
+};
+const FEATURE_SCOPES = {
+  entertainment: MEDIA_SCOPES,
+  music:         MEDIA_SCOPES,
+  study: {
+    sync:  { label: "timer control", short: "Timer", ask: "control the timer",
+             modeTitle: "Who can control the timer", on: "Can start / pause / skip the timer",
+             everyone: "Everyone can now control the timer", hostOnly: "Timer control is now host-only" },
+    queue: { label: "task & board management", short: "Tasks & boards", ask: "manage tasks and boards",
+             modeTitle: "Who can manage tasks and boards", on: "Can manage tasks and whiteboards",
+             everyone: "Everyone can now manage tasks and boards",
+             hostOnly: "Task and board management is now host & mods only" },
+  },
+};
+const scopeText = (room, scope) =>
+  (FEATURE_SCOPES[room && room.roomType] || MEDIA_SCOPES)[scope];
+const scopeLabels = (room) =>
+  Object.fromEntries(Object.keys(GRANT_SLOTS).map((scope) => [scope, scopeText(room, scope)]));
+/* ═══════════════════════════════════════════════════════════
+   MEMBERSHIP · BANS · VOICE MUTES
+   ═══════════════════════════════════════════════════════════ */
+/** create (or refresh) the persistent per-user permission record */
+function ensureMember(room, user) {
+  let m = getMember(room, user.id);
+  if (!m) {
+    const fresh = {
+      userId: user.id,
+      username: user.username,
+      role: isAdmin(room, user.id) ? "admin" : "member",
+      updatedAt: new Date(),
+    };
+    for (const slot of Object.values(GRANT_SLOTS)) { fresh[slot.flag] = false; fresh[slot.req] = "none"; }
+    room.members.push(fresh);
+    return getMember(room, user.id);
+  }
+  // keep the denormalised bits fresh
+  if (user.username && m.username !== user.username) m.username = user.username;
+  const shouldBeAdmin = isAdmin(room, user.id);
+  if (shouldBeAdmin && m.role !== "admin") m.role = "admin";
+  if (!shouldBeAdmin && m.role === "admin") m.role = "member";
+  return m;
+}
+const isBanned = (room, uid) =>
+  (room.bannedUsers || []).some((b) => sameId(b.userId, uid));
+const isVoiceMuted = (room, uid) =>
+  (room.voiceMutedUsers || []).some((m) => sameId(m.userId, uid));
+/* ═══════════════════════════════════════════════════════════
+   MESSAGE-LEVEL GUARDS (these depend on the message, not just the role)
+   ═══════════════════════════════════════════════════════════ */
+// delete: the author, OR any moderator / host — only while the message is alive
+const canDeleteMessage = (room, msg, uid) =>
+  !!msg && !msg.deleted && (sameId(msg.senderId, uid) || canModerate(room, uid));
+// report: anyone may report someone ELSE's live message
+const canReportMessage = (room, msg, uid) =>
+  !!msg && !msg.deleted && !sameId(msg.senderId, uid);
+/* ═══════════════════════════════════════════════════════════
+   ROOM DETAILS — validation shared by the socket editor and REST
+   ═══════════════════════════════════════════════════════════ */
 function sanitizeRoomPatch(room, raw = {}) {
   const patch = {}, errors = [];
   if (raw.roomName !== undefined) {
@@ -39,7 +174,7 @@ function sanitizeRoomPatch(room, raw = {}) {
   if (raw.maxParticipants !== undefined) {
     const n = Number(raw.maxParticipants);
     const here = room.participants.length;
-    const floor = Math.max(2, here);                 // ← the bug: never below who's already in
+    const floor = Math.max(2, here);                 // never below who's already in
     if (!Number.isInteger(n))  errors.push("Max participants must be a whole number");
     else if (n > ROOM_CAP)     errors.push(`Rooms can't hold more than ${ROOM_CAP} people`);
     else if (n < 2)            errors.push("Rooms need space for at least 2 people");
@@ -50,19 +185,73 @@ function sanitizeRoomPatch(room, raw = {}) {
   }
   return { patch, errors };
 }
-const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-/* ── moderation / room management ───────────────────────── */
-const canModerate = (room, uid) => isAdmin(room, uid) || isMod(room, uid); // mods + host
-
-/* ── chat moderation ───────────────────────────────────── */
-// edit: the author only, and only while the message is alive
-const canEditMessage = (room, msg, uid) =>
-  !!msg && !msg.deleted && sameId(msg.senderId, uid);
-// delete: the author, OR any moderator / host
-const canDeleteMessage = (room, msg, uid) =>
-  !!msg && !msg.deleted && (sameId(msg.senderId, uid) || canModerate(room, uid));
-// clear the whole room log: host only
-const canClearChat = isAdmin;
+/* ═══════════════════════════════════════════════════════════
+   5. resolvePerms — the permission payload for ONE user.
+   This object is the contract with the client (S.perms) and the
+   per-socket cache on the server (socket.data.perm). Every key is
+   always present and always a boolean / string / object.
+   ═══════════════════════════════════════════════════════════ */
+function resolvePerms(room, uid) {
+  const m         = getMember(room, uid) || {};
+  const admin     = isAdmin(room, uid);
+  const mod       = isMod(room, uid);
+  const moderator = admin || mod;
+  const settings  = room.settings || {};
+  const study     = canManageStudy(room, uid);
+  return {
+    /* who am I */
+    isAdmin: admin,
+    isMod:   mod,
+    role:    admin ? "admin" : (m.role || "member"),
+    /* room-level modes */
+    syncMode:  settings.syncMode  || "host",
+    queueMode: settings.queueMode || "host",
+    autoplay:  settings.autoplay !== false,
+    /* the two grant slots, room-type agnostic — drives the "Your access" rows
+       and request buttons; what they are CALLED comes from `labels` */
+    canSync:           hasGrant(room, uid, SLOT.CONTROL),
+    canQueue:          hasGrant(room, uid, SLOT.CONTENT),
+    requestState:      m.syncRequest  || "none",
+    queueRequestState: m.queueRequest || "none",
+    /* features — room-type aware (false when this room type has no such feature) */
+    canControlMedia: canControlMedia(room, uid),     // also the server's hot-path gate for video events
+    canManageQueue:  canManageQueue(room, uid),
+    canControlTimer: canControlTimer(room, uid),
+    canManageTasks:  study,
+    canManageBoards: study,
+    /* moderation */
+    canManage:     moderator,    // host + mods: people list, requests, reports
+    canEditRoom:   moderator,
+    canGrantSync:  moderator,
+    canGrantQueue: moderator,
+    canSetRoles:   admin,        // host only
+    canBan:        admin,        // host only: kick / remove / ban / unban
+    /* wording for the two slots in THIS room type */
+    labels: scopeLabels(room),
+  };
+}
+/* ═══════════════════════════════════════════════════════════
+   SERIALISERS
+   ═══════════════════════════════════════════════════════════ */
+/* privileged viewers also see each member's grants + request states */
+function serializeMembers(room, privileged) {
+  return (room.members || []).map((m) => {
+    const out = { userId: m.userId.toString(), username: m.username, role: m.role };
+    if (!privileged) return out;
+    for (const [scope, slot] of Object.entries(GRANT_SLOTS)) {
+      out[slot.flag] = hasGrant(room, m.userId, scope);     // canSync / canQueue
+      out[slot.req]  = m[slot.req] || "none";               // syncRequest / queueRequest
+    }
+    return out;
+  });
+}
+const serializeVoiceMutes = (room) =>
+  (room.voiceMutedUsers || []).map((m) => ({
+    userId: m.userId.toString(),
+    username: m.username,
+    by: m.mutedByName || "",
+    at: m.mutedAt,
+  }));
 /* one serializer so REST history and socket payloads never drift */
 function serializeMessage(m) {
   const out = {
@@ -80,163 +269,9 @@ function serializeMessage(m) {
     out.deletedByRole = m.deletedByRole || null;
   } else {
     out.text     = m.message;
-    out.mediaUrl = m.mediaUrl || null; // Pass the media link to the frontend 
+    out.mediaUrl = m.mediaUrl || null;
   }
   return out;
-}
-const canGrantSync = canModerate;  // grant/revoke playback, answer requests, set sync mode
-const isMod = (room, uid) => roleOf(room, uid) === "mod";
-function ensureMember(room, user) {
-  let m = getMember(room, user.id);
-  if (!m) {
-    room.members.push({
-      userId: user.id,
-      username: user.username,
-      role: isAdmin(room, user.id) ? "admin" : "member",
-      canSync: false,
-      syncRequest: "none",
-      updatedAt: new Date(),
-    });
-    m = getMember(room, user.id);
-  } else {
-    // keep the denormalised bits fresh
-    if (user.username && m.username !== user.username) m.username = user.username;
-    const shouldBeAdmin = isAdmin(room, user.id);
-    if (shouldBeAdmin && m.role !== "admin") m.role = "admin";
-    if (!shouldBeAdmin && m.role === "admin") m.role = "member";
-  }
-  return m;
-}
-/* ── grant slots ──────────────────────────────────────────
- * Two room-agnostic, per-member grants are persisted:
- *   "sync"  — live control of the room's shared activity
- *   "queue" — managing the room's shared content list
- * Storage keeps the legacy field names (canSync / canQueue / …Request / …Mode),
- * so no migration. What a slot MEANS is decided per room type (FEATURE_SCOPES).
- * Feature code never reads slot names — it uses the named predicates below. */
-const GRANT_SLOTS = {
-  sync:  { flag: "canSync",  req: "syncRequest",  mode: "syncMode"  },
-  queue: { flag: "canQueue", req: "queueRequest", mode: "queueMode" },
-};
-/* the one implementation: host/mod → implicit, mode "everyone" → open, else per-member flag */
-function hasGrant(room, uid, scope) {
-  const slot = GRANT_SLOTS[scope];
-  if (!slot) return false;
-  if (isAdmin(room, uid) || isMod(room, uid)) return true;          // implicit, never revocable
-  if (((room.settings && room.settings[slot.mode]) || "host") === "everyone") return true;
-  const m = getMember(room, uid);
-  return !!(m && m[slot.flag]);
-}
-const isStudyRoom = (room) => !!room && room.roomType === "study";
-/* raw slot checks — generic; used by resolvePerms/SCOPES, not by feature handlers */
-const canSync  = (room, uid) => hasGrant(room, uid, "sync");
-const canQueue = (room, uid) => hasGrant(room, uid, "queue");
-/* media rooms (entertainment / music) */
-const canControlPlayback = (room, uid) => !isStudyRoom(room) && hasGrant(room, uid, "sync");
-const canUseMediaQueue   = (room, uid) => !isStudyRoom(room) && hasGrant(room, uid, "queue");
-/* loading a video IS a queue action now — the URL bar is gone */
-const canChangeVideo = canUseMediaQueue;
-/* study rooms */
-const canControlTimer = (room, uid) => isStudyRoom(room) && hasGrant(room, uid, "sync");
-const canManageTasks  = (room, uid) => isStudyRoom(room) && hasGrant(room, uid, "queue");
-const canManageBoards = (room, uid) => isStudyRoom(room) && hasGrant(room, uid, "queue");
-const canGrantQueue = canModerate;     // host + mods, same as canGrantSync
-/* ── per-room-type wording for the two slots ── */
-const MEDIA_SCOPES = {
-  sync:  { label: "playback control", short: "Playback", ask: "control playback",
-           modeTitle: "Who can play / pause / seek", on: "Can play / pause / seek",
-           everyone: "Everyone can now control playback", hostOnly: "Playback control is now host-only" },
-  queue: { label: "queue control", short: "Queue", ask: "manage the queue",
-           modeTitle: "Who can manage the queue", on: "Can manage the queue",
-           everyone: "Everyone can now manage the queue", hostOnly: "Queue management is now host & mods only" },
-};
-const FEATURE_SCOPES = {
-  entertainment: MEDIA_SCOPES,
-  music:         MEDIA_SCOPES,
-  study: {
-    sync:  { label: "timer control", short: "Timer", ask: "control the timer",
-             modeTitle: "Who can control the timer", on: "Can start / pause / skip the timer",
-             everyone: "Everyone can now control the timer", hostOnly: "Timer control is now host-only" },
-    queue: { label: "task & board management", short: "Tasks & boards", ask: "manage tasks and boards",
-            modeTitle: "Who can manage tasks and boards", on: "Can manage tasks and whiteboards",
-            everyone: "Everyone can now manage tasks and boards",
-            hostOnly: "Task and board management is now host & mods only" },
-  },
-};
-const scopeText = (room, scope) =>
-  (FEATURE_SCOPES[room && room.roomType] || MEDIA_SCOPES)[scope];
-const scopeLabels = (room) => ({ sync: scopeText(room, "sync"), queue: scopeText(room, "queue") });
-/* scope table — lets one handler serve both permission kinds.
-   `label` is the media default, kept for old call sites: prefer scopeText(room, scope).label */
-const SCOPES = {
-  sync:  { grant: "canSync",  req: "syncRequest",  label: MEDIA_SCOPES.sync.label,
-           can: canSync,  mode: "syncMode",  grantedBy: canGrantSync },
-  queue: { grant: "canQueue", req: "queueRequest", label: MEDIA_SCOPES.queue.label,
-           can: canQueue, mode: "queueMode", grantedBy: canGrantQueue },
-};
-const isScope = (s) => Object.prototype.hasOwnProperty.call(SCOPES, s);
-const canEditRoom = canModerate;   // edit name/desc/mode/tags/visibility/cap
-const isBanned = (room, uid) =>
-  (room.bannedUsers || []).some((b) => sameId(b.userId, uid));
-/* ── reports ───────────────────────────────────────────── */
-// anyone may report someone else's live message
-const canReportMessage = (room, msg, uid) =>
-  !!msg && !msg.deleted && !sameId(msg.senderId, uid);
-// who receives / reviews / dismisses reports
-const canReviewReports = canModerate;
-const isVoiceMuted = (room, uid) =>
-  (room.voiceMutedUsers || []).some((m) => sameId(m.userId, uid));
-const serializeVoiceMutes = (room) =>
-  (room.voiceMutedUsers || []).map((m) => ({
-    userId: m.userId.toString(),
-    username: m.username,
-    by: m.mutedByName || "",
-    at: m.mutedAt,
-  }));
-function resolvePerms(room, uid) {
-  const m     = getMember(room, uid) || {};
-  const admin = isAdmin(room, uid);
-  const mod   = isMod(room, uid);
-  const st    = room.settings || {};
-  return {
-    isAdmin: admin,
-    isMod:   mod,
-    role:    admin ? "admin" : (m.role || "member"),
-    syncMode:  st.syncMode  || "host",
-    queueMode: st.queueMode || "host",
-    autoplay:  st.autoplay !== false,
-    canSync:        canSync(room, uid),
-    canQueue:       canQueue(room, uid),
-    canControlPlayback: canControlPlayback(room, uid),
-    canUseMediaQueue:   canUseMediaQueue(room, uid),
-    canChangeVideo: canQueue(room, uid),      // kept for backwards compat on the client
-    canEditRoom:   canEditRoom(room, uid),
-    canManage:     canModerate(room, uid),
-    canGrantSync:  canGrantSync(room, uid),
-    canGrantQueue: canGrantQueue(room, uid),
-    canSetRoles:   canSetRoles(room, uid),
-    canBan:        canBan(room, uid),
-    canControlPlayback: canControlPlayback(room, uid),
-    canUseMediaQueue:   canUseMediaQueue(room, uid),
-    canControlTimer: canControlTimer(room, uid),
-    canManageTasks:  canManageTasks(room, uid),
-    canManageBoards: canManageBoards(room, uid),
-    labels:          scopeLabels(room),
-    requestState:      m.syncRequest  || "none",
-    queueRequestState: m.queueRequest || "none",
-  };
-}
-/* privileged viewers see canSync/syncRequest, everyone else just roles */
-function serializeMembers(room, privileged) {
-  return (room.members || []).map((m) => {
-    const base = { userId: m.userId.toString(), username: m.username, role: m.role };
-    if (!privileged) return base;
-    return { 
-      ...base, 
-      canSync: canSync(room, m.userId), syncRequest: m.syncRequest || "none",
-      canQueue: canQueue(room, m.userId), queueRequest: m.queueRequest || "none",
-    };
-  });
 }
 function serializeReport(r) {
   const reporters = (r.reporters || []).map((x) => ({
@@ -256,11 +291,19 @@ function serializeReport(r) {
   };
 }
 module.exports = {
-  ROOM_CAP, MODE_VALUES, validId,
-  sameId, isAdmin, isMod, roleOf, getMember, ensureMember, isBanned, isVoiceMuted, serializeVoiceMutes, serializeReport,
-  canSync, canChangeVideo, canModerate, canEditRoom, canGrantSync, canSetRoles, canBan, canReportMessage, canReviewReports, 
-  canEditMessage, canDeleteMessage, canClearChat, serializeMessage,
-  resolvePerms, serializeMembers, sanitizeRoomPatch, sameValue, canQueue, canGrantQueue, SCOPES, isScope,
-  hasGrant, isStudyRoom, canControlPlayback, canUseMediaQueue,
-  canControlTimer, canManageTasks, canManageBoards, scopeText, FEATURE_SCOPES,
+  ROOM_CAP, sameId, validId, sameValue,
+  /* 1. hierarchy */
+  isAdmin, isMod, roleOf, canModerate, getMember, ensureMember,
+  isStudyRoom, isMediaRoom,
+  /* 2. grant slots */
+  GRANT_SLOTS, SLOT, getGrantSlot, hasGrant,
+  /* 3. feature guards */
+  canControlMedia, canManageQueue, canControlTimer, canManageStudy,
+  /* 4. wording */
+  FEATURE_SCOPES, scopeText,
+  /* bans, mutes, messages */
+  isBanned, isVoiceMuted, canDeleteMessage, canReportMessage,
+  /* payloads */
+  resolvePerms, serializeMembers, serializeMessage, serializeReport, serializeVoiceMutes,
+  sanitizeRoomPatch,
 };

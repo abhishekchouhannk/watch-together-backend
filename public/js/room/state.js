@@ -33,7 +33,7 @@ export const S = {
   room: null, userId: null, username: "You", themeMode: "auto", detailsOpen: null,
   perms: { isAdmin:false, isMod:false, role:"member",
            syncMode:"host", queueMode:"host", autoplay:true,
-           canSync:false, canQueue:false, canChangeVideo:false,
+           canSync:false, canQueue:false,
            canEditRoom:false, canManage:false, canGrantSync:false, canGrantQueue:false,
            canControlTimer:false, canManageTasks:false, canManageBoards:false, labels:null,
            requestState:"none", queueRequestState:"none" },
