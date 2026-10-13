@@ -370,6 +370,10 @@ export function initGames(socket) {
 
   socket.on("room-state", ({ room, perms } = {}) => {          // first join and every re-join
     if (!room || room.roomType !== "gaming") return;
+
+    
+    document.getElementById("roomPage").dataset.roomType = "gaming";
+
     if (perms) G.perms = perms;
     G.present = room.participants || [];
     if (!G.me) socket.emit("game-sync");                        // learn who "you" is
