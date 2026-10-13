@@ -599,6 +599,22 @@
               </div>
             </div>
           </div>
+          <!-- ===== GAME LAYOUT (shown only when roomType === "gaming") ===== -->
+          <div class="game-layout" id="gameLayout" data-manage="0">
+            <div class="gm-grid">
+              <section class="gm-stage" aria-label="Game">
+                <header class="gm-head">
+                  <div class="gm-title" id="gmTitle"></div>
+                  <div class="gm-status" id="gmStatus" role="status" aria-live="polite" data-tone="idle">Loading game…</div>
+                </header>
+                <div class="gm-seats" id="gmSeats"></div>
+                <div class="gm-boardwrap" id="gmBoard"></div>
+                <div class="gm-actions" id="gmActions"></div>
+              </section>
+              <!-- game managers only (SLOT.CONTROL) -->
+              <aside class="gm-manage" id="gmManage" aria-label="Game setup" hidden></aside>
+            </div>
+          </div>
         </div>
         <!-- SIDE PANEL (Chat + Queue + Voice) -->
         <div class="chat-section" id="chatSection">
@@ -618,6 +634,9 @@
             </button>
             <button class="sp-tab" id="tabBoards" data-tab="boards" role="tab" aria-selected="false">
               <span>Boards</span><span class="sp-badge" id="boardCount" data-zero="1">0</span>
+            </button>
+            <button class="sp-tab" id="tabPlayers" data-tab="players" role="tab" aria-selected="false">
+              <span>Players</span><span class="sp-badge" id="playerCount" data-zero="1">0</span>
             </button>
             <!-- <span class="sp-online" id="chatOnline"></span> -->
           </div>
@@ -768,6 +787,14 @@
               </div>
               <div class="bp-list" id="bpList"></div>
             </div>
+            <!-- ── PLAYERS (gaming rooms) ── -->
+            <section class="sp-pane" id="panePlayers" role="tabpanel" aria-labelledby="tabPlayers">
+              <div class="q-head">
+                <span class="q-head-title">Players</span>
+                <span class="gp-state" id="gpState"></span>
+              </div>
+              <div class="gp-body" id="gpBody"></div>
+            </section>
             <!-- ── VOICE ── -->
             <section class="sp-pane" id="paneVoice" role="tabpanel" aria-labelledby="tabVoice" data-state="off">
               <div class="q-head">

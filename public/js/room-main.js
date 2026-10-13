@@ -55,6 +55,7 @@ import { initProfileUI } from "./shared/profile-settings.js";
 import "./room/identity-socket.js";
 import "./room/room-lifecycle.js";
 import { startIconEngine } from "./shared/icon-engine.js";
+import { initGames } from "./room/games.js";
 
 /* Icons first. Excluded = live reactions + user-authored / external text. */
 startIconEngine({
@@ -77,7 +78,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   initTheme();
   wireEvents();
   await fetchMe();
-  connectSocket();
+  const socket = connectSocket();
+  initGames(socket);
 });
 initProfileUI({
   chipHost: document.getElementById("meChipHost"),

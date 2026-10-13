@@ -12,6 +12,7 @@
 //        presence · permissions · moderation · room details · chat ·
 //        reports · playback · queue · study timer · study tasks ·
 //        study whiteboard · reactions
+//        games 
 //   7. room-deleted cleanup + the exported registrar
 //
 // Conventions
@@ -32,13 +33,14 @@ const Report     = require("../models/Report");
 const Whiteboard = require("../models/Whiteboard");
 const {
   ROOM_CAP, validId, sameId, sameValue,
-  isAdmin, isMod, canModerate, getMember, ensureMember, isStudyRoom,
-  GRANT_SLOTS, getGrantSlot, hasGrant, scopeText,
-  canManageQueue, canControlTimer, canManageStudy,
+  isAdmin, isMod, canModerate, getMember, ensureMember, isStudyRoom, isGamingRoom,
+  GRANT_SLOTS, SLOT, getGrantSlot, hasGrant, scopeText,
+  canManageQueue, canControlTimer, canManageStudy, canManageGame, canPlayGames,
   isBanned, isVoiceMuted, canDeleteMessage, canReportMessage,
   resolvePerms, serializeMembers, serializeReport, serializeVoiceMutes,
   sanitizeRoomPatch,
 } = require("../utils/roomConfigAndPermissions");
+const { GAME_STATUS, getGame, isGameId, publicGames } = require("../utils/games");
 const { enforceVoiceMute } = require("../utils/voiceRoom");
 const { logRoomEvent, announce, logJoin, logLeave } = require("../utils/roomEvents");
 const { onRoomDeleted } = require("../services/roomRuntime");
@@ -81,6 +83,9 @@ const HTML_TAGS = new Set(["b", "strong", "i", "em", "u", "br", "div", "p", "spa
 const COLOR_OK  = /^(#[0-9a-f]{3,8}|[a-z]{3,20}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))$/i;
 const WORKSPACE_TTL = 2 * 3600 * 1000;      // forget workspaces untouched for 2h
 const workspaces = new Map();               // roomId → { enabled, boards:Map, order:[], saved:[], n, touched }
+/* games */
+const GAME_EVENT_KIND = "game";             // sys-log `kind` — see the checklist about models/RoomEvent.js
+const gameChains = new Map();               // roomId → tail of that room's game-action chain
 /* reactions */
 const ALLOWED_REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👏", "💀"];
 const REACT_LIMIT = 8, REACT_WINDOW = 4000;
@@ -111,6 +116,10 @@ const POLICY = Object.freeze({
   STUDY_BOARDS: policy(canManageStudy,  "Only the host, mods or people with board access can do that"),
   STUDY_HOST:   policy(isStudyHost,     "Only the host can do that"),
   STUDY_ROOM:   policy(isStudyRoom,     "Tasks are only available in study rooms"),
+  /* gaming rooms */
+  GAME_MANAGE:  policy(canManageGame,   "Only the host, mods or people with game management can do that"),
+  GAME_PLAY:    policy(canPlayGames,    "You're spectating — you need player access to sit at the board"),
+  GAME_ROOM:    policy(isGamingRoom,    "Games are only available in gaming rooms"),
 });
 /* Playback (play / pause / seek) is the one hot path that does NOT use a policy:
    it is authorised from the cached perms (socket.data.perm.canControlMedia) so a
@@ -228,6 +237,7 @@ function serializeRoom(room) {
     pomodoro: serializePomodoro(room),
     whiteboard: { enabled: !(room.whiteboard && room.whiteboard.enabled === false) },
     tasks: serializeTasks(room),
+    game: isGamingRoom(room) ? serializeGame(room) : null,
     participants: room.participants.map((p) => ({ userId: p.userId, username: p.username })),
   };
 }
@@ -346,6 +356,7 @@ function permPayload(room, uid) {
       userId: b.userId.toString(), username: b.username,
       reason: b.reason || "", by: b.bannedByName || "", bannedAt: b.bannedAt,
     })) : [],
+    gameEligible: perms.canManageGame ? gameEligibleIds(room) : [],
   };
 }
 /* push fresh perms to every socket in the room + refresh their cache */
@@ -358,6 +369,8 @@ async function broadcastPermissions(io, roomId, room) {
     s.data.perm = payload.perms;                      // cache → no DB read per video event
     s.emit("room-permissions", payload);
   }
+  /* every permission / membership change funnels through here → seats may now be stale */
+  await reconcileGame(io, roomId, room).catch((err) => console.error("game reconcile:", err));
 }
 function registerPermissions({ io, socket, user, on, toast, guarded }) {
   /* "who can …" per slot: host-only ⇄ everyone. One handler serves both slots. */
@@ -1827,11 +1840,282 @@ function registerReactions({ socket, user, on, rateLimited }) {
   });
 }
 /* ═══════════════════════════════════════════════════════════
+   6m. GAMES — lobby, seats, rounds (gaming rooms)
+   State lives on room.game and every change is broadcast as one
+   full "game-state" snapshot; clients never derive state themselves.
+
+   Two rules keep it consistent:
+   · every mutation runs through gameExclusive(): one at a time per room,
+     with the room loaded INSIDE the lock, so two actions can't both act
+     on the same stale document.
+   · game.* is only ever written as whole values (players array, state
+     object, scalars) — no positional array $sets, so a concurrent
+     join/leave bumping __v can't make a move fail with a VersionError.
+   ═══════════════════════════════════════════════════════════ */
+function gameExclusive(roomId, task) {
+  const prev = gameChains.get(roomId) || Promise.resolve();
+  const run  = prev.then(task);
+  const tail = run.catch(() => {});                 // a failed task never breaks the chain
+  gameChains.set(roomId, tail);
+  tail.then(() => { if (gameChains.get(roomId) === tail) gameChains.delete(roomId); });
+  return run;
+}
+/* plain, seat-ordered copies (works on hydrated and lean rooms) */
+function gamePlayers(room) {
+  const g = room.game || {};
+  return (g.players || [])
+    .map((p) => ({ seat: p.seat, userId: p.userId, username: p.username || "", wins: p.wins || 0 }))
+    .sort((a, b) => a.seat - b.seat);
+}
+function gameSeatOf(room, uid) {
+  const p = gamePlayers(room).find((x) => sameId(x.userId, uid));
+  return p ? p.seat : -1;
+}
+/* may this user hold a seat at all? (membership + not banned + the player slot) */
+const mayHoldSeat = (room, uid) => !!getMember(room, uid) && !isBanned(room, uid) && canPlayGames(room, uid);
+const gameEligibleIds = (room) =>
+  (room.members || []).filter((m) => mayHoldSeat(room, m.userId)).map((m) => m.userId.toString());
+
+function serializeGame(room) {
+  const g = room.game || {};
+  const engine  = getGame(g.kind);
+  const players = gamePlayers(room);
+  const status  = GAME_STATUS.includes(g.status) ? g.status : "lobby";
+  return {
+    kind: engine.id, label: engine.label, icon: engine.icon,
+    status,
+    seats: engine.seats.map((s, i) => {
+      const p = players.find((x) => x.seat === i);
+      return { seat: i, label: s.label,
+               player: p ? { userId: p.userId.toString(), username: p.username, wins: p.wins } : null };
+    }),
+    state:  status === "lobby" ? null : engine.publicState(g.state),
+    turn:   status === "playing" ? (g.turn || 0) : null,
+    result: status === "finished" ? (g.result || null) : null,
+    round:  g.round || 0,
+    draws:  g.draws || 0,
+    rev:    g.rev || 0,
+    catalog: publicGames(),
+  };
+}
+function gameToLobby(room) {
+  const g = room.game;
+  g.status = "lobby"; g.state = null; g.result = null; g.turn = 0;
+}
+/* a new set of players is a new matchup: back to the lobby, scoreboard wiped */
+function applySeats(room, players) {
+  room.game.players = players.map((p) => ({ ...p, wins: 0 }));
+  room.game.round = 0; room.game.draws = 0;
+  gameToLobby(room);
+}
+function finishRound(room, result) {
+  const g = room.game;
+  g.status = "finished";
+  g.result = result;
+  if (result.outcome === "draw") g.draws = (g.draws || 0) + 1;
+  if (Number.isInteger(result.winner)) {
+    g.players = gamePlayers(room).map((p) => (p.seat === result.winner ? { ...p, wins: p.wins + 1 } : p));
+  }
+}
+async function commitGame(io, roomId, room) {
+  room.game.rev = (room.game.rev || 0) + 1;
+  room.game.updatedAt = new Date();
+  await room.save();
+  io.to(roomId).emit("game-state", { game: serializeGame(room) });
+}
+/* someone lost the right to hold a seat (grant revoked, mode → host-only, removed, banned) */
+async function reconcileGame(io, roomId, room) {
+  if (!isGamingRoom(room)) return;
+  if (!gamePlayers(room).some((p) => !mayHoldSeat(room, p.userId))) return;   // fast path: no DB read
+  await gameExclusive(roomId, async () => {
+    const fresh = await Room.findOne({ roomId });
+    if (!fresh) return;
+    const players = gamePlayers(fresh);
+    const keep = players.filter((p) => mayHoldSeat(fresh, p.userId));
+    if (keep.length === players.length) return;
+    const interrupted = fresh.game.status === "playing";
+    const names = players.filter((p) => !keep.includes(p)).map((p) => p.username || "A player").join(" and ");
+    applySeats(fresh, keep);
+    await commitGame(io, roomId, fresh);
+    announce(io, roomId, {
+      kind: GAME_EVENT_KIND, action: "game.unseat", actor: null,
+      text: interrupted ? "The game was stopped — {detail} can no longer play"
+                        : "{detail} no longer has a seat at the board",
+      detail: names,
+    });
+  });
+}
+function registerGames({ io, socket, user, on, toast, guarded, rateLimited }) {
+  /* every mutation: rate-limit → this room's game chain → guarded(policy) */
+  const gameAction = (rule, fn) => {
+    const run = guarded(rule, fn);
+    return (...args) => {
+      const roomId = socket.data.roomId;
+      if (!roomId || rateLimited("gameRL", 30, 10000)) return;
+      return gameExclusive(roomId, () => (socket.data.roomId === roomId ? run(...args) : null));
+    };
+  };
+  const say = (roomId, action, text, detail) =>
+    announce(io, roomId, { kind: GAME_EVENT_KIND, action, actor: user, text, detail });
+  const seatIndex = (room, seat) =>
+    (Number.isInteger(seat) && seat >= 0 && seat < getGame(room.game.kind).seats.length ? seat : -1);
+  const isMine = (p) => sameId(p.userId, user.id);
+
+  /* bootstrap for one client: the game + everything games.js needs to render it */
+  on("game-sync", async () => {
+    const roomId = socket.data.roomId;
+    if (!roomId || rateLimited("gameSyncRL", 10, 10000)) return;
+    const room = await Room.findOne({ roomId }).lean();
+    if (!room || !isGamingRoom(room)) return;               // silently ignored elsewhere
+    const perms = resolvePerms(room, user.id);
+    socket.emit("game-state", {
+      game: serializeGame(room),
+      you: String(user.id),
+      perms,
+      participants: presencePayload(room).participants,
+      gameEligible: perms.canManageGame ? gameEligibleIds(room) : [],
+    });
+  });
+
+  /* ── management (SLOT.CONTROL) ── */
+  on("game-select", gameAction(POLICY.GAME_MANAGE, async (room, roomId, { kind } = {}) => {
+    if (!isGameId(kind)) return toast("That game isn't available");
+    if (room.game.status === "playing") return toast("End the current game first");
+    if (room.game.kind === kind) return;
+    const engine = getGame(kind);
+    room.game.kind = kind;
+    applySeats(room, gamePlayers(room).filter((p) => p.seat < engine.seats.length));
+    await commitGame(io, roomId, room);
+    say(roomId, "game.select", "{actor} set the game to {detail}", engine.label);
+  }));
+
+  /* { seat, userId } — userId null clears the seat; seating someone who already
+     sits elsewhere swaps the two seats */
+  on("game-assign", gameAction(POLICY.GAME_MANAGE, async (room, roomId, { seat, userId } = {}) => {
+    const s = seatIndex(room, seat);
+    if (s < 0) return;
+    if (room.game.status === "playing") return toast("End the game before changing who's playing");
+    let players = gamePlayers(room);
+    const current = players.find((p) => p.seat === s);
+    if (userId == null) {
+      if (!current) return;
+      players = players.filter((p) => p.seat !== s);
+    } else {
+      if (!validId(userId)) return;
+      if (current && sameId(current.userId, userId)) return;
+      const target = room.participants.find((p) => sameId(p.userId, userId));
+      if (!target) return toast("They're not in the room right now");
+      if (!mayHoldSeat(room, userId)) {
+        return toast(`${target.username} doesn't have ${scopeText(room, SLOT.CONTENT).label} yet`);
+      }
+      const from = players.find((p) => sameId(p.userId, userId));
+      players = players.filter((p) => p.seat !== s && !sameId(p.userId, userId));
+      if (from && current) players.push({ ...current, seat: from.seat });
+      players.push({ seat: s, userId: target.userId, username: target.username, wins: 0 });
+    }
+    applySeats(room, players);
+    await commitGame(io, roomId, room);
+  }));
+
+  on("game-start", gameAction(POLICY.GAME_MANAGE, async (room, roomId) => {
+    const g = room.game;
+    if (g.status === "playing") return;
+    const engine  = getGame(g.kind);
+    const players = gamePlayers(room);
+    if (players.length < engine.seats.length) return toast(`Choose ${engine.seats.length} players first`);
+    const away = players.find((p) => !room.participants.some((x) => sameId(x.userId, p.userId)));
+    if (away) return toast(`${away.username} isn't in the room right now`);
+    const round = (g.round || 0) + 1;
+    g.round  = round;
+    g.status = "playing";
+    g.state  = engine.create();
+    g.result = null;
+    g.turn   = (round - 1) % engine.seats.length;          // the opening move rotates every round
+    await commitGame(io, roomId, room);
+    say(roomId, "game.start",
+      round === 1 ? "{actor} started a game of {detail}" : `{actor} started round ${round} of {detail}`,
+      engine.label);
+  }));
+
+  /* back to the lobby with a clean scoreboard; seats are kept */
+  on("game-reset", gameAction(POLICY.GAME_MANAGE, async (room, roomId) => {
+    const g = room.game;
+    if (g.status === "lobby" && !g.round && !g.draws) return;
+    const wasPlaying = g.status === "playing";
+    applySeats(room, gamePlayers(room));
+    await commitGame(io, roomId, room);
+    say(roomId, "game.reset", wasPlaying ? "{actor} ended the game" : "{actor} reset the game");
+  }));
+
+  /* ── playing (SLOT.CONTENT) ── */
+  on("game-sit", gameAction(POLICY.GAME_PLAY, async (room, roomId, { seat } = {}) => {
+    const s = seatIndex(room, seat);
+    if (s < 0) return;
+    if (room.game.status === "playing") return toast("A game is in progress");
+    const players = gamePlayers(room);
+    if (players.some((p) => p.seat === s)) return toast("That seat is already taken");
+    applySeats(room, [
+      ...players.filter((p) => !isMine(p)),                 // moving seats is fine
+      { seat: s, userId: user.id, username: user.username, wins: 0 },
+    ]);
+    await commitGame(io, roomId, room);
+  }));
+
+  on("game-stand", gameAction(POLICY.GAME_ROOM, async (room, roomId) => {
+    const players = gamePlayers(room);
+    if (!players.some(isMine)) return;
+    if (room.game.status === "playing") return toast("Resign first — you can't leave your seat mid-game");
+    applySeats(room, players.filter((p) => !isMine(p)));
+    await commitGame(io, roomId, room);
+  }));
+
+  /* { rev, ...move } — rev is the snapshot the click was made on */
+  on("game-move", gameAction(POLICY.GAME_PLAY, async (room, roomId, { rev, ...move } = {}) => {
+    const g = room.game;
+    if (g.status !== "playing" || rev !== (g.rev || 0)) {
+      return socket.emit("game-state", { game: serializeGame(room) });   // stale click → resync, no toast
+    }
+    const seat = gameSeatOf(room, user.id);
+    if (seat < 0) return toast("You're spectating this game");
+    if (seat !== g.turn) return toast("It's not your turn");
+    const engine = getGame(g.kind);
+    const out = engine.play(g.state, seat, move);
+    if (out.error) return toast(out.error);
+    g.state = out.state;
+    if (out.result) finishRound(room, out.result);
+    else g.turn = out.turn;
+    await commitGame(io, roomId, room);
+    if (!out.result) return;
+    if (out.result.outcome === "draw") {
+      return announce(io, roomId, { kind: GAME_EVENT_KIND, action: "game.draw", actor: null,
+        text: `Round ${g.round} of {detail} ended in a draw`, detail: engine.label });
+    }
+    const w = gamePlayers(room).find((p) => p.seat === out.result.winner);
+    if (w) {
+      announce(io, roomId, { kind: GAME_EVENT_KIND, action: "game.win",
+        actor: { id: w.userId.toString(), username: w.username },
+        text: `{actor} won round ${g.round} of {detail}`, detail: engine.label });
+    }
+  }));
+
+  /* a seated player concedes the round (works even if no manager is around) */
+  on("game-resign", gameAction(POLICY.GAME_ROOM, async (room, roomId) => {
+    const g = room.game;
+    const seat = gameSeatOf(room, user.id);
+    if (g.status !== "playing" || seat < 0) return;
+    const others = gamePlayers(room).filter((p) => p.seat !== seat);
+    finishRound(room, { outcome: "forfeit", by: seat, winner: others.length === 1 ? others[0].seat : null });
+    await commitGame(io, roomId, room);
+    say(roomId, "game.forfeit", `{actor} resigned round ${g.round} of {detail}`, getGame(g.kind).label);
+  }));
+}
+/* ═══════════════════════════════════════════════════════════
    7. ROOM-DELETED CLEANUP + EXPORT
    ═══════════════════════════════════════════════════════════ */
 /* a room was deleted (dashboard or anywhere else) → drop everything held in memory for it */
 onRoomDeleted((roomId) => {
   workspaces.delete(roomId);
+  gameChains.delete(roomId);
   clearPomoTimer(roomId);
   clearSeekBarrier(roomId);
   roomSeekSeqs.delete(roomId);
@@ -1854,5 +2138,6 @@ module.exports = function registerRoomHandlers(io, socket) {
   registerStudyTimer(ctx);
   registerStudyTasks(ctx);
   registerStudyWhiteboard(ctx);
+  registerGames(ctx);
   registerReactions(ctx);
 };

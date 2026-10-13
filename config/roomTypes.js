@@ -9,6 +9,7 @@ const ROOM_TYPE_META = {
   entertainment: { label: "Entertainment", icon: "🎬" },
   music:         { label: "Music",         icon: "🎵" },
   study:         { label: "Study",         icon: "📚" },
+  gaming:        { label: "Games",         icon: "🎮" },
 };
 const DEFAULT_ROOM_TYPE = "entertainment";
 const ROOM_TYPE_IDS = Object.keys(ROOM_TYPE_META);

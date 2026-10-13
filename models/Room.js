@@ -1,6 +1,7 @@
 // models/Room.js
 const mongoose = require("mongoose");
 const { ROOM_TYPE_IDS, DEFAULT_ROOM_TYPE } = require("../config/roomTypes");
+const { GAME_IDS, DEFAULT_GAME, GAME_STATUS } = require("../utils/games");
 const ROOM_TYPES = ROOM_TYPE_IDS;                 // ← was ["entertainment", "music", "study"]
 const ROOM_CAP = 10;                              // hard ceiling, app-wide
 const POMO_PHASES = ["focus", "short_break", "long_break"];
@@ -74,6 +75,13 @@ const TaskSchema = new mongoose.Schema({
   addedByName: { type: String },
   addedAt:     { type: Date, default: Date.now },
 }, { _id: false });
+/* gaming rooms — who sits where. Always written as a whole array (see roomHandlers 6m) */
+const GamePlayerSchema = new mongoose.Schema({
+  seat:     { type: Number, required: true, min: 0 },     // tic-tac-toe: 0 = X, 1 = O
+  userId:   { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  username: { type: String },
+  wins:     { type: Number, default: 0 },                 // rounds won in the current matchup
+}, { _id: false });
 const RoomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true },
   roomName: { type: String, required: true, trim: true, minlength: 3, maxlength: 60 },
@@ -133,6 +141,19 @@ const RoomSchema = new mongoose.Schema({
   },
   whiteboard: {                                    // study rooms only; strokes are NOT stored here
     enabled: { type: Boolean, default: true },
+  },
+  // gaming rooms only. Generic shell + engine-specific `state` (see utils/games.js)
+  game: {
+    kind:      { type: String, enum: GAME_IDS, default: DEFAULT_GAME },
+    status:    { type: String, enum: [...GAME_STATUS], default: "lobby" },
+    players:   [GamePlayerSchema],
+    state:     { type: mongoose.Schema.Types.Mixed, default: null },   // e.g. { board: [...] }
+    result:    { type: mongoose.Schema.Types.Mixed, default: null },   // { outcome, winner, line, by }
+    turn:      { type: Number, default: 0 },                           // seat index to move
+    round:     { type: Number, default: 0 },
+    draws:     { type: Number, default: 0 },
+    rev:       { type: Number, default: 0 },                           // bumps on every change, never resets
+    updatedAt: { type: Date },
   },
   participants: [
     {

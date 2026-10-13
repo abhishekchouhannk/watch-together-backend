@@ -44,8 +44,9 @@ function roleOf(room, uid) {
 const isMod       = (room, uid) => roleOf(room, uid) === "mod";
 const canModerate = (room, uid) => isAdmin(room, uid) || isMod(room, uid);   // host + mods
 /* room families */
-const isStudyRoom = (room) => !!room && room.roomType === "study";
-const isMediaRoom = (room) => !!room && room.roomType !== "study";           // entertainment, music
+const isStudyRoom  = (room) => !!room && room.roomType === "study";
+const isGamingRoom = (room) => !!room && room.roomType === "gaming";
+const isMediaRoom  = (room) => !!room && !isStudyRoom(room) && !isGamingRoom(room);   // entertainment, music
 /* ═══════════════════════════════════════════════════════════
    2. GRANT SLOTS
    Two room-agnostic, per-member grants are persisted. Storage keeps the
@@ -82,6 +83,8 @@ const canControlMedia = featureGuard(isMediaRoom, SLOT.CONTROL);   // play / pau
 const canManageQueue  = featureGuard(isMediaRoom, SLOT.CONTENT);   // add / remove / reorder / play item
 const canControlTimer = featureGuard(isStudyRoom, SLOT.CONTROL);   // pomodoro start / pause / reset / skip
 const canManageStudy  = featureGuard(isStudyRoom, SLOT.CONTENT);   // tasks + whiteboards
+const canManageGame   = featureGuard(isGamingRoom, SLOT.CONTROL);  // pick game / seat players / start / reset
+const canPlayGames    = featureGuard(isGamingRoom, SLOT.CONTENT);  // hold a seat + make moves
 /* ═══════════════════════════════════════════════════════════
    4. WORDING — what each slot is called per room type
    ═══════════════════════════════════════════════════════════ */
@@ -104,6 +107,16 @@ const FEATURE_SCOPES = {
              modeTitle: "Who can manage tasks and boards", on: "Can manage tasks and whiteboards",
              everyone: "Everyone can now manage tasks and boards",
              hostOnly: "Task and board management is now host & mods only" },
+  },
+  gaming: {
+    sync:  { label: "game management", short: "Game", ask: "manage the game",
+             modeTitle: "Who can pick the game, seat players and start / reset",
+             on: "Can set up, start and reset games",
+             everyone: "Everyone can now manage the game", hostOnly: "Game management is now host-only" },
+    queue: { label: "player access", short: "Players", ask: "play games",
+             modeTitle: "Who can sit at the board and play", on: "Can take a seat and make moves",
+             everyone: "Everyone can now take a seat and play",
+             hostOnly: "Playing is now limited to the host, mods and approved players" },
   },
 };
 const scopeText = (room, scope) =>
@@ -219,6 +232,8 @@ function resolvePerms(room, uid) {
     canControlTimer: canControlTimer(room, uid),
     canManageTasks:  study,
     canManageBoards: study,
+    canManageGame:   canManageGame(room, uid),
+    canPlayGames:    canPlayGames(room, uid),
     /* moderation */
     canManage:     moderator,    // host + mods: people list, requests, reports
     canEditRoom:   moderator,
@@ -294,11 +309,11 @@ module.exports = {
   ROOM_CAP, sameId, validId, sameValue,
   /* 1. hierarchy */
   isAdmin, isMod, roleOf, canModerate, getMember, ensureMember,
-  isStudyRoom, isMediaRoom,
+  isStudyRoom, isMediaRoom, isGamingRoom,
   /* 2. grant slots */
   GRANT_SLOTS, SLOT, getGrantSlot, hasGrant,
   /* 3. feature guards */
-  canControlMedia, canManageQueue, canControlTimer, canManageStudy,
+  canControlMedia, canManageQueue, canControlTimer, canManageStudy, canManageGame, canPlayGames,
   /* 4. wording */
   FEATURE_SCOPES, scopeText,
   /* bans, mutes, messages */
