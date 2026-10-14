@@ -82,4 +82,5 @@ export const ROOM_TYPES = {
   entertainment: { label: "Entertainment", icon: "🎬" },
   music:         { label: "Music",         icon: "🎵" },
   study:         { label: "Study",         icon: "📚" },
+  gaming:        { label: "Gaming",        icon: "🎮" }
 };

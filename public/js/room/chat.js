@@ -874,7 +874,7 @@ export function wireChatInput() {
 /* ── side-panel unread ── — the late block of wireEvents() */
 export function wireChatUnread() {
   dom.chatJump.onclick = () => Unread.jump();
-  /* the click fires before/after Q.switchTab depending on order — defer a frame so the
+  /* the click fires before/after switchTab (from side-tabs.js) depending on order — defer a frame so the
      pane's .active class is already settled */
   dom.tabChat.addEventListener("click", () =>
     requestAnimationFrame(() => { Unread.onChatShown(); SYS.sweep(); onSysPaneShown(); }));

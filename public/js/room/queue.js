@@ -1,6 +1,6 @@
 /* public/js/queue.js
  * ─────────────────────────────────────────────────────────────
- * QUEUE — playlist + auto-advance + up-next card + side-panel tabs.
+ * QUEUE — playlist + auto-advance + up-next card.
  *
  * Local-first UI over a server-authoritative list: every mutation is an emit
  * ('queue-add' / 'queue-remove' / 'queue-move' / 'queue-clear' / 'queue-play'
@@ -19,7 +19,6 @@
  *    tick(t, d)       called 4×/s by the player's UI ticker → up-next card
  *    resetUpNext()    hide the card and forget a user cancel
  *    next()/prev()/hasNext()/hasPrev()/canManage()
- *    switchTab(which) 'chat' | 'queue' — also pings Unread.onChatShown()
  *
  *  Shared state: creates S.queue = { items, index } ONCE and keeps a private
  *    alias `st` to it; applyRemote mutates st.items / st.index IN PLACE, so the
@@ -37,12 +36,12 @@
 "use strict";
 import { UPNEXT_AT } from "./config.js";
 import { S } from "./state.js";
-import { $, dom } from "./dom.js";
+import { $ } from "./dom.js";
 import { toast, esc, fmtTime, fmtBadge } from "./utils.js";
 import { emit as sockEmit, getSocket } from "./socket-ref.js";
 import { onConnect, onRoomState } from "./socket-core.js";
 import { P, playerHooks } from "./player.js";
-import { Unread, addSystemMsg } from "./chat.js";
+import { addSystemMsg } from "./chat.js";
 /* ═══════════════════════════════════════════
    QUEUE  —  playlist + auto-advance + up-next
    ═══════════════════════════════════════════ */
@@ -183,10 +182,6 @@ export const Q = (() => {
   function emit(ev, data) { sockEmit(ev, data); }
   /* ── wiring ─────────────────────────────────────────── */
   function wire() {
-    /* tabs */
-    [dom.tabChat, dom.tabQueue, dom.tabTasks, dom.tabBoards, dom.tabVoice].forEach((b) =>
-      b && b.addEventListener("click", () => switchTab(b.dataset.tab))
-    );
     /* add */
     $("queueAddBtn").onclick = () => {
       const v = $("queueInput").value.trim();
@@ -256,22 +251,8 @@ export const Q = (() => {
     });
     render();
   }
-  function switchTab(which) {
-    const tabs  = { chat: dom.tabChat,  queue: dom.tabQueue,  tasks: dom.tabTasks,  boards: dom.tabBoards,  voice: dom.tabVoice  };
-    const panes = { chat: dom.paneChat, queue: dom.paneQueue, tasks: dom.paneTasks, boards: dom.paneBoards, voice: dom.paneVoice };
-    if (!tabs[which]) which = "chat";
-    for (const [k, el] of Object.entries(tabs)) {
-      if (!el) continue;
-      const on = k === which;
-      el.classList.toggle("active", on);
-      el.setAttribute("aria-selected", String(on));
-    }
-    for (const [k, el] of Object.entries(panes))
-      if (el) el.classList.toggle("active", k === which);
-    if (which === "chat") Unread.onChatShown();
-  }
   return { wire, add, render, refreshNav, applyRemote,
-           onEnded, tick, resetUpNext, next, prev, hasNext, hasPrev, canManage, switchTab };
+           onEnded, tick, resetUpNext, next, prev, hasNext, hasPrev, canManage };
 })();
 /* ══════════════════════════════════════
    PLAYER → QUEUE callbacks (moved here from room.js; player.js can't import us)

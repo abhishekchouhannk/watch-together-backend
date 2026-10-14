@@ -600,7 +600,7 @@
             </div>
           </div>
           <!-- ===== GAME LAYOUT (shown only when roomType === "gaming") ===== -->
-          <div class="game-layout" id="gameLayout" data-manage="0">
+          <div class="game-layout" id="gameLayout" data-manage="0" aria-hidden="true">
             <div class="gm-grid">
               <section class="gm-stage" aria-label="Game">
                 <header class="gm-head">
@@ -611,7 +611,6 @@
                 <div class="gm-boardwrap" id="gmBoard"></div>
                 <div class="gm-actions" id="gmActions"></div>
               </section>
-              <!-- game managers only (SLOT.CONTROL) -->
               <aside class="gm-manage" id="gmManage" aria-label="Game setup" hidden></aside>
             </div>
           </div>
@@ -638,11 +637,14 @@
             <button class="sp-tab" id="tabPlayers" data-tab="players" role="tab" aria-selected="false">
               <span>Players</span><span class="sp-badge" id="playerCount" data-zero="1">0</span>
             </button>
+            <button class="sp-tab" id="tabPlayers" data-tab="players" role="tab" aria-selected="false">
+              <span>Players</span><span class="sp-badge" id="playerCount" data-zero="1">0</span>
+            </button>
             <!-- <span class="sp-online" id="chatOnline"></span> -->
           </div>
           <div class="sp-panes">
             <!-- ── CHAT ── -->
-            <section class="sp-pane active" id="paneChat" role="tabpanel" data-view="chat">
+            <section class="sp-pane active" id="paneChat" role="tabpanel" data-view="chat" data-tab="chat">
               <!-- both views stay laid out; only one is visible → neither loses its scroll position -->
               <div class="chat-stage" id="chatStage">
                 <div class="chat-scroll-wrap">
@@ -727,7 +729,7 @@
               </div>
             </section>
             <!-- ── QUEUE ── -->
-            <section class="sp-pane" id="paneQueue" role="tabpanel">
+            <section class="sp-pane" id="paneQueue" role="tabpanel" data-tab="queue">
               <div class="q-head">
                 <span class="q-head-title">Playlist</span>
                 <label class="q-auto" title="Automatically play the next video">
@@ -753,7 +755,8 @@
                 <span>Only the host &amp; moderators can edit the queue</span>
               </div>
             </section>
-            <div class="sp-pane" id="paneTasks" role="tabpanel">
+            <!-- ── TASKS (study rooms) ── -->
+            <div class="sp-pane" id="paneTasks" role="tabpanel" data-tab="tasks">
               <div class="q-head">
                 <span class="q-head-title">Tasks</span>
                 <button class="q-clear" id="taskClearBtn" style="margin-left:auto" disabled>Clear done</button>
@@ -780,7 +783,8 @@
               </div>
               <div class="q-lock" id="taskLock" hidden>Only the host, mods or people with task access can add tasks</div>
             </div>
-            <div class="sp-pane" id="paneBoards" role="tabpanel">
+            <!-- ── BOARDS (study rooms) ── -->
+            <div class="sp-pane" id="paneBoards" role="tabpanel" data-tab="boards">
               <div class="q-head">
                 <span class="q-head-title">Whiteboards</span>
                 <button class="q-clear" id="bpNew" style="margin-left:auto" hidden>＋ New board</button>
@@ -788,15 +792,15 @@
               <div class="bp-list" id="bpList"></div>
             </div>
             <!-- ── PLAYERS (gaming rooms) ── -->
-            <section class="sp-pane" id="panePlayers" role="tabpanel" aria-labelledby="tabPlayers">
+            <section class="sp-pane" id="panePlayers" role="tabpanel" aria-labelledby="tabPlayers" data-tab="players">
               <div class="q-head">
                 <span class="q-head-title">Players</span>
                 <span class="gp-state" id="gpState"></span>
               </div>
               <div class="gp-body" id="gpBody"></div>
             </section>
-            <!-- ── VOICE ── -->
-            <section class="sp-pane" id="paneVoice" role="tabpanel" aria-labelledby="tabVoice" data-state="off">
+            <!-- ── VOICE (media rooms) ── -->
+            <section class="sp-pane" id="paneVoice" role="tabpanel" aria-labelledby="tabVoice" data-state="off" data-tab="voice">
               <div class="q-head">
                 <span class="q-head-title">Voice chat</span>
                 <span class="vpane-status" id="voicePaneStatus">Not connected</span>

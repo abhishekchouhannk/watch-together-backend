@@ -4,18 +4,27 @@
  *   "entertainment" (or missing) → theater video layout  (#videoContainer)
  *   "music"                      → music player layout   (#musicLayout)
  *   "study"                      → whiteboard + timer    (#studyLayout)
+ *   "gaming"                     → game stage            (#gameLayout)
  *
- * Only DOM flags change. The YouTube iframe is never display:none'd; inactive
- * layouts are hidden with opacity + pointer-events in CSS.
- * Runs at room-state phase 5, before queue (30) and player (35).
+ * Only DOM flags change. The YouTube iframe is never display:none'd in media
+ * rooms; inactive layouts are hidden in CSS. Runs at room-state phase 5, before
+ * queue (30), player (35) and games (40). Also re-validates the side-panel tab,
+ * since tabs are shown/hidden per room type.
  * ───────────────────────────────────────────────────────────── */
 "use strict";
 import { S } from "./state.js";
 import { $ } from "./dom.js";
 import { onRoomState } from "./socket-core.js";
-const TYPES = ["entertainment", "music", "study"];
+import { ensureVisibleTab } from "./side-tabs.js";
+
+const TYPES = ["entertainment", "music", "study", "gaming"];
 /* the layout container that is visible for each type */
-const LAYOUT_ID = { entertainment: "videoContainer", music: "musicLayout", study: "studyLayout" };
+const LAYOUT_ID = {
+  entertainment: "videoContainer",
+  music:         "musicLayout",
+  study:         "studyLayout",
+  gaming:        "gameLayout",
+};
 let reactionsMoved = false;
 function relocateReactions() {
   if (reactionsMoved) return;
@@ -37,8 +46,8 @@ export function applyRoomLayout(roomType) {
     if (el) el.toggleAttribute("aria-hidden", type !== t);
   }
   if (type === "music") relocateReactions();
-  // study: reactions stay in the hidden #videoContainer (no relocation).
-  // Add a relocateReactions branch if you want them in study.
+  // study / gaming: reactions stay in the hidden #videoContainer (no relocation).
+  ensureVisibleTab();   // e.g. Queue is hidden in study + gaming rooms
 }
 onRoomState(({ room }) => {
   applyRoomLayout(room && room.roomType);
