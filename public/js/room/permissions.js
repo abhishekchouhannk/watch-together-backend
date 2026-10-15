@@ -56,7 +56,7 @@ import { renderTimer } from "./study.js";
 import { renderTasks } from "./tasks.js";
 import { renderWhiteboardUI } from "./whiteboard.js";
 import { nameOf, ensureIdentities } from "../shared/identity.js";
-import { scopeTxt, cap, swHTML, rowMenuHTML, cfgAvHTML, memberAvBtnHTML, onModChange } from "./moderation-ui.js";
+import { scopeTxt, cap, swHTML, cfgAvHTML, memberAvBtnHTML, onModChange } from "./moderation-ui.js";
 import { openProfile, refreshProfile } from "./member-profile.js";
 
 /* ═══════════════════════════════════════════

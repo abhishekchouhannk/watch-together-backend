@@ -22,7 +22,7 @@ import { SVG_MIC_OFF, SVG_WHISPER, SVG_SPEAKER, SVG_SPEAKER_OFF, SVG_GAVEL, SVG_
 import { S } from "./state.js";
 import { getSocket, emit } from "./socket-ref.js";   
 import { onRoomState } from "./socket-core.js";  
-import { openProfile } from "./permissions.js";
+import { openProfile } from "./member-profile.js";
 import { esc } from "./utils.js";
 import { avatarEl, nameOf, getIdentity, ensureIdentities, onIdentity } from "../shared/identity.js";
 /* ── module state ───────────────────────────────────────── */
@@ -470,11 +470,11 @@ function peerMeta(p) {
   return { id, username: id ? nameOf(id, fallback) : fallback, avatar: rec ? rec.avatar : null };
 }
 function avatarNode(meta, cls) {
-  return avatarEl({ uid: meta.id, name: meta.username, cls });
+  return avatarEl({ uid: meta.id, name: meta.username, cls, attrs: 'type="button" data-profile="' + meta.id + '"' });
 }
 /* `label` may contain {name} → kept correct across renames */
 function avatarButton(meta, cls, label) {
-  return avatarEl({ uid: meta.id, name: meta.username, tag: "button", cls, attrs: 'type="button"', label });
+  return avatarEl({ uid: meta.id, name: meta.username, tag: "button", cls, attrs: 'type="button" data-profile="' + meta.id + '"', label });
 }
 function refreshPeers() {
   const remotes = sortedRemotes();
@@ -575,7 +575,6 @@ function renderPanePeers() {
     li.className = "vpane-peer";
     li.dataset.id = id;
     const av = avatarButton(meta, "vpane-av", "View {name}'s profile");   // was a baked-in string
-    av.addEventListener("click", (e) => { e.stopPropagation(); openProfile(id, meta.username); });
     li.appendChild(av);
     const open = document.createElement("button");
     open.type = "button"; open.className = "vpane-open";

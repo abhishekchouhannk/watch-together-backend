@@ -52,6 +52,7 @@ import { wirePlayerControls, onFullscreenChange, setPseudoFs } from "./room/play
 import { wireReactions, closeRail } from "./room/reactions.js";
 import { Q } from "./room/queue.js";
 import { wirePermissions, closeConfig } from "./room/permissions.js";
+import { wireMemberProfile } from "./room/member-profile.js"
 import { wireVoice } from "./room/voice.js";
 import { wireFocusMode } from "./room/focus-mode.js";
 import "./room/room-layout.js";   // ← registers the roomType → layout switch (phase 5)
@@ -118,6 +119,7 @@ function wireEvents() {
   wirePlayerControls();
   wireLyrics();
   wirePermissions();
+  wireMemberProfile(); // card delegation + page-wide avatar opener
   wireChatUnread();
   wireChatActions();
   wireStudy();

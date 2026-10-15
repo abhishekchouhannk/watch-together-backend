@@ -42,7 +42,11 @@ const me      = () => String(S.userId || "");
 const perms   = () => G.perms || S.perms || {};
 const present = () => (S.room && S.room.participants) || [];
 const youTag  = (uid) => (String(uid) === me() ? '<span class="gm-you">you</span>' : "");
-const av = (uid, name) => avatarHTML({ uid, name, cls: "gm-av", tag: "span" });
+const av = (uid, name) => avatarHTML({
+  uid, name, tag: "button", cls: "gm-av",
+  attrs: 'type="button" data-profile="' + esc(uid) + '"',
+  label: "View {name}'s profile",                    // title + aria-label, kept live on rename
+});
 const nm = (uid, name) =>
   '<span class="gm-nm" data-name-uid="' + esc(uid) + '">' + esc(nameOf(uid, name)) + "</span>";
 

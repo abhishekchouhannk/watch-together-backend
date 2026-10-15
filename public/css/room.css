@@ -3253,7 +3253,13 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .gm-status[data-tone="win"]{background:var(--toast-ok);color:var(--toast-t)}
 
 /* -- avatars (identity.js renders .u-av; we only size and colour) -- */
-.gm-av{width:28px;height:28px;border-radius:50%;display:inline-grid;place-items:center;font-size:.72rem;font-weight:800;color:#fff}
+.gm-av{
+  width:28px;height:28px;border-radius:50%;padding:0;cursor:pointer;
+  display:inline-grid;place-items:center;font-size:.72rem;font-weight:800;color:#fff;
+  transition:transform .12s,box-shadow .12s;
+}
+button.gm-av:hover{transform:scale(1.08);box-shadow:0 0 0 2px var(--acc-glow)}
+button.gm-av:focus-visible{outline:none;box-shadow:0 0 0 2px var(--acc)}
 .gm-seat .gm-av{width:34px;height:34px;font-size:.86rem}
 .gp-chip .gm-av{width:20px;height:20px;font-size:.6rem}
 .gm-seat.is-away .gm-av{filter:grayscale(1);opacity:.6}
