@@ -870,6 +870,9 @@ button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
 .sl-row[data-kind="perm"]    {--sl-c:#a855f7}
 .sl-row[data-kind="room"]    {--sl-c:var(--acc)}
 .sl-row[data-kind="voice"]   {--sl-c:#22c55e}
+.sl-row[data-kind="task"] {--sl-c:#f97316}
+.sl-row[data-kind="study"]{--sl-c:#0ea5e9}
+.sl-row[data-kind="game"] {--sl-c:#ec4899}
 .sl-loader{display:flex;align-items:center;justify-content:center;gap:.45rem;padding:.7rem;font-size:.68rem;color:var(--t3)}
 .sl-start{text-align:center;font-size:.66rem;color:var(--t3);padding:.8rem 0 .2rem}
 .sl-error{text-align:center;font-size:.7rem;color:var(--t3);padding:.8rem .5rem}
@@ -3193,7 +3196,7 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .u-av.is-zoomable:hover::after{background:rgba(0,0,0,.14)}
 .u-av.is-zoomable:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
 /* ======== GAMING ROOM ======== */
-/* -- what shows in which room type -- */
+/* -- what shows in which room type (the id must match config/roomTypes.js) -- */
 #roomPage:not([data-room-type="gaming"]) #gameLayout,
 #roomPage:not([data-room-type="gaming"]) #tabPlayers,
 #roomPage:not([data-room-type="gaming"]) #panePlayers{display:none!important}
@@ -3207,7 +3210,7 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 #roomPage[data-room-type="gaming"] #tabBoards,
 #roomPage[data-room-type="gaming"] #paneBoards{display:none!important}
 
-/* -- seat colours (one pair per theme, picked for contrast on the glass cards) -- */
+/* -- seat colours, one pair per theme -- */
 #roomPage[data-theme="morning"]{--gm-x:#e11d48;--gm-o:#1d4ed8}
 #roomPage[data-theme="afternoon"]{--gm-x:#b45309;--gm-o:#0369a1}
 #roomPage[data-theme="evening"]{--gm-x:#f0abfc;--gm-o:#7dd3fc}
@@ -3215,37 +3218,50 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .gm-s0{--seat-c:var(--gm-x)}
 .gm-s1{--seat-c:var(--gm-o)}
 
-/* -- layout: stage + (managers only) setup panel -- */
-.game-layout{width:100%;container-type:inline-size;container-name:game}
-.gm-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start}
-.game-layout[data-manage="1"] .gm-grid{grid-template-columns:minmax(0,1fr) 290px}
-@container game (max-width:780px){
+/* -- the layout is the flex-growing child of .video-section (the role
+      .video-container has in media rooms): it takes the column's height and
+      scrolls internally instead of being clipped by overflow:hidden -- */
+.game-layout{
+  flex:1 1 auto;min-height:0;min-width:0;width:100%;overflow:auto;
+  container-type:inline-size;container-name:game;
+  scrollbar-width:thin;scrollbar-color:var(--scr-th) var(--scr-tr);
+}
+.gm-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem;align-items:stretch;min-height:100%}
+.game-layout[data-manage="1"] .gm-grid{grid-template-columns:minmax(0,1fr) 280px}
+@container game (max-width:760px){
   .game-layout[data-manage="1"] .gm-grid{grid-template-columns:minmax(0,1fr)}
 }
 .gm-stage,.gm-manage{
-  background:var(--card);border:1px solid var(--card-bdr);border-radius:18px;
-  box-shadow:var(--card-sh);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  color:var(--t1);min-width:0;
+  min-width:0;color:var(--t1);
+  background:var(--card);border:1px solid var(--card-bdr);border-radius:16px;box-shadow:var(--card-sh);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
 }
-.gm-stage{display:flex;flex-direction:column;gap:.9rem;padding:1rem 1.1rem 1.15rem}
+.gm-stage{display:flex;flex-direction:column;gap:.8rem;padding:.9rem 1rem 1rem}
+.gm-manage{align-self:start}
 
 /* -- head -- */
 .gm-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
-.gm-title{display:flex;align-items:center;gap:.5rem;min-width:0;font-size:1.05rem;font-weight:800;color:var(--t1)}
+.gm-title{display:flex;align-items:center;gap:.5rem;min-width:0;font-size:1.02rem;font-weight:800;color:var(--t1)}
 .gm-title-ic{font-size:1.2rem;line-height:1}
-.gm-round{font-size:.72rem;font-weight:700;padding:.18rem .55rem;border-radius:999px;background:var(--tag-bg);color:var(--tag-t)}
+.gm-round{font-size:.7rem;font-weight:700;padding:.16rem .55rem;border-radius:999px;background:var(--tag-bg);color:var(--tag-t)}
 .gm-status{
-  max-width:100%;padding:.4rem .85rem;border-radius:999px;font-size:.82rem;font-weight:700;
+  max-width:100%;padding:.38rem .85rem;border-radius:999px;font-size:.8rem;font-weight:700;
   background:var(--surf);color:var(--surf-t);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   transition:background .2s,color .2s;
 }
 .gm-status[data-tone="me"]{background:var(--acc);color:var(--acc-t);animation:gm-pulse 1.6s ease-in-out infinite}
 .gm-status[data-tone="win"]{background:var(--toast-ok);color:var(--toast-t)}
 
+/* -- avatars (identity.js renders .u-av; we only size and colour) -- */
+.gm-av{width:28px;height:28px;border-radius:50%;display:inline-grid;place-items:center;font-size:.72rem;font-weight:800;color:#fff}
+.gm-seat .gm-av{width:34px;height:34px;font-size:.86rem}
+.gp-chip .gm-av{width:20px;height:20px;font-size:.6rem}
+.gm-seat.is-away .gm-av{filter:grayscale(1);opacity:.6}
+
 /* -- seats -- */
-.gm-seats{display:flex;align-items:stretch;gap:.6rem}
+.gm-seats{display:flex;align-items:stretch;gap:.6rem;flex-shrink:0}
 .gm-seat{
-  flex:1 1 0;min-width:0;display:flex;align-items:center;gap:.6rem;padding:.55rem .7rem;
+  flex:1 1 0;min-width:0;display:flex;align-items:center;gap:.55rem;padding:.5rem .65rem;
   border-radius:14px;background:var(--in-bg);border:1.5px solid var(--in-bdr);
   transition:border-color .2s,box-shadow .2s,background .2s;
 }
@@ -3253,27 +3269,34 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .gm-seat.is-turn{border-color:var(--seat-c);box-shadow:0 0 0 3px var(--in-ring)}
 .gm-seat.is-winner{border-color:var(--seat-c);background:var(--surf-h)}
 .gm-seat-mark,.gp-mark{flex:none;display:grid;place-items:center;background:var(--surf);font-weight:800;color:var(--seat-c)}
-.gm-seat-mark{width:34px;height:34px;border-radius:10px}
+.gm-seat-mark{width:32px;height:32px;border-radius:10px}
+.gp-mark{width:28px;height:28px;border-radius:8px}
 .gm-seat-mark .gm-mark,.gp-mark .gm-mark{width:68%;height:68%}
 .gm-seat-body{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
-.gm-seat-name{font-size:.9rem;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gm-seat-sub{font-size:.74rem;color:var(--t3)}
+.gm-seat-name{font-size:.88rem;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gm-seat-sub{font-size:.72rem;color:var(--t3)}
 .gm-you{
   margin-left:.3rem;padding:.08rem .38rem;border-radius:999px;vertical-align:middle;
-  font-size:.6rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+  font-size:.58rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
   background:var(--tag-bg);color:var(--tag-t);
 }
 .gm-away{font-weight:700;color:var(--role-host)}
-.gm-vs{flex:none;align-self:center;display:flex;flex-direction:column;align-items:center;gap:.1rem;font-size:.7rem;font-weight:800;letter-spacing:.08em;color:var(--t3)}
+.gm-vs{flex:none;align-self:center;display:flex;flex-direction:column;align-items:center;gap:.1rem;font-size:.68rem;font-weight:800;letter-spacing:.08em;color:var(--t3)}
 .gm-vs small{font-weight:600;letter-spacing:0;white-space:nowrap}
 @container game (max-width:520px){
   .gm-seats{flex-direction:column}
   .gm-vs{flex-direction:row;gap:.4rem}
 }
 
-/* -- board -- */
-.gm-boardwrap{display:flex;justify-content:center;padding:.25rem 0}
-.gm-board{display:grid;grid-template-columns:repeat(3,1fr);gap:.55rem;width:min(100%,400px);aspect-ratio:1;transition:opacity .2s}
+/* -- board: square, capped by the column's width AND the viewport height so
+      it never pushes the actions row out of view on short screens -- */
+.gm-boardwrap{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:.2rem 0}
+.gm-board{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;aspect-ratio:1;
+  width:clamp(200px,min(100%,100vh - 360px),400px);
+  width:clamp(200px,min(100%,100dvh - 360px),400px);
+  transition:opacity .2s;
+}
 .gm-board.is-idle{opacity:.55}
 .gm-cell{
   display:grid;place-items:center;min-width:0;min-height:0;padding:0;border-radius:16px;
@@ -3295,12 +3318,12 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 @keyframes gm-pulse{0%,100%{box-shadow:0 0 0 0 var(--acc-glow)}50%{box-shadow:0 0 0 6px var(--acc-glow)}}
 
 /* -- buttons / notes -- */
-.gm-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.55rem;min-height:2.1rem}
-.gm-note{font-size:.8rem;color:var(--t3)}
+.gm-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.55rem;min-height:2rem;flex-shrink:0}
+.gm-note{font-size:.78rem;color:var(--t3)}
 .gm-btn{
-  display:inline-flex;align-items:center;justify-content:center;gap:.35rem;padding:.5rem .95rem;
+  display:inline-flex;align-items:center;justify-content:center;gap:.35rem;padding:.48rem .9rem;
   border-radius:10px;border:1px solid var(--in-bdr);background:var(--surf);color:var(--surf-t);
-  font-size:.82rem;font-weight:700;transition:background .15s,box-shadow .15s,transform .1s,opacity .15s;
+  font-size:.8rem;font-weight:700;transition:background .15s,box-shadow .15s,transform .1s,opacity .15s;
 }
 .gm-btn:hover:not(:disabled){background:var(--surf-h)}
 .gm-btn:active:not(:disabled){transform:scale(.97)}
@@ -3308,60 +3331,74 @@ button.prof-av:focus-visible{ outline:none; box-shadow:0 0 0 2px var(--acc); }
 .gm-btn-primary{background:var(--acc);color:var(--acc-t);border-color:transparent}
 .gm-btn-primary:hover:not(:disabled){background:var(--acc-h);box-shadow:0 4px 14px var(--acc-glow)}
 .gm-btn.is-armed{background:var(--toast-err);color:var(--toast-t);border-color:transparent}
-.gm-btn-sm{padding:.3rem .6rem;border-radius:8px;font-size:.74rem}
+.gm-btn-sm{padding:.28rem .6rem;border-radius:8px;font-size:.72rem}
 
 /* -- setup panel (game managers) -- */
-.gm-manage{display:flex;flex-direction:column;gap:.9rem;padding:1rem}
+.gm-manage{display:flex;flex-direction:column;gap:.85rem;padding:.9rem}
 .gm-manage[hidden]{display:none}
-.gm-h{font-size:.95rem;font-weight:800;color:var(--t1)}
-.gm-h small{display:block;margin-top:.15rem;font-size:.72rem;font-weight:500;color:var(--t3)}
+.gm-h{font-size:.92rem;font-weight:800;color:var(--t1)}
+.gm-h small{display:block;margin-top:.15rem;font-size:.7rem;font-weight:500;color:var(--t3)}
 .gm-sec{display:flex;flex-direction:column;gap:.45rem}
-.gm-label,.gp-label{display:flex;align-items:center;justify-content:space-between;font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
+.gm-label,.gp-label{display:flex;align-items:center;justify-content:space-between;font-size:.66rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
 .gm-games{display:grid;gap:.4rem}
 .gm-game{
   display:grid;grid-template-columns:auto 1fr;column-gap:.6rem;align-items:center;text-align:left;
-  padding:.55rem .7rem;border-radius:12px;background:var(--in-bg);border:1.5px solid var(--in-bdr);color:var(--t1);
+  padding:.5rem .65rem;border-radius:12px;background:var(--in-bg);border:1.5px solid var(--in-bdr);color:var(--t1);
 }
 .gm-game-ic{grid-row:1/3;font-size:1.3rem;line-height:1}
-.gm-game-t{font-size:.86rem;font-weight:700}
-.gm-game-s{font-size:.72rem;color:var(--t3)}
+.gm-game-t{font-size:.84rem;font-weight:700}
+.gm-game-s{font-size:.7rem;color:var(--t3)}
 .gm-game.is-on{border-color:var(--acc);box-shadow:0 0 0 3px var(--in-ring)}
 .gm-game:disabled{opacity:.6;cursor:not-allowed}
-.gm-people{list-style:none;display:flex;flex-direction:column;gap:.3rem;max-height:260px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--scr-th) var(--scr-tr)}
-.gm-person{display:flex;align-items:center;gap:.5rem;padding:.35rem .45rem;border-radius:10px;background:var(--in-bg);border:1px solid transparent}
+.gm-people{list-style:none;display:flex;flex-direction:column;gap:.3rem;max-height:260px;overflow:auto}
+.gm-person{display:flex;align-items:center;gap:.5rem;padding:.32rem .42rem;border-radius:10px;background:var(--in-bg);border:1px solid transparent}
 .gm-person.is-seated{background:var(--surf);border-color:var(--in-bdr)}
-.gm-av{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:.72rem;font-weight:800;text-transform:uppercase;background:var(--tag-bg);color:var(--tag-t)}
 .gm-person-body{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
-.gm-person-name{font-size:.82rem;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gm-person-note{font-size:.68rem;color:var(--t3)}
+.gm-person-name{font-size:.8rem;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gm-person-note{font-size:.66rem;color:var(--t3)}
 .gm-person-ctl{flex:none;display:flex;align-items:center;gap:.25rem}
-.gm-pick{width:28px;height:28px;border-radius:8px;background:transparent;border:1.5px solid var(--in-bdr);color:var(--seat-c);font-size:.78rem;font-weight:800;transition:background .15s,border-color .15s}
+.gm-pick{width:28px;height:28px;border-radius:8px;background:transparent;border:1.5px solid var(--in-bdr);color:var(--seat-c);font-size:.76rem;font-weight:800;transition:background .15s,border-color .15s}
 .gm-pick:hover:not(:disabled){border-color:var(--seat-c);background:var(--surf-h)}
 .gm-pick.is-on{background:var(--seat-c);border-color:var(--seat-c);color:var(--menu-bg)}
 .gm-pick:disabled{cursor:not-allowed}
 .gm-pick:disabled:not(.is-on){opacity:.35}
-.gm-hint{font-size:.72rem;line-height:1.35;color:var(--t3)}
+.gm-hint{font-size:.7rem;line-height:1.35;color:var(--t3)}
 .gm-manage-btns{display:flex;flex-wrap:wrap;gap:.45rem}
 .gm-manage-btns .gm-btn{flex:1 1 auto}
 
-/* -- side panel: Players tab -- */
+/* -- side panel: Players tab (pane is the usual flex column from .sp-pane) -- */
 .gp-state{margin-left:auto;font-size:.72rem;font-weight:700;color:var(--t3)}
-.gp-body{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:.7rem;padding:.75rem;scrollbar-width:thin;scrollbar-color:var(--scr-th) var(--scr-tr)}
-.gp-now{display:flex;align-items:center;gap:.65rem;padding:.65rem .75rem;border-radius:14px;background:var(--card);border:1px solid var(--card-bdr)}
+.gp-body{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:.65rem;padding:.7rem}
+.gp-now{display:flex;align-items:center;gap:.65rem;padding:.6rem .75rem;border-radius:14px;background:var(--card);border:1px solid var(--card-bdr)}
 .gp-now-ic{font-size:1.5rem;line-height:1}
-.gp-now-t{font-size:.9rem;font-weight:800;color:var(--t1)}
-.gp-now-s{font-size:.76rem;color:var(--t3)}
+.gp-now-t{font-size:.88rem;font-weight:800;color:var(--t1)}
+.gp-now-s{font-size:.74rem;color:var(--t3)}
 .gp-list{list-style:none;display:flex;flex-direction:column;gap:.35rem}
-.gp-row{display:flex;align-items:center;gap:.55rem;padding:.45rem .55rem;border-radius:12px;background:var(--in-bg);border:1.5px solid var(--in-bdr)}
+.gp-row{display:flex;align-items:center;gap:.5rem;padding:.42rem .55rem;border-radius:12px;background:var(--in-bg);border:1.5px solid var(--in-bdr)}
 .gp-row.is-turn{border-color:var(--seat-c)}
 .gp-row.is-empty{border-style:dashed}
-.gp-mark{width:28px;height:28px;border-radius:8px}
 .gp-row-body{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
-.gp-name{font-size:.84rem;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gp-sub{font-size:.72rem;color:var(--t3)}
+.gp-name{font-size:.82rem;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gp-sub{font-size:.7rem;color:var(--t3)}
 .gp-wins{min-width:1.4rem;text-align:right;font-size:1.05rem;font-weight:800;color:var(--seat-c)}
 .gp-watch{flex-direction:row;flex-wrap:wrap}
-.gp-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .6rem .2rem .25rem;border-radius:999px;background:var(--surf);color:var(--surf-t);font-size:.76rem;font-weight:600}
-.gp-chip .gm-av{width:20px;height:20px;font-size:.62rem}
-.gp-none{font-size:.78rem;color:var(--t3)}
-.gp-foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.55rem .65rem;border-radius:12px;background:var(--surf);color:var(--surf-t);font-size:.78rem;font-weight:600}
+.gp-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.2rem .6rem .2rem .25rem;border-radius:999px;background:var(--surf);color:var(--surf-t);font-size:.74rem;font-weight:600}
+.gp-none{font-size:.76rem;color:var(--t3)}
+.gp-foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.5rem .65rem;border-radius:12px;background:var(--surf);color:var(--surf-t);font-size:.76rem;font-weight:600}
+
+/* -- mobile: the stock layout pins .video-section to the top and sizes the
+      chat for a 16:9 player; a game stage is tall, so let the page scroll -- */
+@media(max-width:768px){
+  #roomPage[data-room-type="gaming"] .video-section{
+    position:static;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+  }
+  #roomPage[data-room-type="gaming"] .video-section::after{display:none}
+  #roomPage[data-room-type="gaming"] .chat-section{height:70vh;height:70dvh}
+  #roomPage[data-room-type="gaming"] .gm-board{width:min(100%,360px)}
+  /* focus view: split the height instead of letting the stage take it all */
+  #roomPage.focus-mode[data-room-type="gaming"] .video-section{flex:1 1 55%;min-height:0;overflow:auto}
+  #roomPage.focus-mode[data-room-type="gaming"] .chat-section{flex:1 1 45%}
+}
+@media (prefers-reduced-motion:reduce){
+  .gm-status[data-tone="me"],.gm-cell.is-win,.gm-cell.is-new .gm-mark>*{animation:none}
+}

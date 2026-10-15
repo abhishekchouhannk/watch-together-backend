@@ -57,6 +57,7 @@ import { wireAttachments, takeOutgoing, resetAttachments, stageGif, suspendAttac
 import { wireLightbox } from "../shared/lightbox.js";
 import { wireSysLog, isSysView, setSysView, setToolsMode, closeChatTools, onSysPaneShown } from "./chat_modules/sys-log.js";
 import { avatarHTML, nameOf, ensureIdentities } from "../shared/identity.js";
+import { onTabChange } from "./side-tabs.js";
 
 /* ── history pagination bookkeeping ── */
 let startMarkerShown = false;
@@ -878,6 +879,7 @@ export function wireChatUnread() {
      pane's .active class is already settled */
   dom.tabChat.addEventListener("click", () =>
     requestAnimationFrame(() => { Unread.onChatShown(); SYS.sweep(); onSysPaneShown(); }));
+  onTabChange((tab) => { if (tab === "chat") Unread.onChatShown(); });
   document.addEventListener("visibilitychange", () => { Unread.sync(); SYS.sweep(); });
   window.addEventListener("focus", () => Unread.sync());
   Unread.paint();

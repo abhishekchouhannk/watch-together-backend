@@ -24,7 +24,8 @@ import { onConnect, onRoomState } from "../socket-core.js";
 const PAGE = 30;
 const KIND_LABEL = {
   presence: "Presence", chat: "Chat", queue: "Queue", playback: "Playback",
-  perm: "Permissions", room: "Room", voice: "Voice", other: "System",
+  perm: "Permissions", room: "Room", voice: "Voice", task: "Tasks",
+  study: "Study", game: "Game", other: "System",
 };
 const Log = {
   gen: 0, loaded: false, loading: false, loadingOlder: false,

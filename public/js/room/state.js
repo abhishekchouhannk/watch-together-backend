@@ -36,7 +36,7 @@ export const S = {
            canSync:false, canQueue:false,
            canEditRoom:false, canManage:false, canGrantSync:false, canGrantQueue:false,
            canControlTimer:false, canManageTasks:false, canManageBoards:false, labels:null,
-           requestState:"none", queueRequestState:"none" },
+           requestState:"none", queueRequestState:"none", canManageGame: false, canPlayGames: false },
   members: [], requests: [],
   video: { currentTime: 0, isPlaying: false, at: 0 },   // authoritative mirror
 };

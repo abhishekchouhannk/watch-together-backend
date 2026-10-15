@@ -25,9 +25,10 @@
  *   permissions      → config, svg, state, dom, utils, socket-ref, socket-core,
  *                      room-details, player, queue, chat
  *   room-main        → everything
+ *   side-tabs        → nothing
  *
  * room-state fan-out phases: 10 permissions · 20 chat (awaited history) ·
- * 30 queue · 35 player.
+ * 30 queue · 35 player. 40 games. Anything that doesn't care omits it and lands on the default 50.
  *
  * fetchMe() lives here because it is session bootstrap, not a feature:
  * it fills S.userId / S.username, which isMe(), chat, reactions and the
@@ -40,6 +41,8 @@ import { initTheme, closeThemeMenu, wireTheme } from "./room/theme.js";
 import { wireRoomDetails } from "./room/room-details.js";
 import { connectSocket, leaveRoom } from "./room/socket-core.js";
 import { wireChatInput, wireChatUnread, wireChatActions, Unread } from "./room/chat.js";
+import { initSideTabs, onTabChange } from "./room/side-tabs.js";
+import { wireGames } from "./room/games.js";
 import { wirePlayerControls, onFullscreenChange, setPseudoFs } from "./room/player.js";
 import { wireReactions, closeRail } from "./room/reactions.js";
 import { Q } from "./room/queue.js";
@@ -55,7 +58,6 @@ import { initProfileUI } from "./shared/profile-settings.js";
 import "./room/identity-socket.js";
 import "./room/room-lifecycle.js";
 import { startIconEngine } from "./shared/icon-engine.js";
-import { initGames } from "./room/games.js";
 
 /* Icons first. Excluded = live reactions + user-authored / external text. */
 startIconEngine({
@@ -78,8 +80,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initTheme();
   wireEvents();
   await fetchMe();
-  const socket = connectSocket();
-  initGames(socket);
+  connectSocket();
 });
 initProfileUI({
   chipHost: document.getElementById("meChipHost"),
@@ -87,6 +88,8 @@ initProfileUI({
 });
 /* ═══════ EVENT WIRING ═══════ */
 function wireEvents() {
+  /* side-panel tabs: data-driven; the chat-unread reset is the one cross-feature side effect */
+  initSideTabs();
   $("backBtn").onclick  = leaveRoom;
   wireChatInput();
   dom.container.addEventListener("touchstart", () => {
@@ -115,6 +118,7 @@ function wireEvents() {
   wireStudy();
   wireWhiteboard();
   wireTasks();
+  wireGames();
   // add the queue functionality
   Q.wire();
   wireFocusMode();
