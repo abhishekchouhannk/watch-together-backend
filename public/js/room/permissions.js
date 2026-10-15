@@ -22,11 +22,6 @@
  *       applyIncomingRoom() — 'room-updated' → keep my draft, mount conflict
  *     Collapse memory lives in S.cfgCollapsed; the open row menu in S.cfgRowMenu.
  *
- *  C. Profile card (#profCard)
- *     openProfile/closeProfile/renderProfile, profCache (userId → identity
- *     from /api/users/:id), setPending/clearPending for the optimistic
- *     ban/unban round-trip. Reuses rowMenuHTML/swHTML/onCfgChange verbatim so
- *     both surfaces emit identical events.
  *
  *  Moderation emits (delegated, data-act driven): perm-request, perm-set-mode,
  *  perm-set-queue-mode, perm-respond, perm-grant/perm-revoke, perm-set-role,
@@ -46,11 +41,11 @@
  *  room-details.js. Nothing imports this module — it is a leaf consumer.
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { ROOM_TYPES, ROOM_CAP, ROLE_LABEL, FIELD_LABEL, MOD_EVT } from "./config.js";
+import { ROOM_TYPES, ROOM_CAP, ROLE_LABEL, FIELD_LABEL } from "./config.js";   // MOD_EVT → member-profile
 import { CHEV_SVG, STEP_UP, STEP_DN, SEC_CLOSE } from "./svg.js";
 import { S } from "./state.js";
 import { $, dom } from "./dom.js";
-import { esc, fmtMsgStamp, toast, fmtJoined, isMe } from "./utils.js";
+import { esc, fmtMsgStamp, toast, isMe } from "./utils.js";                   // fmtJoined → member-profile
 import { getSocket, emit as sockEmit } from "./socket-ref.js";
 import { onConnect, onRoomState, onParticipantsUpdate } from "./socket-core.js";
 import { renderRoomDetails } from "./room-details.js";
@@ -60,8 +55,9 @@ import { addSystemMsg, applyChatPerms, jumpToMessage } from "./chat.js";
 import { renderTimer } from "./study.js";
 import { renderTasks } from "./tasks.js";
 import { renderWhiteboardUI } from "./whiteboard.js";
-import { avatarHTML as userAvHTML, nameOf, getIdentity, mergeIdentity, ensureIdentities, onIdentity } from "../shared/identity.js";
-import { openProfileSettings } from "../shared/profile-settings.js";
+import { nameOf, ensureIdentities } from "../shared/identity.js";
+import { scopeTxt, cap, swHTML, rowMenuHTML, cfgAvHTML, memberAvBtnHTML, onModChange } from "./moderation-ui.js";
+import { openProfile, refreshProfile } from "./member-profile.js";
 
 /* ═══════════════════════════════════════════
    COLLAPSIBLE SECTION HELPERS
@@ -84,15 +80,6 @@ function secOpen(id, titleHTML, defaultClosed, extraAttrs) {
       '<span class="cfg-chev">' + CHEV_SVG + "</span></h4>" +
     '<div class="cfg-sec-body"><div class="cfg-sec-inner">';
 }
-/* per-room-type wording for the two grant slots; server sends perms.labels */
-const FALLBACK_TXT = {
-  sync:  { label: "playback control", short: "Playback", ask: "control playback",
-           modeTitle: "Who can play / pause / seek", on: "Can play / pause / seek" },
-  queue: { label: "queue control", short: "Queue", ask: "manage the queue",
-           modeTitle: "Who can manage the queue", on: "Can manage the queue" },
-};
-const scopeTxt = (scope) => (S.perms && S.perms.labels && S.perms.labels[scope]) || FALLBACK_TXT[scope];
-const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 /* ══════════════════════════════════════
    PERMISSIONS UI + ROOM CONFIG SHEET
    ══════════════════════════════════════ */
@@ -139,8 +126,6 @@ export function applyPerms() {
   renderTasks();
   renderWhiteboardUI();
 }
-/* a rename / new photo / bio while the card is open → re-render it */
-onIdentity((uid) => { if (S.profile && S.profile.userId === uid) renderProfile(); });
 // Check if the config sheet is open
 export const isConfigOpen = () => dom.cfgSheet.classList.contains("open");
 /* opts.focus = "reports" → open that section and scroll to opts.reportId */
@@ -222,7 +207,7 @@ export function renderConfig() {
       S.requests.forEach((m) => {
         const lbl = scopeTxt(m.scope === "queue" ? "queue" : "sync").short.toLowerCase();
         const nm  = nameOf(m.userId, m.username);
-        h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(nm, m.userId) +
+        h += '<div class="cfg-row"><span class="cfg-user">' + cfgAvHTML(nm, m.userId) +
                '<span class="cfg-uname" data-name-uid="' + esc(m.userId) + '">' + esc(nm) + "</span>" +
                '<span class="scope-tag scope-' + (m.scope === "queue" ? "queue" : "playback") + '">' + esc(lbl) + "</span></span>" +
              '<span class="cfg-acts">' +
@@ -277,7 +262,7 @@ export function renderConfig() {
   if (p.canBan && S.banned.length) {
     h += secOpen("banned", 'Banned <span class="cnt">' + S.banned.length + "</span>", true);
     S.banned.forEach((b) => {
-      h += '<div class="cfg-row"><span class="cfg-user">' + avatarHTML(b.username, b.userId) +
+      h += '<div class="cfg-row"><span class="cfg-user">' + cfgAvHTML(b.username, b.userId) +
              '<span class="cfg-uname" data-name-uid="' + esc(b.userId) + '">' + esc(nameOf(b.userId, b.username)) + "</span></span>" +
            '<span class="cfg-acts">' +
              '<button class="cfg-mini ok" data-act="unban" data-id="' + b.userId + '">Unban</button>' +
@@ -386,31 +371,6 @@ function applyIncomingRoom(room, by, changed) {
   S.roomConflict = { by, changed: [...new Set([...prev, ...(changed || [])])] };
   mountConflict();
   syncDirtyUI();                                      // blocks Save, shows the warning line
-}
-function rowMenuHTML(m, isOnline, state) {
-  const c = (state || S.cfgRowMenu || {}).confirm;
-  const nm = nameOf(m.userId, m.username);
-  if (c === "ban" || c === "remove") {
-    const ban = c === "ban";
-    return '<div class="cfg-rowmenu confirm">' +
-      '<div class="pp-txt">' + (ban
-        ? "<strong>Ban " + esc(nm) + "?</strong> They'll be kicked out now and can't rejoin until you unban them."
-        : "<strong>Remove " + esc(nm) + "?</strong> They lose their role and permissions here, but can join again.") +
-      "</div><div class=\"pp-acts\">" +
-        '<button class="cfg-mini no" data-act="do-' + c + '" data-id="' + m.userId + '">' +
-          (ban ? "🚫 Ban" : "✕ Remove") + "</button>" +
-        '<button class="cfg-mini alt" data-act="menu-close">Cancel</button>' +
-      "</div></div>";
-  }
-  return '<div class="cfg-rowmenu">' +
-    '<button class="cfg-mini alt" data-act="do-kick" data-id="' + m.userId + '"' +
-      (isOnline ? "" : " disabled") +
-      ' title="Boot from this session — they keep their permissions and can rejoin">👟 Kick</button>' +
-    '<button class="cfg-mini alt" data-act="ask-remove" data-id="' + m.userId + '"' +
-      ' title="Delete their membership and permissions">✕ Remove</button>' +
-    '<button class="cfg-mini no" data-act="ask-ban" data-id="' + m.userId + '"' +
-      ' title="Remove and block them from rejoining">🚫 Ban</button>' +
-  "</div>";
 }
 /* small inline profile link (name only) */
 function profLinkHTML(uid, name, cls = "rep-link") {
@@ -597,14 +557,9 @@ const refreshReports = () => {
   renderConfig();
   dom.cfgBody.scrollTop = top;
 };
-const refreshProfile = () => { if (isProfileOpen()) renderProfile(); };
 /* anything that used to call refreshConfig() on a server broadcast
    (room-permissions, member list changes, participants changes) should call this */
 const refreshPanels  = () => { refreshConfig(); refreshProfile(); };
-/* small non-clickable avatar — now photo-aware and live-updating when uid is passed */
-function avatarHTML(name, uid) {
-  return userAvHTML({ uid, name, cls: "cfg-av" });
-}
 /* avatar as a button — same look, opens the existing profile panel */
 function memberAvBtnHTML(m) {
   const n = nameOf(m.userId, m.username);
@@ -635,15 +590,6 @@ function permMenuHTML(m, p) {
     '<span class="perm-item"><span>' + esc(scopeTxt("queue").short) + "</span>" +
       swHTML("queue", m.userId, m.canQueue, queueLocked, scopeTxt("queue").on) + "</span>" +
   "</div>";
-}
-function swHTML(scope, id, on, locked, title) {
-  const study = S.roomType === "study";
-  const ic = scope === "sync" ? (study ? "⏱" : "▶") : (study ? "✓" : "☰");
-  return '<label class="sw sw-ic' + (locked ? " sw-lock" : "") + '" title="' + title + '">' +
-    '<span class="sw-tag">' + ic + "</span>" +
-    '<input type="checkbox" data-act="' + scope + '" data-id="' + id + '"' +
-      (on ? " checked" : "") + (locked ? " disabled" : "") + ">" +
-    '<span class="sw-track"><span class="sw-knob"></span></span></label>';
 }
 /* delegated actions inside the sheet */
 function onCfgClick(e) {
@@ -775,15 +721,6 @@ function onCfgWheel(e) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 }
-function onCfgChange(e) {
-  const el = e.target.closest("[data-act]");
-  if (!el) return;
-  const a = el.dataset.act;
-  if (a === "sync" || a === "queue")
-    sockEmit(el.checked ? "perm-grant" : "perm-revoke", { userId: el.dataset.id, scope: a });
-  if (a === "role")
-    sockEmit("perm-set-role", { userId: el.dataset.id, role: el.value });
-}
 /* remember room-detail edits so a perms broadcast doesn't wipe the form */
 function onCfgRoomInput(e) {
   if (!e.target.closest("[data-room-field]")) return;
@@ -796,7 +733,7 @@ function onCfgKeydown(e) {
 }
 function dom_cfgDelegate() {
   dom.cfgBody.addEventListener("click",  onCfgClick);
-  dom.cfgBody.addEventListener("change", onCfgChange);
+  dom.cfgBody.addEventListener("change", onModChange);
   dom.cfgBody.addEventListener("input",  onCfgRoomInput);
   dom.cfgBody.addEventListener("change", onCfgRoomInput);          // selects
   dom.cfgBody.addEventListener("keydown", onCfgKeydown);
@@ -846,227 +783,6 @@ function showReportPrompt({ id, reporterName, senderName }) {
   dismiss.onclick = () => el.remove();               // hides the toast; the report stays open
   dom.toasts.appendChild(el);
   setTimeout(() => el.remove(), 20000);
-}
-/* ══════════════════════════════════════
-   MEMBER PROFILE PANEL
-   identity = /api/users/:id · moderation = reused from the config sheet
-   ══════════════════════════════════════ */
-const profCache = new Map();      // userId → { username, avatar, createdAt }
-const isProfileOpen = () => dom.profCard.classList.contains("open");
-export function openProfile(userId, fallbackName) {
-  if (!userId) return;
-  const cached = profCache.get(userId) || null;
-  S.profile = {
-    userId,
-    username: fallbackName || "",
-    confirm:  null,               // null | 'ban' | 'remove'  (mirrors S.cfgRowMenu.confirm)
-    loading:  !cached,
-    error:    false,
-    data:     cached,
-  };
-  renderProfile();
-  dom.profCard.classList.add("open");
-  dom.profBackdrop.classList.add("open");
-  dom.profCard.setAttribute("aria-hidden", "false");
-  dom.profClose.focus();
-  if (!cached) fetchProfile(userId);
-}
-/* the ban/unban round-trip is async — hold an optimistic state until the
-   room-permissions broadcast reconciles it (or 5s passes, i.e. it failed) */
-function setPending(kind) {
-  if (!S.profile) return;
-  S.profile.pending = kind;                       // 'ban' | 'unban'
-  clearTimeout(S.profile._pt);
-  S.profile._pt = setTimeout(() => {
-    if (S.profile && S.profile.pending === kind) { S.profile.pending = null; renderProfile(); }
-  }, 5000);
-}
-function clearPending(p) { p.pending = null; clearTimeout(p._pt); }
-function closeProfile() {
-  if (S.profile) clearTimeout(S.profile._pt);
-  S.profile = null;
-  dom.profCard.classList.remove("open");
-  dom.profBackdrop.classList.remove("open");
-  dom.profCard.setAttribute("aria-hidden", "true");
-}
-/* mirrors the "Banned" section of the config sheet — same button, same event */
-function profBanSec(name, userId, ban, pending) {
-  const busy   = pending === "ban" || pending === "unban";
-  const label  = pending === "ban"   ? "Banning…"
-               : pending === "unban" ? "Unbanning…"
-               : "✓ Unban";
-  return profSec("Banned",
-    '<div class="prof-ban">' +
-      '<div class="pp-txt"><strong>' + esc(name) + "</strong> is banned from this room. " +
-        "They can't rejoin and won't see it in Discover.</div>" +
-      (ban && ban.reason ? '<p class="cfg-note prof-reason">"' + esc(ban.reason) + '"</p>' : "") +
-      '<div class="pp-acts">' +
-        '<button class="cfg-mini ok" data-act="unban" data-id="' + userId + '"' +
-          (busy ? " disabled" : "") + ">" + label + "</button>" +
-      "</div>" +
-    "</div>");
-}
-async function fetchProfile(userId) {
-  try {
-    const r = await fetch("/api/users/" + encodeURIComponent(userId), { credentials: "include" });
-    if (!r.ok) throw new Error(String(r.status));
-    const d = await r.json();
-    profCache.set(userId, d);
-    if (S.profile && S.profile.userId === userId) {
-      S.profile.data = d; S.profile.loading = false;
-    }
-    mergeIdentity(userId, d);              // ← NEW: chat/people/navbar get it too (triggers renderProfile via onIdentity)
-    if (S.profile && S.profile.userId === userId) renderProfile();
-  } catch (_) {
-    if (S.profile && S.profile.userId === userId) {
-      S.profile.loading = false; S.profile.error = true; renderProfile();
-    }
-  }
-}
-
-const profSec = (title, inner) => '<div class="cfg-sec"><h4>' + title + "</h4>" + inner + "</div>";
-function renderProfile() {
-  const p = S.profile;
-  if (!p) return;
-  const me     = S.perms || {};
-  const online = new Set(((S.room && S.room.participants) || []).map((x) => (x.userId || "").toString()));
-  const m      = (S.members || []).find((x) => x.userId === p.userId) || null;
-  const d      = p.data || {};
-  const live   = getIdentity(p.userId) || {};                        // ← freshest known identity (rev-guarded)
-  const ban = me.canBan ? ((S.banned || []).find((b) => b.userId === p.userId) || null) : null;
-  if (p.pending === "ban"   &&  ban) clearPending(p);
-  if (p.pending === "unban" && !ban) clearPending(p);
-  const isBanned  = !!ban || p.pending === "ban";
-  const name      = live.username || d.username || (m && m.username) || (ban && ban.username) || p.username || "Unknown";
-  const bio       = (live.bio !== undefined ? live.bio : d.bio) || "";
-  const role      = m ? m.role : null;
-  const isSelf    = !!S.userId && p.userId === S.userId;
-  const isHostRow = role === "admin";
-  const isModRow  = role === "mod";
-
-  /* ── 1. identity — EVERYONE sees exactly this much ── */
-  let h = '<div class="prof-id">' +
-      userAvHTML({ uid: p.userId, name, cls: "prof-av", animate: true, zoom: true }) +
-      '<div class="prof-name">' + esc(name) +
-        (online.has(p.userId) ? '<i class="dot-on" title="In room"></i>' : "") +
-        (isBanned ? '<span class="role-tag role-banned">Banned</span>'
-          : role  ? '<span class="role-tag role-' + role + '">' + ROLE_LABEL[role] + "</span>" : "") +
-        (isSelf ? '<span class="prof-self">You</span>' : "") +
-      "</div>" +
-      '<div class="prof-meta">' +
-        (p.loading ? '<span class="prof-skel"></span>'
-          : p.error ? "Profile unavailable"
-          : d.createdAt ? "Joined " + esc(fmtJoined(d.createdAt))
-          : "Join date unknown") +
-      "</div>" +
-      (bio ? '<p class="prof-bio">' + esc(bio) + "</p>"
-           : isSelf && !p.loading ? '<button type="button" class="prof-bio-add" data-act="edit-me">＋ Add a bio</button>' : "") +
-    "</div>";
-  if (isSelf) {
-    h += '<div class="cfg-sec prof-self-acts">' +
-           '<button type="button" class="cfg-btn" data-act="edit-me">Edit profile</button></div>';
-  }
-  
-  /* ── 2. host/mod only, never targets yourself ── */
-  if (me.canManage && !isSelf) {
-    /* a) banned → the only thing left to do is lift it (host only, since S.banned is host-only) */
-    if (isBanned) {
-      h += profBanSec(name, p.userId, ban, p.pending);
-    }
-    /* b) still a member → the normal perms / role / moderation stack */
-    else if (m) {
-      if (isHostRow) {
-        h += profSec("Permissions",
-          '<p class="cfg-note">The host always has ' + scopeTxt("sync").label + ' and ' + scopeTxt("queue").label + '.</p>');
-      } else if (isModRow) {
-        h += profSec("Permissions",
-          '<p class="cfg-note">🛡️ Moderators always have ' + scopeTxt("sync").label + ' and ' + scopeTxt("queue").label +
-          ' — it can\'t be revoked.' +
-          (me.canSetRoles ? " Change their role below to adjust this." : "") + "</p>");
-      } else if (me.canGrantSync || me.canGrantQueue) {
-        const syncLocked  = me.syncMode  === "everyone" || !me.canGrantSync;
-        const queueLocked = me.queueMode === "everyone" || !me.canGrantQueue;
-        h += profSec("Permissions",
-          '<div class="cfg-row"><span>' + esc(cap(scopeTxt("sync").label)) + '</span><span class="cfg-acts">' +
-            swHTML("sync", m.userId, m.canSync, syncLocked, scopeTxt("sync").on) +
-          "</span></div>" +
-          '<div class="cfg-row"><span>' + esc(cap(scopeTxt("queue").label)) + '</span><span class="cfg-acts">' +
-            swHTML("queue", m.userId, m.canQueue, queueLocked, scopeTxt("queue").on) +
-          "</span></div>" +
-          (syncLocked || queueLocked
-            ? '<p class="cfg-note">Some controls are open to everyone right now — switch that off in ' +
-              "Room settings to grant them individually.</p>"
-            : ""));
-      }
-      if (me.canSetRoles && !isHostRow) {
-        h += profSec("Role",
-          '<div class="cfg-row"><span>Room role</span><span class="cfg-acts">' +
-            '<select class="cfg-sel" data-act="role" data-id="' + m.userId + '">' +
-              '<option value="member"' + (role === "member" ? " selected" : "") + ">Member</option>" +
-              '<option value="mod"'    + (isModRow ? " selected" : "") + ">Mod</option>" +
-            "</select></span></div>" +
-          '<p class="cfg-note">Mods can edit room details and grant playback control, but can\'t change roles.</p>');
-      }
-      if (me.canBan && !isHostRow) {
-        h += profSec("Moderation",
-          rowMenuHTML(m, online.has(m.userId), p) +
-          (p.confirm ? "" :
-            '<p class="cfg-note">Kick boots them from this session. Remove deletes their membership ' +
-            "and permissions. Ban also blocks them from rejoining.</p>"));
-      }
-    }
-    /* c) removed / unbanned / never joined */
-    else {
-      h += '<div class="cfg-sec"><p class="cfg-note">Not a member of this room — they can join again.</p></div>';
-    }
-  }
-  dom.profBody.innerHTML = h;
-  const img = dom.profBody.querySelector(".prof-av img");
-  if (img) img.addEventListener("error", () => img.remove(), { once: true });
-}
-/* ── delegated clicks inside the card (change events reuse onCfgChange verbatim) ── */
-function onProfClick(e) {
-  const el = e.target.closest("[data-act]");
-  if (!el || !S.profile || el.tagName === "SELECT" || el.tagName === "INPUT") return;
-  const a = el.dataset.act;
-  if (a === "edit-me") { closeProfile(); openProfileSettings(); return; }
-  if (a === "ask-ban")    { S.profile.confirm = "ban";    renderProfile(); return; }
-  if (a === "ask-remove") { S.profile.confirm = "remove"; renderProfile(); return; }
-  if (a === "menu-close") { S.profile.confirm = null;     renderProfile(); return; }
-  if (MOD_EVT[a]) {                                   // do-kick | do-ban | do-remove
-    sockEmit(MOD_EVT[a], { userId: el.dataset.id });
-    S.profile.confirm = null;
-    if (a === "do-remove") { closeProfile(); return; } // membership gone, nothing to undo here
-    if (a === "do-ban")    setPending("ban");          // ← stay open, flips to the Unban card
-    renderProfile();
-    return;
-  }
-  if (a === "unban") {                                 // same event the config sheet emits
-    sockEmit("member-unban", { userId: el.dataset.id });
-    setPending("unban");
-    renderProfile();
-    return;
-  }
-}
-function onChatAvatarClick(e) {
-  const av = e.target.closest(".msg-av[data-uid]");
-  if (!av) return;
-  openProfile(av.dataset.uid, av.dataset.uname);
-}
-function dom_profDelegate() {
-  dom.profBody.addEventListener("click",  onProfClick);
-  dom.profBody.addEventListener("change", onCfgChange);   // ← sync / queue / role, same emits
-  dom.profClose.addEventListener("click", closeProfile);
-  dom.profBackdrop.addEventListener("click", closeProfile);
-  dom.chatMsgs.addEventListener("click", onChatAvatarClick);
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && isProfileOpen()) { e.stopPropagation(); closeProfile(); }
-  }, true);                                               // capture → closes before the cfg sheet
-}
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", dom_profDelegate, { once: true });
-} else {
-  dom_profDelegate();
 }
 /* ══════════════════════════════════════
    WIRING — the gear button / sheet close affordances.

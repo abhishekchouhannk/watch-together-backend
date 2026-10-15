@@ -12,20 +12,25 @@
  *
  * Module graph (one-way, no cycles):
  *   config / svg / state / dom / socket-ref      ← leaves
- *   utils            → config, state, dom
- *   theme            → config, state, dom
- *   room-details     → config, state, dom, utils
- *   socket-core      → config, state, utils, room-details, socket-ref
- *   chat             → config, state, dom, utils, socket-ref, socket-core
- *   player           → config, svg, state, dom, utils, socket-ref, socket-core
- *   voice            → config, dom, player
- *   reactions        → config, state, dom, socket-ref, socket-core, player
- *   queue            → config, state, dom, utils, socket-ref, socket-core,
+ *   utils              → config, state, dom
+ *   theme              → config, state, dom
+ *   room-details       → config, state, dom, utils
+ *   socket-core        → config, state, utils, room-details, socket-ref
+ *   chat               → config, state, dom, utils, socket-ref, socket-core
+ *   player             → config, svg, state, dom, utils, socket-ref, socket-core
+ *   voice              → config, dom, player
+ *   reactions          → config, state, dom, socket-ref, socket-core, player
+ *   queue              → config, state, dom, utils, socket-ref, socket-core,
  *                      player, chat
- *   permissions      → config, svg, state, dom, utils, socket-ref, socket-core,
+ *   permissions        → config, svg, state, dom, utils, socket-ref, socket-core,
  *                      room-details, player, queue, chat
- *   room-main        → everything
- *   side-tabs        → nothing
+ *   permissions.js     → …everything it had…, moderation-ui, member-profile
+ *   room-main          → everything
+ *   side-tabs          → nothing
+ *   moderation-ui.js   → state, utils, socket-ref, shared/identity          (leaf-ish)
+ *   member-profile.js  → config, state, dom, utils, socket-ref, socket-core,
+                     shared/identity, shared/profile-settings, moderation-ui
+ *   voice.js / games.js → member-profile (openProfile) / nothing (data-profile attr) 
  *
  * room-state fan-out phases: 10 permissions · 20 chat (awaited history) ·
  * 30 queue · 35 player. 40 games. Anything that doesn't care omits it and lands on the default 50.
