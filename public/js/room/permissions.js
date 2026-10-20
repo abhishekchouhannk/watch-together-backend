@@ -560,15 +560,6 @@ const refreshReports = () => {
 /* anything that used to call refreshConfig() on a server broadcast
    (room-permissions, member list changes, participants changes) should call this */
 const refreshPanels  = () => { refreshConfig(); refreshProfile(); };
-/* avatar as a button — same look, opens the existing profile panel */
-function memberAvBtnHTML(m) {
-  const n = nameOf(m.userId, m.username);
-  return userAvHTML({
-    uid: m.userId, name: n, tag: "button", cls: "cfg-av cfg-av-btn",
-    attrs: 'type="button" data-act="profile" data-uid="' + esc(m.userId) + '" data-uname="' + esc(n) +
-           '" title="View profile" aria-label="View profile of ' + esc(n) + '"',
-  });
-}
 /* role tag — static for host row / non-role-setters, toggleable otherwise */
 function roleTagHTML(m, canSetRoles) {
   if (!canSetRoles || m.role === "admin")
