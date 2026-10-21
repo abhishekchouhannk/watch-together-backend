@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:permissions": "jest tests/unit"
   },
   "keywords": [],
   "author": "",
@@ -27,9 +29,14 @@
     "multer": "^2.4.0",
     "nodemailer": "^7.0.9",
     "nodemon": "^3.1.14",
-    "resend": "^6.32.1",
+    "resend": "^6.31.0",
     "socket.io": "^4.8.3",
     "useragent": "^2.3.0",
     "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2",
+    "mongodb-memory-server": "^11.3.0",
+    "socket.io-client": "^4.8.4"
   }
 }
