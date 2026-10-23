@@ -22,6 +22,7 @@ assertions are made on fresh reads of the persisted room documents.
 | `permissions.core.test.js` | The hierarchy (one host > mods > members), `ensureMember` bootstrap, grant/revoke state rules, implicit + irrevocable host/mod grants, `"everyone"` slot modes, rejection of unknown scopes, and the exact `resolvePerms()` payload per role. |
 | `permissions.scopes.test.js` | What each scope string *means* per room type (see table below), per-room isolation of grants, and the room-type wording (`labels`). |
 | `permissions.socket.test.js` | The real wire protocol: a genuine socket.io server + `authenticateSocket` + `roomHandlers`, exercising `join-room`, `perm-grant`, `perm-revoke`, `perm-request`/`perm-respond`, `perm-set-role` and `perm-set-queue-mode` — asserting both the live broadcasts users receive *and* what got persisted. |
+| `moderation.socket.test.js` | Moderation over the same harness: `member-kick` (eviction + forced disconnect + rejoin cooldown, grants survive), `member-remove` (membership wiped), `member-ban`/`member-unban` (blocklist persisted, `join-room` refuses banned users), `voice-force-mute`/`voice-force-unmute` (host + mods, never self/host/another mod) — plus proof that members and even mods firing kick/remove/ban are stopped by the guards with the target left untouched. |
 
 ## The scope model (the thing these tests pin down)
 
