@@ -69,6 +69,25 @@ app.get("/room/:roomId", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "room.html"));
 });
 
+// proxy route for Giphy API search
+app.get('/api/gifs/search', async (req, res) => {
+  const query = req.query.q;
+  const apiKey = process.env.GIPHY_API_KEY;
+  
+  // The server makes the request, keeping the key safe
+  const response = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${query}&limit=20&rating=r`);
+  const data = await response.json();
+  
+  // Send the clean data back to the frontend
+  res.json(data);
+});
+
+app.get('/api/gifs/trending', async (req, res) => {
+  const params = new URLSearchParams({ ...req.query, api_key: process.env.GIPHY_API_KEY });
+  const response = await fetch(`https://api.giphy.com/v1/gifs/trending?${params}`);
+  res.json(await response.json());
+});
+
 // Socket.IO setup
 const server = http.createServer(app); // <-- wrap express
 const initSocket = require("./socket"); // our socket bootstrap

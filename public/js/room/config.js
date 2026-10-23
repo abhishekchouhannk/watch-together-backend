@@ -71,7 +71,6 @@ export const VOICE_AUTOCONNECT     = false;             // true → join voice (
 export const VOICE_RAIL_AUTO_CLOSE = RAIL_AUTO_CLOSE;   // reuse the reaction-rail timing
 
 /* ── GIPHY ── */
-export const GIPHY_KEY    = "7fJIJT9ne9wVuiN1K5LUK9obiezwifEW";
 export const GIPHY_RATING = "r";          // g | pg | pg-13 | r
 /* true  → clicking a GIF sends it immediately (Discord-style)
    false → it's staged in the preview strip so the user can add a caption */

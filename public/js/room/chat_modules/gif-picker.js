@@ -12,11 +12,12 @@
  * gets clipped by .chat-section{overflow:hidden}.
  * ───────────────────────────────────────────────────────────── */
 "use strict";
-import { GIPHY_KEY, GIPHY_RATING } from "../config.js";
+import { GIPHY_RATING } from "../config.js";
 import { $ } from "../dom.js";
 import { esc } from "../utils.js";
 import { normalizeImageUrl } from "./media-embed.js";
-const API      = "https://api.giphy.com/v1/gifs/";
+// use backend proxy to keep the GIPHY key secret; see index.js for the route
+const API      = "/api/gifs/";
 const PAGE     = 24;
 const DEBOUNCE = 350;
 const MAX_H    = 352;   // px — matches ~22rem
@@ -81,22 +82,26 @@ function search(q) {
 }
 async function loadPage() {
   if (st.busy || !st.more || st.err) return;
-  if (!GIPHY_KEY || GIPHY_KEY.startsWith("YOUR_")) { setStatus("nokey"); return; }
+  
   st.busy = true;
   const seq  = ++st.seq;
   const ctrl = (st.ctrl = new AbortController());
   setStatus("loading");
+  
+  // Build params WITHOUT the api_key
   const params = new URLSearchParams({
-    api_key: GIPHY_KEY, limit: String(PAGE), offset: String(st.offset), rating: GIPHY_RATING,
+    limit: String(PAGE), offset: String(st.offset), rating: GIPHY_RATING,
   });
   if (st.q) { params.set("q", st.q); params.set("lang", "en"); }
+  
   try {
+    // This will now hit /api/gifs/search?... or /api/gifs/trending?... on your server
     const r = await fetch(API + (st.q ? "search" : "trending") + "?" + params, { signal: ctrl.signal });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const d = await r.json();
     if (seq !== st.seq) return;
     const raw = Array.isArray(d.data) ? d.data : [];
-    st.offset += raw.length;                                 // raw count → filtered items never repeat
+    st.offset += raw.length; 
     const total = d.pagination && d.pagination.total_count;
     st.more = raw.length === PAGE && (total == null || st.offset < total);
     render(raw.map(toGif).filter(Boolean));
@@ -109,7 +114,7 @@ async function loadPage() {
     if (seq === st.seq) {
       st.busy = false;
       st.ctrl = null;
-      maybeMore();                                           // tall popover, short page → keep filling
+      maybeMore(); 
     }
   }
 }
