@@ -1,0 +1,144 @@
+/* css/room/14-responsive.css
+   Whole-page alternate layouts: mobile focus view, landscape phones,
+   landscape tablets. Loads after all components, before the
+   room-type layouts.
+   Split out of the old monolithic room.css — same rules, same order. */
+
+/* =============================================================
+   MOBILE FOCUS VIEW
+   ============================================================= */
+/* header chevron — only visible inside focus view */
+#roomPage .focus-exit-btn{ display:none; }
+/* pull-up bubble */
+.pull-hint{
+  position:fixed; left:50%; bottom:16px; z-index:120;
+  width:52px; height:52px;
+  transform:translate(-50%,80px);        /* hidden below the fold — HIDE_Y */
+  opacity:0; pointer-events:none;
+  transition:opacity .2s ease;
+}
+.pull-hint.active{ opacity:1; }
+.pull-hint.resetting{
+  transition:transform .34s cubic-bezier(.4,0,.6,1), opacity .3s ease;
+  opacity:0;
+}
+.pull-bubble{
+  position:relative; width:100%; height:100%; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--card); border:1px solid var(--card-bdr);
+  box-shadow:0 10px 30px rgba(0,0,0,.3);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  transition:background .2s ease, border-color .2s ease;
+}
+.pull-ring{ position:absolute; inset:-4px; transform:rotate(-90deg); }
+.pr-track{ fill:none; stroke:var(--card-bdr); stroke-width:3; }
+.pr-prog{
+  fill:none; stroke:var(--acc); stroke-width:3; stroke-linecap:round;
+  stroke-dasharray:151; stroke-dashoffset:151;
+  transition:stroke-dashoffset .08s linear;
+}
+.pull-chev{
+  width:22px; height:22px; color:var(--t2);
+  transition:transform .2s ease, color .2s ease;
+}
+.pull-hint.ready .pull-bubble{ background:var(--acc); border-color:var(--acc); }
+.pull-hint.ready .pull-chev  { color:var(--acc-t); transform:translateY(-2px); }
+@media(min-width:769px){ .pull-hint{ display:none; } }
+@media(max-width:768px){
+  /* animate what changes between the two layouts */
+  .video-section  { transition:padding .3s ease; }
+  .video-container{ transition:border-radius .3s ease; }
+  .chat-section   { transition:margin .3s ease, border-radius .3s ease; }
+  /* lock the page behind the focus view */
+  html.room-focus,
+  html.room-focus body{ overflow:hidden; }
+  #roomPage.focus-mode{
+    height:100vh; height:100dvh; min-height:0;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  #roomPage.focus-mode .room-header  { flex:0 0 52px; }
+  #roomPage.focus-mode .room-details { display:none; }
+  #roomPage.focus-mode .room-content {
+    flex:1; min-height:0; overflow:hidden;
+  }
+  #roomPage.focus-mode .video-section{
+    flex:0 0 auto; position:static;
+    padding:0; background:none;
+    backdrop-filter:none; -webkit-backdrop-filter:none;
+  }
+  #roomPage.focus-mode .video-section::after{ display:none; }
+  #roomPage.focus-mode .video-container{ border-radius:0; }
+  #roomPage.focus-mode .chat-section{
+    flex:1; min-height:0; height:auto;
+    margin:0; border-radius:0;
+  }
+  #roomPage.focus-mode .focus-exit-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+  }
+}
+
+/* =============================================================
+   LANDSCAPE — PHONES (too short to stack anything)
+   ============================================================= */
+@media (orientation: landscape) and (max-height: 500px){
+  html, body{ height:100vh; height:100dvh; overflow:hidden; }
+  #roomPage{
+    height:100vh; height:100dvh; min-height:0;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  .room-header,
+  .room-details{ display:none; }
+  .room-content{
+    flex:1; min-height:0;
+    display:flex; flex-direction:row; gap:.45rem;
+    padding:.45rem; overflow:hidden;
+  }
+  .video-section{
+    flex:1; min-width:0; min-height:0; overflow:hidden;
+    position:static; padding:0;
+    background:none; backdrop-filter:none; -webkit-backdrop-filter:none;
+  }
+  .video-section::after{ display:none; }
+  .video-container{
+    flex:1; min-height:0; aspect-ratio:auto; border-radius:10px;
+  }
+  .chat-section{
+    width:clamp(260px, 40vw, 380px);
+    flex:0 0 auto; min-width:0; min-height:0;
+    margin:0; height:auto;
+    border-radius:12px;
+  }
+}
+
+/* =============================================================
+   LANDSCAPE — TABLETS (side panel reclaims the room-details space)
+   ============================================================= */
+@media (orientation: landscape) and (min-width: 769px)
+   and (min-height: 501px) and (pointer: coarse){
+  #roomPage{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) clamp(360px, 30vw, 440px);
+    grid-template-rows:auto auto minmax(0,1fr);
+    grid-template-areas:
+      "header  header"
+      "details chat"
+      "video   chat";
+    column-gap:.75rem;
+    row-gap:.75rem;
+  }
+  .room-header { grid-area:header; }
+  .room-details{ grid-area:details; margin:0 0 0 1rem; }
+  .room-content{ display:contents; }          /* video + chat become grid items */
+  .video-section{
+    grid-area:video;
+    isolation:isolate;                         /* keep it painting above .sky-bg */
+    min-width:0; min-height:0;
+    margin:0 0 1rem 1rem;
+  }
+  .chat-section{
+    grid-area:chat;
+    isolation:isolate;                         /* keep it painting above .sky-bg */
+    width:auto; min-width:0; min-height:0;
+    margin:0 1rem 1rem 0;
+  }
+}

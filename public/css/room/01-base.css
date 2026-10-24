@@ -1,0 +1,41 @@
+/* css/room/01-base.css
+   Reset, tap-highlight, base typography, keyboard focus rings,
+   global scrollbars and shared keyframes. No component styles.
+   Split out of the old monolithic room.css — same rules, same order. */
+
+/* ======== 0. Reset ======== */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+/* remove the annoying tap highlight */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color: rgba(0,0,0,0);
+}
+
+html{height:100%}
+body{
+  min-height:100%;
+  font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+button{font-family:inherit;cursor:pointer;border:none;outline:none}
+input,textarea,select{font-family:inherit;outline:none}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+}
+
+/* keyboard accessibility */
+button:focus-visible,.url-input:focus-visible,.chat-input:focus-visible,
+.vc-range:focus-visible,a:focus-visible{
+  outline:2px solid var(--acc);outline-offset:2px;border-radius:6px;
+}
+
+
+/* global thin scrollbars (old section 9) */
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--scr-tr)}
+::-webkit-scrollbar-thumb{background:var(--scr-th);border-radius:3px}
+*{scrollbar-width:thin;scrollbar-color:var(--scr-th) var(--scr-tr)}
+
+
+/* shared entrance animation (used by the video, chat and study cards) */
+@keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}

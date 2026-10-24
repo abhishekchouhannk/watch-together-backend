@@ -1,0 +1,83 @@
+/* css/room/08-layout.css
+   Page shell: the fixed sky backdrop, content wrapper, and the
+   desktop (≥769px) / mobile (≤768px) top-level layouts.
+   Loads AFTER the components it arranges (video, chat).
+   Split out of the old monolithic room.css — same rules, same order. */
+
+/* ======== 2. Sky / Base ======== */
+.sky-bg{
+  position:fixed;
+  top:0;left:0;right:0;bottom:auto;
+  height:100vh;             /* fallback */
+  height:100lvh;            /* size to the tallest the viewport can get */
+  z-index:0;
+  background-color:var(--sky-fb);
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  opacity:1;
+  transition:opacity .35s ease;
+  transform:translateZ(0);  /* keeps it on its own layer; optional */
+  pointer-events:none;      /* decorative only; optional */
+}
+#roomPage{position:relative;min-height:100vh}
+
+
+/* ======== 5. Room Content wrapper ======== */
+.room-content{position:relative;z-index:0;padding:0 1rem 1rem}
+
+/* ======== 10. DESKTOP layout (≥769px) ======== */
+@media(min-width:769px){
+  html,body{height:100vh;height:100dvh;overflow:hidden}
+  #roomPage{
+    height:100vh;height:100dvh;
+    min-height:0;                 /* cancel the global min-height:100vh */
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  .room-header{flex-shrink:0}
+  .room-details{flex-shrink:0;max-height:180px;overflow-y:auto;margin:.75rem 1rem 0}
+  .room-content{
+    flex:1;display:flex;gap:.75rem;
+    padding:.75rem 1rem 1rem;min-height:0;overflow:hidden;
+  }
+  .video-section{flex:1;min-width:0;min-height:0;overflow:hidden}
+  .video-container{flex:1;min-height:0;aspect-ratio:auto;border-radius:12px}
+  .chat-section{width:clamp(360px,30vw,440px);flex-shrink:0;min-height:0}
+}
+
+
+/* ======== 11. MOBILE layout (≤768px) ======== */
+@media(max-width:768px){
+  html,body{height:auto;overflow-y:auto}
+  .room-details{margin:.65rem .65rem 0;border-radius:12px}
+  .room-content{
+    display:flex;flex-direction:column;padding:0;
+  }
+  .video-section{
+    position:sticky;top:52px;z-index:10;
+    background:var(--sky-fb) var(--sky-img,none) center/cover no-repeat;
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    padding:.65rem .65rem 0;
+  }
+  .video-section::after{
+    content:'';position:absolute;bottom:-6px;left:0;right:0;height:6px;
+    background:linear-gradient(rgba(0,0,0,.08),transparent);pointer-events:none;
+  }
+  .video-container{border-radius:10px}
+  .chat-section{
+    margin:.65rem;border-radius:12px;
+    /* tabs add ~42px — this formula (52 header + 16:9 player + 24 + 42 tabs)
+       was the one that actually won; the older −80px version it always
+       overrode has been removed */
+    height:calc(100vh - 52px - 56.25vw - 24px - 42px - var(--yt-extra,0px));
+    min-height:300px;
+  }
+  .rh-center{justify-content:flex-start}
+  .theme-opt-sub{display:none}
+  .back-label{display:none}
+  /* topbar: leave → icon only, wider theme button, only the essentials in the middle */
+  .leave-label{display:none}
+  .leave-btn{padding:.42rem .6rem}
+  .theme-btn{width:52px;height:34px;border-radius:10px}
+  .rh-center .mode-badge{display:none}
+}

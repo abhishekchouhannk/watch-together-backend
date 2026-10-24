@@ -1,0 +1,62 @@
+/* css/room/04-room-details.css
+   The collapsible room-details card under the header: name, description,
+   tags, participant avatars, loading skeletons.
+   Split out of the old monolithic room.css — same rules, same order. */
+
+/* ======== 4. Room Details ======== */
+.room-details{
+  position:relative;z-index:1;
+  background:var(--card);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--card-bdr);border-radius:14px;
+  padding:1rem 1.25rem;margin:1rem;
+  box-shadow:var(--card-sh);
+  animation:fadeInUp .5s cubic-bezier(.16,1,.3,1) both;
+  isolation:isolate;
+}
+.rd-name{font-size:1.15rem;font-weight:700;color:var(--t1);margin-bottom:.3rem;letter-spacing:-.01em}
+.rd-desc{font-size:.88rem;color:var(--t3);line-height:1.5;margin-bottom:.6rem}
+.rd-meta{display:flex;align-items:center;flex-wrap:wrap;gap:.6rem;font-size:.82rem;color:var(--t2);margin-bottom:.5rem}
+.rd-meta-sep{color:var(--t3);opacity:.4}
+.rd-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.55rem}
+.tag{padding:.12rem .5rem;border-radius:5px;font-size:.72rem;font-weight:500;background:var(--tag-bg);color:var(--tag-t);transition:background .15s}
+.tag:hover{background:var(--surf-h)}
+.rd-avatars{display:flex;align-items:center}
+.avatar-sm{
+  width:1.9rem;height:1.9rem;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.7rem;font-weight:700;color:#fff;
+  border:2px solid var(--card);flex-shrink:0;
+  transition:transform .15s ease,z-index 0s;
+}
+.avatar-sm:hover{transform:translateY(-3px);z-index:2}
+.avatar-sm+.avatar-sm{margin-left:-.35rem}
+.avatar-more{background:var(--glass);color:var(--t2);font-size:.6rem;border-color:var(--glass-border)}
+
+/* skeleton inside details */
+.sk{border-radius:6px;background:linear-gradient(90deg,var(--card-bdr) 25%,var(--glass) 50%,var(--card-bdr) 75%);background-size:200% 100%;animation:shimmer 1.8s ease infinite}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* NOTE: fadeInUp moved to 01-base.css (it is shared by several cards) */
+
+
+/* collapsible behaviour (old section 14) */
+.room-details{cursor:pointer;user-select:none;-webkit-user-select:none}
+.rd-head{display:flex;align-items:center;gap:.6rem;min-width:0}
+.rd-head .rd-name{
+  margin:0;flex:0 1 auto;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.rd-count{font-size:.8rem;font-weight:600;color:var(--t2);white-space:nowrap;flex-shrink:0}
+.rd-chev{
+  margin-left:auto;flex-shrink:0;color:var(--t3);
+  transition:transform .28s cubic-bezier(.16,1,.3,1);
+}
+.room-details.expanded .rd-chev{transform:rotate(180deg)}
+/* smooth expand/collapse via the 0fr → 1fr grid trick */
+.rd-body{
+  display:grid;grid-template-rows:0fr;
+  transition:grid-template-rows .32s cubic-bezier(.16,1,.3,1);
+}
+.rd-body-in{overflow:hidden;min-height:0;opacity:0;transition:opacity .22s ease}
+.room-details.expanded .rd-body{grid-template-rows:1fr}
+.room-details.expanded .rd-body-in{opacity:1;transition:opacity .25s ease .1s}
+.rd-body-in > :first-child{margin-top:.6rem}   /* breathing room when open */

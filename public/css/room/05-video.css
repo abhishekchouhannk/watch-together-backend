@@ -1,0 +1,297 @@
+/* css/room/05-video.css
+   The media player: container, placeholder, controls overlay, ranges,
+   URL bar, YouTube letterbox + info bar, settings menu, centre transport
+   and the up-next card.
+   Split out of the old monolithic room.css — same rules, same order. */
+
+/* ======== 6. Video Section ======== */
+.video-section{
+  display:flex;flex-direction:column;gap:.6rem;
+  animation:fadeInUp .5s cubic-bezier(.16,1,.3,1) .08s both;
+}
+.video-container{
+  position:relative;width:100%;aspect-ratio:16/9;
+  background:#000;border-radius:12px;overflow:hidden;
+  box-shadow:var(--card-sh);
+}
+#videoWrapper{position:absolute;inset:0}
+#videoWrapper video,#videoWrapper iframe{width:100%;height:100%;display:block;border:0}
+.video-placeholder{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:rgba(255,255,255,.65);gap:.25rem;user-select:none;
+  background:radial-gradient(circle at 50% 40%,rgba(255,255,255,.06),transparent 60%);
+}
+.vp-icon{font-size:3rem;opacity:.5;animation:floatIcon 3.2s ease-in-out infinite}
+.vp-text{font-size:.95rem;font-weight:600}.vp-sub{font-size:.78rem;opacity:.55}
+@keyframes floatIcon{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+
+/* video controls overlay */
+.vc{
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  flex-wrap:nowrap;
+  min-width:0;
+  position:absolute;bottom:0;left:0;right:0;z-index:5;
+  padding:.55rem .7rem;
+  background:linear-gradient(transparent,rgba(0,0,0,.75));
+  opacity:0;transition:opacity .3s ease;
+}
+
+.video-container:hover .vc,.vc.show{opacity:1}
+
+.vc-btn,
+.vc-lock,
+.vc-time{ flex:0 0 auto; }
+
+.vc-btn{
+  background:transparent;color:#fff;display:flex;align-items:center;justify-content:center;
+  width:28px;height:28px;border-radius:6px;flex-shrink:0;transition:background .15s,transform .1s;
+}
+.vc-btn:hover{background:rgba(255,255,255,.15)}
+.vc-btn:active{transform:scale(.9)}
+.vc-time{font-size:.72rem;color:rgba(255,255,255,.8);white-space:nowrap;min-width:3.2rem;text-align:center;font-variant-numeric:tabular-nums}
+
+/* styled range inputs inside controls */
+.vc-range{
+  min-width:0;
+  -webkit-appearance:none;appearance:none;
+  height:4px;border-radius:2px;outline:none;cursor:pointer;
+  background:rgba(255,255,255,.25);
+}
+.vc-range::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 0 4px rgba(0,0,0,.4);transition:transform .1s}
+.vc-range::-webkit-slider-thumb:hover{transform:scale(1.15)}
+.vc-range::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#fff;cursor:pointer;border:none}
+.vc-progress{
+  flex:1 1 40px;      /* grows, and is allowed to shrink to 40px */
+  min-width:40px;
+}
+.vol-wrap{ display:flex; align-items:center; gap:.3rem;flex:0 1 auto; min-width:0; }
+.vc-volume{
+  flex:0 1 80px;
+  width:80px;
+  min-width:0;
+}
+
+.vc-spin { animation: vc-spin 0.9s linear infinite; transform-origin: 50% 50%; }
+@keyframes vc-spin { to { transform: rotate(360deg); } }
+
+/* center button while loading: no hover/press affordance, it's a status now */
+#cPlayBtn.is-loading { opacity: .9; cursor: default; }
+
+/* optional caption under the spinner (uses the is-loading class set on the container) */
+.is-loading #vcCenter::after {
+  content: "Syncing…";
+  position: absolute;
+  top: 100%;             
+  left: 50%;             
+  transform: translateX(-50%); 
+  /* Space scales from 8px up to 16px */
+  margin-top: clamp(8px, 1.5vw, 16px);  
+  /* Font scales from 11px up to 16px */
+  font-size: clamp(11px, 1.5vw, 16px); 
+  color: rgba(255,255,255,.75);
+  white-space: nowrap;   
+}
+
+/* ── ≤1000px: progress bar on its own full-width row ── */
+@media (max-width:1000px){
+  .vc{
+    flex-wrap:wrap;
+    row-gap:.35rem;
+    padding-block:.45rem;
+  }
+  /* row 1 — full-width seek bar */
+  .vc-progress{
+    order:-1;
+    flex:1 1 100%;
+    width:100%;
+    min-width:0;
+  }
+  /* row 2 — times sit together now that progress has moved out */
+  #curTime{ order:1 }
+  #durTime{ order:2 }
+  #durTime::before{ content:'/ '; opacity:.6 }
+  .vc-time{ min-width:0; text-align:left; }  /* remove the centering padding causing the gap */
+  /* push volume + fullscreen hard right */
+  .vol-wrap{ margin-left:auto; order:3 }
+  #settingsBtn {order: 4}
+  #fsBtn{ order:5 }
+  /* mobile: no hover slider — just the mute/unmute toggle */
+  .vc-volume{ display:none; }
+}
+
+/* URL bar */
+.url-input{
+  flex:1;min-width:0;   /* let it shrink instead of overflowing the row (was a stray fix in the reactions section) */
+padding:.55rem .8rem;
+  background:var(--in-bg);border:1px solid var(--in-bdr);
+  border-radius:10px;color:var(--in-t);font-size:.88rem;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  transition:border-color .2s,box-shadow .2s;
+}
+.url-input:focus{border-color:var(--in-foc);box-shadow:0 0 0 3px var(--in-ring)}
+.url-input::placeholder{color:var(--in-ph)}
+.btn-sm{
+  padding:.55rem 1rem;border-radius:10px;font-size:.85rem;font-weight:600;
+  background:var(--acc);color:var(--acc-t);white-space:nowrap;
+  transition:all .2s;
+}
+.btn-sm:hover{background:var(--acc-h);box-shadow:0 4px 12px var(--acc-glow)}
+.btn-sm:active{transform:scale(.96)}
+/* disabled states — consolidated (used to be declared twice: once in the
+   permissions section at opacity .4/.55 and again, winning, in the queue pane) */
+.vc-btn:disabled{opacity:.3;cursor:not-allowed;pointer-events:none}
+.btn-sm:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+
+
+/* ======== 16. YouTube letterbox / crop mode ======== */
+/* Applied to .video-container only while a YouTube video is loaded.
+   The iframe is deliberately oversized (taller than its video) so YT's
+   branding lands on its internal letterbox bars; the container's existing
+   overflow:hidden clips the excess symmetrically. The container itself
+   keeps its layout-driven size on desktop, so the flex column
+   (player + url-bar vs chat) is never disturbed. */
+.video-container.yt-boxed{ aspect-ratio:auto; }        /* mobile: JS sets height */
+.video-container.yt-boxed #videoWrapper iframe{
+  position:absolute;                                   /* JS sets w/h/left/top in px */
+}
+
+/* ======== 17. YT info bar (thumb + title + author) ======== */
+.vi-bar{
+  position:absolute;top:0;left:0;right:0;z-index:5;
+  display:flex;align-items:center;gap:.6rem;
+  padding:.6rem .75rem 1rem;
+  background:linear-gradient(rgba(0,0,0,.72),transparent);
+  opacity:0;transition:opacity .3s ease;pointer-events:none;
+}
+.video-container:hover .vi-bar,.vi-bar.show{opacity:1}
+.vi-thumb{
+  width:44px;height:44px;border-radius:50%;object-fit:cover;flex-shrink:0;
+  box-shadow:0 2px 8px rgba(0,0,0,.4);
+}
+.vi-meta{min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.vi-title{
+  font-size:.88rem;font-weight:700;color:#fff;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  text-shadow:0 1px 2px rgba(0,0,0,.5);
+}
+.vi-author{
+  font-size:.72rem;color:rgba(255,255,255,.75);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+@media(max-width:768px){
+  .vi-thumb{width:34px;height:34px}
+  .vi-title{font-size:.78rem}
+}
+/* ======== 18. Settings menu (captions + quality) ======== */
+.vc-menu{
+  position:absolute;right:.6rem;bottom:3.1rem;z-index:7;
+  min-width:190px;max-height:min(60%,320px);overflow-y:auto;
+  background:rgba(20,20,20,.92);border:1px solid rgba(255,255,255,.14);
+  border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.45);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  padding:.35rem;display:none;
+}
+.vc-menu.open{display:block;animation:menuIn .16s ease}
+@keyframes menuIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.vcm-sec+.vcm-sec{margin-top:.35rem;border-top:1px solid rgba(255,255,255,.1);padding-top:.35rem}
+.vcm-title{
+  font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:rgba(255,255,255,.55);padding:.25rem .6rem;
+}
+.vcm-item{
+  display:flex;align-items:center;gap:.45rem;width:100%;
+  padding:.4rem .6rem;border-radius:8px;background:transparent;
+  color:#eee;font-size:.82rem;text-align:left;transition:background .12s;
+}
+.vcm-item:hover{background:rgba(255,255,255,.12)}
+.vcm-item.on{color:#fff;font-weight:600}
+.vcm-check{width:1em;flex-shrink:0}
+
+.vcm-row{
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  padding:.4rem .6rem;font-size:.82rem;color:#eee;
+}
+.vcm-val{color:rgba(255,255,255,.7);font-variant-numeric:tabular-nums}
+.vi-av{
+  width:44px;height:44px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.1rem;font-weight:700;color:#fff;
+  background:var(--acc,#555);box-shadow:0 2px 8px rgba(0,0,0,.4);
+}
+@media(max-width:768px){ .vi-av{width:34px;height:34px;font-size:.9rem} }
+
+
+/* ═══════════ UP NEXT CARD ═══════════ */
+.upnext{
+  position:absolute;right:.75rem;bottom:3.6rem;z-index:8;width:min(300px,62%);
+  padding:.65rem .7rem;border-radius:12px;
+  background:rgba(18,18,18,.92);border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 12px 34px rgba(0,0,0,.5);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  color:#fff;animation:unIn .26s cubic-bezier(.16,1,.3,1);
+}
+.upnext[hidden]{display:none}
+@keyframes unIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+.un-x{position:absolute;top:.3rem;right:.35rem;width:20px;height:20px;border-radius:5px;
+  color:rgba(255,255,255,.55);font-size:.7rem;background:transparent}
+.un-x:hover{background:rgba(255,255,255,.14);color:#fff}
+.un-label{font-size:.64rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:rgba(255,255,255,.6);margin-bottom:.45rem}
+.un-label span{color:#fff}
+.un-row{display:flex;gap:.55rem;align-items:flex-start}
+.un-thumb-wrap{position:relative;width:86px;height:49px;flex-shrink:0;border-radius:7px;overflow:hidden;background:#000}
+.un-thumb{width:100%;height:100%;object-fit:cover;display:block}
+.un-ring{position:absolute;inset:0;background:conic-gradient(var(--acc,#fff) var(--p,0%),rgba(0,0,0,.55) 0);
+  opacity:.55;transition:--p .25s linear}
+.un-meta{min-width:0;flex:1}
+.un-title{font-size:.8rem;font-weight:700;line-height:1.28;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.un-sub{font-size:.68rem;color:rgba(255,255,255,.6);margin-top:.12rem;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.un-btns{display:flex;gap:.4rem;margin-top:.55rem}
+.un-btn{flex:1;padding:.38rem;border-radius:8px;font-size:.74rem;font-weight:600;
+  background:rgba(255,255,255,.12);color:#fff;transition:all .15s}
+.un-btn:hover{background:rgba(255,255,255,.2)}
+.un-btn-primary{background:var(--acc);color:var(--acc-t)}
+.un-btn-primary:hover{background:var(--acc-h)}
+@media(max-width:768px){
+  .upnext{right:.5rem;left:.5rem;bottom:3.2rem;width:auto}
+  .un-btns{margin-top:.45rem}
+}
+
+
+/* ═══════════ CENTER TRANSPORT ═══════════ */
+.vc-center{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:6;display:flex;align-items:center;gap:1.1rem;
+  opacity:0;transition:opacity .3s ease;
+  pointer-events:none;                 /* gaps always click through to #playerShield */
+}
+.video-container:hover .vc-center,.vc-center.show{opacity:1}
+/* only the buttons capture clicks, and only while visible */
+.video-container:hover .vc-center .vcc-btn,
+.vc-center.show .vcc-btn{pointer-events:auto}
+.vcc-btn{
+  display:flex;align-items:center;justify-content:center;border-radius:50%;
+  background:rgba(0,0,0,.28);color:#fff;
+  filter:drop-shadow(0 1px 3px rgba(0,0,0,.55));   /* legible over bright frames */
+  transition:background .15s,transform .12s,opacity .15s;
+  pointer-events:none;                              /* default off; re-enabled above */
+}
+.vcc-btn:hover{background:rgba(0,0,0,.55);transform:scale(1.08)}
+.vcc-btn:active{transform:scale(.94)}
+.vcc-main{width:58px;height:58px}
+.vcc-side{width:42px;height:42px}
+.vcc-btn[disabled]{opacity:.3;pointer-events:none !important}
+/* ── YouTube mode: let YT's native centre button show through ── */
+.video-container.yt-boxed #cPlayBtn{display:none}
+.video-container.yt-boxed .vc-center{gap:5.5rem}   /* prev/next flank YT's button */
+@media(max-width:768px){
+  .vcc-main{width:48px;height:48px}
+  .vcc-side{width:36px;height:36px}
+  .vc-center{gap:.8rem}
+  .video-container.yt-boxed .vc-center{gap:4rem}
+}
